@@ -14,7 +14,8 @@
 //   node server/build.mjs --link                   hardlink the content instead of copying (same volume, instant)
 //   node server/build.mjs --skip-content           reuse release/<name>/Content from the last build
 //   node server/build.mjs --platform linux         a Linux x64 server (downloads that Electron runtime once)
-//   node server/build.mjs --zip                    ... and zip the release folder
+//   node server/build.mjs --zip                    ... and zip the release folder, Content/ included, into
+//                                                  BoundlessNYC-<version>-<platform>.zip (the GitHub release asset)
 //   node server/build.mjs --out D:/releases        output directory
 //
 // Nothing here pushes, uploads or publishes: the release is a folder (and optionally a zip) on disk.
@@ -173,13 +174,17 @@ if (!flag('skip-content') || !existsSync(path.join(rel, 'Content', 'index.html')
 }
 
 // ---------------------------------------------------------------- 5. zip
+// the GitHub release asset: the whole folder, Content/ included. GitHub caps one release asset at 2 GiB; deflate
+// shrinks the tiles to about a quarter, so the Windows archive stays well under the cap.
 if (flag('zip')) {
-  const zip = rel + '.zip';
+  const zip = path.join(outRoot, `BoundlessNYC-${VERSION}-${tag}.zip`);
   await fs.rm(zip, { force: true });
   log(`· zipping ${path.basename(zip)} (GB-scale: a few minutes)`);
   const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'zip';
   if (process.platform === 'win32') run(tar, ['-a', '-c', '-f', zip, '-C', outRoot, NAME]);
   else run(tar, ['-r', '-q', zip, NAME], { cwd: outRoot });
-  log(`  ${path.relative(root, zip)}  ${MB((await fs.stat(zip)).size)} MB`);
+  const bytes = (await fs.stat(zip)).size;
+  log(`  ${path.relative(root, zip)}  ${MB(bytes)} MB`);
+  if (bytes >= 2 ** 31) log('  ! 2 GiB or more: too large for one GitHub release asset');
 }
 log(`\ndone: ${path.relative(root, rel)}\nrun:  ${platform === 'win32' ? 'StartServer.bat' : './StartServer.sh'}   then   python PythonAPI/examples/quickstart.py`);

@@ -23,7 +23,7 @@ Links:
 - Documentation: <https://mkturkcan.github.io/boundless-nyc/>
 - Demo in the browser (WebGL2): <https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc>
 - Compiled city, models and textures: <https://huggingface.co/datasets/mehmetkeremturkcan/boundless-nyc>
-- Simulation server binaries: <https://github.com/mkturkcan/boundless-nyc/releases>
+- Simulation server for Windows x64, compiled city included: <https://github.com/mkturkcan/boundless-nyc/releases>
 - Paper: [arXiv:2409.03022](https://arxiv.org/abs/2409.03022)
 
 ## How it works
@@ -37,22 +37,14 @@ vehicles and pedestrians, and renders every frame together with its labels.
 
 ## Quick start
 
-**Binary release (Windows x64).**
+**Binary release (Windows x64).** Download `BoundlessNYC-<version>-win64.zip` from Releases (1.3 GB; the server with
+the compiled city), extract it, start the server and run an example:
 
-1. Download `BoundlessNYC-<version>-win64.zip` from Releases and extract it.
-2. Fetch the compiled city into the same folder:
-
-   ```
-   hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.1.0 --include "Content/*" --local-dir <extracted folder>
-   ```
-
-3. Start the server and run an example:
-
-   ```
-   StartServer.bat
-   pip install PythonAPI/dist/boundless-<version>-py3-none-any.whl
-   python PythonAPI/examples/intersection_120_amsterdam.py
-   ```
+```
+StartServer.bat
+pip install PythonAPI/dist/boundless-<version>-py3-none-any.whl
+python PythonAPI/examples/intersection_120_amsterdam.py
+```
 
 **From source.** See [BUILDING.md](BUILDING.md). In short:
 

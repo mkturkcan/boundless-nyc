@@ -16,3 +16,4 @@ unless Epic's terms permit your use. For such frames, render with the built-in p
 `--pedestrians procedural` on the simulation server, or `?crowd=0` in the browser client.
 
 `manifest.json` in this folder carries the same flag in its `license` block (`"metahuman": true`).
+

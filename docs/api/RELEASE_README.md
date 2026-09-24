@@ -16,8 +16,8 @@ python PythonAPI/examples/intersection_120_amsterdam.py
 | `PythonAPI/` | the `boundless` package (source and wheel) and the examples |
 | `Docs/` | `getting_started.md`, `python_api.md`, `protocol.md` |
 
-**Content.** The archive published on GitHub omits `Content/` (3.1 GB). Download the matching version into this
-folder:
+**Content.** `Content/` (3.1 GB) is also published as the Hugging Face dataset `mehmetkeremturkcan/boundless-nyc`
+(tag `v{{VERSION}}`). To restore it in this folder:
 
 ```
 pip install -U huggingface_hub

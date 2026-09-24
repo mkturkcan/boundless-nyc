@@ -130,6 +130,8 @@ Options:
 
 - `--link` hardlinks `Content/` instead of copying it; the output must be on the same volume.
 - `--skip-content` keeps `Content/` from the previous build.
+- `--zip` also writes `release/BoundlessNYC-<version>-<platform>.zip`: the release folder with `Content/`, as
+  published on GitHub Releases (1.3 GB for Windows x64; GitHub limits one release asset to 2 GiB).
 - `--platform linux` cross-packages a Linux x64 server. It downloads that Electron runtime once. It has not been
   tested for this release.
 

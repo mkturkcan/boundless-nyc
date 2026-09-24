@@ -15,6 +15,7 @@ street network, and returns pixel-exact ground truth through a Python API modell
 
 [Get started](api/getting_started.md){ .md-button .md-button--primary }
 [Python API](api/python_api.md){ .md-button }
+[Download for Windows](https://github.com/mkturkcan/boundless-nyc/releases){ .md-button }
 [Demo in the browser](https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc){ .md-button }
 [Compiled city](https://huggingface.co/datasets/mehmetkeremturkcan/boundless-nyc){ .md-button }
 

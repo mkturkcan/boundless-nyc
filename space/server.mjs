@@ -32,7 +32,7 @@ const COMPRESSIBLE = new Set(['.html', '.js', '.mjs', '.css', '.json', '.txt', '
 
 function cacheControl(urlPath, ext) {
   if (urlPath.startsWith('/assets/')) return 'public, max-age=31536000, immutable';   // content-hashed build output
-  if (ext === '.html') return 'no-cache';
+  if (ext === '.html' || ext === '.json') return 'no-cache';                          // entry point and manifests
   return 'public, max-age=86400';
 }
 

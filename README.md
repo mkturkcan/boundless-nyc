@@ -1,19 +1,16 @@
+<p align="center"><img src="docs/assets/figures/hero.jpg" alt="A simulator frame at W 125th St and Lenox Ave in Harlem, with its semantic segmentation and depth" width="100%"></p>
+
 # BoundlessNYC
 
-BoundlessNYC is a city-scale digital twin of New York City compiled from public municipal records. It combines:
-
-- a real-time WebGL2 renderer;
-- lane-level traffic and pedestrian simulation;
-- pixel-exact perception ground truth;
-- a client–server API modelled on CARLA.
-
-The simulator is intended for synthetic data generation, closed-loop scenario simulation and streetscape studies in
-which every modelled element can be traced to a public record.
+BoundlessNYC is a city-scale digital twin of New York City compiled from public municipal records. It combines a
+real-time WebGL2 renderer, lane-level traffic and pedestrian simulation, pixel-exact perception ground truth and a
+client–server API modelled on CARLA. It is intended for synthetic data generation, closed-loop scenario simulation and
+streetscape studies in which every modelled element can be traced to a public record.
 
 | | |
 |---|---|
 | Coverage | Manhattan, the Bronx, Brooklyn and Queens |
-| Buildings | 930,787 footprints from NYC Building Footprints, joined to PLUTO (use, class, floors, year) and to facade-inspection filings (wall material); 16 facade typologies with procedural architectural detail; 55 landmarks with dedicated models |
+| Buildings | 937,965: 930,787 NYC Building Footprints and 7,178 OpenStreetMap footprints, joined to PLUTO (use, class, floors, year) and to facade-inspection filings (wall material); 16 facade typologies with procedural architectural detail; 55 landmarks with dedicated models |
 | Streets | NYC Street Centerline (CSCL): widths, lane counts, direction, speed limits and grade separation become the carriageway, kerbs, sidewalks, markings and a routable lane graph |
 | Street furniture | Street trees, hydrants, bus shelters, LinkNYC kiosks, bicycle racks and subway entrances placed from their records; signals at junctions derived from the street network; lamps, signage and street furniture generated along the kerbs |
 | Streaming | 2,884 tiles of 512 m (1 km detail radius) and 210 far-field tiles of 2,048 m (13 km radius), 2.4 GB compiled |
@@ -23,25 +20,20 @@ which every modelled element can be traced to a public record.
 
 Links:
 
-- Demo (browser, WebGL2): <https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc>
+- Documentation: <https://mkturkcan.github.io/boundless-nyc/>
+- Demo in the browser (WebGL2): <https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc>
 - Compiled city, models and textures: <https://huggingface.co/datasets/mehmetkeremturkcan/boundless-nyc>
 - Simulation server binaries: <https://github.com/mkturkcan/boundless-nyc/releases>
-- Paper: [arXiv:2409.03022](https://arxiv.org/abs/2409.03022).
+- Paper: [arXiv:2409.03022](https://arxiv.org/abs/2409.03022)
 
-## Repository layout
+## How it works
 
-```
-boundlessjs/            renderer, simulation and perception client (three.js r185, Vite)
-  src/                  engine, streaming, materials, traffic, pedestrians, perception, API bridge
-  tools/pipeline/       city compiler: NYC Open Data -> binary tiles
-  public/               LUTs, fonts, data; tiles, models and textures are downloaded (BUILDING.md)
-src/                    building-generator library shared with the client (@nyc alias); index.html is its demo
-server/                 simulation server (Electron): TCP API, content serving, release builder
-PythonAPI/              `boundless` Python client, examples
-space/                  the Hugging Face Space: static server for the dataset's Content/
-tools/                  web packaging, headless rendering, perception export, asset build scripts
-docs/                   API reference, wire protocol, rendering techniques, building typologies
-```
+![From public records to ground truth: records, compiled tiles, the real-time render and its labels for one block of Harlem](docs/assets/figures/pipeline.jpg)
+
+A Node.js compiler reads the city's records and writes binary tiles. Building footprints are joined to tax lots and
+facade filings and classified into facade typologies. Street centrelines become carriageways, kerbs, crosswalks, lane
+paint and the lane and sidewalk graphs. The client streams the tiles around the camera, dresses the facades, simulates
+vehicles and pedestrians, and renders every frame together with its labels.
 
 ## Quick start
 
@@ -107,6 +99,8 @@ Frames are ENU metres (x east, y north, z up); attachment offsets are x forward,
 [docs/api/python_api.md](docs/api/python_api.md); the language-independent wire protocol is in
 [docs/api/protocol.md](docs/api/protocol.md).
 
+![RGB, semantic segmentation, instance segmentation with visible and amodal boxes, and depth for one step at W 120th St and Amsterdam Ave](docs/assets/figures/sensors.jpg)
+
 ## Performance
 
 Setup:
@@ -125,6 +119,33 @@ Setup:
 | RGB + semantic + instance, one pose | 180 | 0.28 |
 | RGB + semantic + instance, amodal boxes for 8 objects | 272 | 0.18 |
 | RGB + semantic + instance, plus a vehicle-mounted RGB camera | 274 | 0.18 |
+
+## Coverage
+
+![Every building of the four boroughs shaded by height, with the tile grid and the streaming radii around a camera in Harlem](docs/assets/figures/coverage.jpg)
+
+## Architecture and repository layout
+
+![The compiler, the compiled city, the interactive client, the simulation server and the Python API](docs/assets/figures/architecture.png)
+
+```
+boundlessjs/            renderer, simulation and perception client (three.js r185, Vite)
+  src/                  engine, streaming, materials, traffic, pedestrians, perception, API bridge
+  tools/pipeline/       city compiler: NYC Open Data -> binary tiles
+  public/               LUTs, fonts, data; tiles, models and textures are downloaded (BUILDING.md)
+src/                    building-generator library shared with the client (@nyc alias); index.html is its demo
+server/                 simulation server (Electron): TCP API, content serving, release builder
+PythonAPI/              `boundless` Python client, examples
+space/                  the Hugging Face Space: static server for the dataset's Content/
+tools/                  figures, web packaging, headless rendering, perception export, asset build scripts
+docs/                   documentation site, API reference, wire protocol, rendering techniques, building typologies
+```
+
+## Gallery
+
+![Six frames from the simulator: Fifth Avenue, 125th Street, Times Square at night, Harlem brownstones, Williamsburg in the rain and Columbia's Low Library](docs/assets/figures/gallery.jpg)
+
+The figures in this README are generated by `tools/figures/` from renders of the simulator and from the compiled tiles.
 
 ## Data and licensing
 

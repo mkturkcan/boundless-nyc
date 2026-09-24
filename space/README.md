@@ -8,10 +8,13 @@ short_description: Real-time digital twin of New York City from public records
 
 # BoundlessNYC: interactive demo
 
+![A simulator frame at W 125th St and Lenox Ave in Harlem, with its semantic segmentation and depth](assets/hero.jpg)
+
 A real-time WebGL2 rendering of BoundlessNYC, a digital twin of Manhattan, the Bronx, Brooklyn and Queens compiled
-from public municipal records. It includes 930,787 buildings, the street network with its recorded lane geometry,
+from public municipal records. It includes 937,965 buildings, the street network with its recorded lane geometry,
 street trees and street furniture, and simulated traffic and pedestrians. The browser streams 512 m tiles within
-1 km of the camera and far-field tiles within 13 km, so the first view loads in seconds. The full city is 2.4 GB.
+1 km of the camera and far-field tiles within 13 km, so it loads only the neighbourhood around the camera at full
+detail. The full city is 2.4 GB.
 
 **Requirements.** A desktop browser with WebGL2 (a current Chrome or Edge is recommended) and a discrete GPU. If mouse
 look does not engage inside the embedded page, open the app in its own tab.
@@ -31,6 +34,8 @@ look does not engage inside the embedded page, open the app in its own tab.
 the `Content/` folder of the dataset `mehmetkeremturkcan/boundless-nyc`, mounted read-only at `/data` as a Space
 volume. All rendering and simulation run in the browser. The simulation server with the Python API (synchronous
 stepping, sensors, ground truth) is distributed as a desktop build; see the repository.
+
+![Six frames from the simulator](assets/gallery.jpg)
 
 **Credits.** City data: NYC Open Data, NY State open data and © OpenStreetMap contributors (ODbL 1.0). Vehicle and
 pedestrian models: CARLA Simulator (carla.org), CC BY 4.0. Motion data: 100STYLE (CC BY 4.0). Textures and skies:

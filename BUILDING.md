@@ -14,7 +14,7 @@ platform-independent. Commands are written for a POSIX shell; on Windows, use Gi
 | Python API | Python ≥ 3.8; `numpy` optional; [uv](https://docs.astral.sh/uv/) optional (wheel builds) |
 | Downloads | `huggingface_hub` ≥ 1.0 for the `hf` command (`pip install -U huggingface_hub`; tested with 2.0) |
 
-## 1. Dependencies
+## Dependencies
 
 ```
 git clone https://github.com/mkturkcan/boundless-nyc.git
@@ -28,7 +28,7 @@ Recent npm releases may skip dependency install scripts. If `server/node_modules
 the install, run `node node_modules/electron/install.js` in `server/`. Release builds do not need this step, because
 the packager fetches the runtime itself.
 
-## 2. Binary banks: tiles, models, textures
+## Binary banks: tiles, models and textures
 
 Three binary banks under `boundlessjs/public/` are not under version control. The Hugging Face dataset
 `mehmetkeremturkcan/boundless-nyc` distributes them (folder `Content/`):
@@ -41,7 +41,7 @@ Three binary banks under `boundlessjs/public/` are not under version control. Th
 
 The smaller banks (`basis/`, `data/`, `fonts/`, `luts/`, `settings/`) are committed.
 
-### 2a. Download (recommended)
+### Download (recommended)
 
 ```
 hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.1.0 \
@@ -52,7 +52,7 @@ mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures b
 This fetches 3,737 files (3.1 GB). While the dataset is private, run `hf auth login` first with an account that has
 access.
 
-### 2b. Compile the tiles from public records
+### Compile the tiles from public records
 
 The models and textures come from the download in any case (omit `Content/tiles/*` from the command above). The
 tiles and the occlusion bake can be rebuilt from the public sources:
@@ -86,7 +86,7 @@ the CityGML landmark meshes. Regenerating them is optional; see the headers of `
 liveries. Rerunning them requires the CARLA 0.10.0 release, the 100STYLE archive and an Unreal-asset extraction step
 that is not part of this repository.
 
-## 3. Interactive client
+## Interactive client
 
 ```
 cd boundlessjs
@@ -95,7 +95,7 @@ npm run dev                          # http://127.0.0.1:5219
 
 Controls and URL parameters are listed in [boundlessjs/README.md](boundlessjs/README.md).
 
-## 4. Simulation server from source
+## Simulation server from source
 
 The server is an Electron host. It loads the client with `?api=1`, steps it on request and serves the TCP API
 (default port 2000).
@@ -111,7 +111,7 @@ Server options: `--port`, `--host`, `--res WxH`, `--headless`, `--content <dir>`
 `--quality high|medium`, `--start-lat/--start-lon` and `--verbose`. A URL option must use the `=` form, for example
 `--dev-url=http://127.0.0.1:5219`.
 
-## 5. Release build
+## Release build
 
 ```
 node server/build.mjs [--link] [--zip] [--skip-content] [--platform linux] [--out <dir>]
@@ -132,7 +132,7 @@ Options:
 - `--platform linux` cross-packages a Linux x64 server. It downloads that Electron runtime once. It has not been
   tested for this release.
 
-## 6. Python package
+## Python package
 
 ```
 pip install -e PythonAPI                          # editable install from source
@@ -141,7 +141,7 @@ uv build --wheel PythonAPI                        # -> PythonAPI/dist/boundless-
 
 The package has no required dependencies. `numpy` enables the array accessors (`to_numpy`, `instance_ids`, `mask`).
 
-## 7. Static web package
+## Static web package
 
 ```
 node tools/package.mjs [--zip] [--link] [--verify]
@@ -151,11 +151,30 @@ This writes `dist-package/`: the built client, its runtime assets and a dependen
 (`start.cmd` / `start.sh`). The client fetches `/settings/graphics.json` from the server root, so serve the package
 at a root path, not a sub-path.
 
-## 8. Tests
+## Tests
 
 ```
 (cd boundlessjs && npm test)         # geometry and tiling invariants (tools/tests/geometry.mjs, 81 checks)
 ```
+
+## Documentation site and figures
+
+```
+pip install "mkdocs>=1.6,<2" "mkdocs-material>=9.5,<10"
+mkdocs serve                         # http://127.0.0.1:8000, rebuilds on save
+mkdocs build --strict                # -> site/
+```
+
+The site is `docs/` with `mkdocs.yml`. `.github/workflows/docs.yml` publishes it to GitHub Pages once Pages is
+enabled for the repository (Source: GitHub Actions).
+
+`tools/figures/` regenerates the figures in `docs/assets/figures/`. The steps run in this order:
+
+1. `capture.py` renders the stills through the Python API, against a server started with `--res 2880x1620`.
+2. `depthvis.py` colour-maps the captured depth.
+3. `maps.mjs` and `citymap.mjs` draw the plans. They need the compiled tiles, and `maps.mjs` also needs the raw
+   downloads.
+4. `compose.mjs` lays out each figure and renders it with headless Chromium.
 
 ## Coordinate frames
 

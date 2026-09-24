@@ -4,7 +4,7 @@ BoundlessNYC is the boundless.js digital twin of New York City as a simulation s
 and simulates, and your code drives it over TCP through a Python API: you spawn and control vehicles and pedestrians,
 attach cameras, step the world, and read back images, segmentation, depth and bounding boxes.
 
-## 1. Start the server
+## Start the server
 
 Windows: double-click `StartServer.bat`, or run it from a terminal with options:
 
@@ -26,14 +26,14 @@ BoundlessNYC.exe --headless            no window (the GPU still renders)
 The first start compiles shaders and streams the city: allow a minute or two. `server.status` answers at once, and
 `Client.get_world()` waits for the city.
 
-## 2. Install the Python package
+## Install the Python package
 
 ```
 pip install PythonAPI/dist/boundless-0.1.0-py3-none-any.whl
 pip install numpy          # optional: arrays and box overlays
 ```
 
-## 3. Five lines
+## A first script
 
 ```python
 import boundless
@@ -43,7 +43,7 @@ here = world.get_map().geolocation_to_location(40.80955, -73.95905)
 print(world.get_map().get_junctions(center=here, radius=60)[0])
 ```
 
-## 4. The examples
+## The examples
 
 | script | shows |
 |---|---|
@@ -52,7 +52,7 @@ print(world.get_map().get_junctions(center=here, radius=60)[0])
 | `PythonAPI/examples/generate_traffic.py` | fills an area with autopilot traffic and wandering pedestrians |
 | `PythonAPI/examples/benchmark.py` | seconds per tick for common sensor setups on your machine |
 
-## 5. Synchronous stepping
+## Synchronous stepping
 
 ```python
 settings = world.get_settings()
@@ -65,7 +65,7 @@ for _ in range(200):
 world.apply_settings(settings)
 ```
 
-## 6. What the city is
+## What the city is
 
 - **Geometry:** New York City from open data: NYC building footprints, LiDAR heights, the street centreline, and
   planimetric sidewalks, curbs and paint. Streets carry signals, lanes, parking and the city's ambient traffic and

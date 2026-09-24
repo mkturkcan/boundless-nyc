@@ -14,8 +14,8 @@ npm install
 npm run dev                  # http://127.0.0.1:5219 (strict port)
 ```
 
-`public/tiles/` and `public/textures/cityao.*` must exist first; [../BUILDING.md](../BUILDING.md) (section 2) explains
-how to download or compile them. Click the canvas to capture the pointer. The session starts as a free-flying camera
+`public/tiles/`, `public/models/` and `public/textures/` must exist first; the binary-banks section of
+[../BUILDING.md](../BUILDING.md) explains how to download them or compile the tiles. Click the canvas to capture the pointer. The session starts as a free-flying camera
 over Morningside Heights.
 
 ### Controls

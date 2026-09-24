@@ -52,3 +52,9 @@ gpu.queue/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ---------------------------------------------------------------- figure sources (tools/figures: renders and maps)
+docs/assets/figures/raw/
+docs/assets/figures/maps/
+tools/figures/.*.html
+site/

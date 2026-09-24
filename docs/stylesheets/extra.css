@@ -1,0 +1,33 @@
+/* BoundlessNYC documentation theme: night-city dark by default, taxi-yellow accent. */
+:root {
+  --md-primary-fg-color: #0b1119;
+  --md-primary-fg-color--light: #1a2533;
+  --md-primary-fg-color--dark: #05080c;
+  --md-primary-bg-color: #eef3f8;
+  --md-accent-fg-color: #e0a800;
+  --md-accent-fg-color--transparent: rgba(224, 168, 0, 0.1);
+  --md-typeset-a-color: #9a6f00;
+}
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #0a0e14;
+  --md-default-fg-color--light: #a9b6c4;
+  --md-code-bg-color: #111822;
+  --md-typeset-a-color: #f7c325;
+  --md-accent-fg-color: #f7c325;
+  --md-footer-bg-color: #070a0f;
+  --md-footer-bg-color--dark: #05080c;
+}
+.md-header, .md-tabs { background-color: #0b1119; }
+.md-typeset h1, .md-typeset h2, .md-typeset h3 { font-weight: 700; letter-spacing: -0.02em; }
+.md-typeset h1 { font-size: 2.2em; }
+.md-typeset img { border-radius: 10px; }
+.md-typeset .hero { width: 100%; border-radius: 14px; box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45); margin: 0.2em 0 1.2em; }
+.md-typeset .lead { font-size: 1.2em; line-height: 1.6; color: var(--md-default-fg-color); }
+.md-typeset .md-button { border-radius: 8px; font-weight: 600; margin: 0.2em 0.4em 0.2em 0; }
+.md-typeset figure { margin: 1.4em 0 2em; max-width: 100%; }
+.md-typeset figure img { width: 100%; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.35); }
+.md-typeset figcaption { max-width: 100%; font-size: 0.78rem; color: var(--md-default-fg-color--light); text-align: left; }
+.md-typeset .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+[data-md-color-scheme="slate"] .md-typeset .md-button { color: #eef3f8; border-color: rgba(255, 255, 255, 0.28); }
+[data-md-color-scheme="slate"] .md-typeset .md-button--primary { background-color: #f7c325; border-color: #f7c325; color: #0b1119; }
+.md-typeset .md-button:focus, .md-typeset .md-button:hover { background-color: #f7c325; border-color: #f7c325; color: #0b1119; }

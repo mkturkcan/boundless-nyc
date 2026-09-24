@@ -1,0 +1,100 @@
+site_name: BoundlessNYC
+site_url: https://mkturkcan.github.io/boundless-nyc/
+site_description: >-
+  A real-time digital twin of New York City compiled from public records, with simulated traffic,
+  pixel-exact ground truth and a Python API.
+site_author: M. K. Turkcan
+repo_url: https://github.com/mkturkcan/boundless-nyc
+repo_name: mkturkcan/boundless-nyc
+edit_uri: ""
+copyright: BoundlessNYC. Data © NYC Open Data, NY State open data and OpenStreetMap contributors (ODbL).
+
+docs_dir: docs
+exclude_docs: |
+  api/RELEASE_README.md
+  techniques.md
+  interior-mapping.md
+  typology/
+  hooks/
+  overrides/
+  assets/figures/raw/
+  assets/figures/maps/
+
+theme:
+  name: material
+  custom_dir: docs/overrides
+  language: en
+  font:
+    text: Inter
+    code: JetBrains Mono
+  palette:
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+    - toc.follow
+  icon:
+    logo: material/city-variant-outline
+    repo: fontawesome/brands/github
+  favicon: assets/figures/favicon.svg
+
+extra_css:
+  - stylesheets/extra.css
+
+hooks:
+  - docs/hooks/repo_links.py
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.details
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+
+validation:
+  links:
+    not_found: info
+    unrecognized_links: info
+    anchors: info
+
+nav:
+  - Home: index.md
+  - Guide:
+      - Getting started: api/getting_started.md
+      - Interactive client: client.md
+      - Building from source: building.md
+  - Reference:
+      - Python API: api/python_api.md
+      - Wire protocol: api/protocol.md
+  - Data:
+      - Data sources: data-sources.md
+      - Acknowledgements: acknowledgements.md
+      - Citation: citation.md

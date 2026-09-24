@@ -1,6 +1,7 @@
 ---
 title: BoundlessNYC
 sdk: docker
+license: mit
 app_port: 7860
 pinned: false
 short_description: Real-time digital twin of New York City from public records
@@ -40,6 +41,10 @@ stepping, sensors, ground truth) is distributed as a desktop build; see the repo
 **Credits.** City data: NYC Open Data, NY State open data and © OpenStreetMap contributors (ODbL 1.0). Vehicle and
 pedestrian models: CARLA Simulator (carla.org), CC BY 4.0. Motion data: 100STYLE (CC BY 4.0). Textures and skies:
 Poly Haven and ambientCG (CC0). The complete list is in `ACKNOWLEDGEMENTS.md` in the repository.
+
+**Licensing.** The server code is MIT and the compiled city ODbL 1.0. The photoreal pedestrians contain components
+created with Epic Games' MetaHuman, which may not be used to train or enhance AI models; `LICENSING.md` in the
+repository explains the notice and the procedural alternative.
 
 **Citation.** M. K. Turkcan, Y. Li, C. Zang, J. Ghaderi, G. Zussman and Z. Kostic. *Boundless: Generating
 photorealistic synthetic data for object detection in urban streetscapes.* arXiv:2409.03022, 2024.

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "BoundlessNYC: shared dependencies of the client (boundlessjs/), the building generator (src/) and the render tools (tools/)",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "n8ao": "^2.0.1",

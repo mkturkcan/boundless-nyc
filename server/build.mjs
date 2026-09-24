@@ -8,7 +8,7 @@
 //     PythonAPI/                  the `boundless` package (source + wheel), examples, README
 //     Docs/                       getting started, Python API reference, wire protocol
 //     StartServer.bat / .sh       launchers (window / headless)
-//     README.md LICENSE ACKNOWLEDGEMENTS.md CITATION.cff
+//     README.md LICENSE LICENSING.md ACKNOWLEDGEMENTS.md CITATION.cff
 //
 //   node server/build.mjs                          Windows x64 release in release/ (content copied)
 //   node server/build.mjs --link                   hardlink the content instead of copying (same volume, instant)
@@ -85,7 +85,7 @@ await fs.mkdir(outRoot, { recursive: true });
     electronVersion: require('electron/package.json').version,
     out: stage, overwrite: true, asar: true, prune: true, quiet: true,
     ignore: [/^\/build\.mjs$/, /^\/node_modules($|\/)/, /^\/\.stage($|\/)/],
-    appVersion: VERSION, appCopyright: 'boundless.js authors',
+    appVersion: VERSION, appCopyright: 'Copyright (c) 2026 Mehmet Kerem Turkcan (MIT)',
     win32metadata: { CompanyName: 'boundless.js', FileDescription: 'BoundlessNYC simulation server', ProductName: 'BoundlessNYC', InternalName: 'BoundlessNYC' },
   });
   const built = outs[0];
@@ -145,7 +145,7 @@ if (!flag('skip-content') || !existsSync(path.join(rel, 'Content', 'index.html')
   if (existsSync(path.join(rel, 'LICENSE')) && !existsSync(path.join(rel, 'LICENSE.electron.txt'))) {
     await fs.rename(path.join(rel, 'LICENSE'), path.join(rel, 'LICENSE.electron.txt'));
   }
-  for (const f of ['LICENSE', 'ACKNOWLEDGEMENTS.md', 'CITATION.cff']) {
+  for (const f of ['LICENSE', 'LICENSING.md', 'ACKNOWLEDGEMENTS.md', 'CITATION.cff']) {
     if (existsSync(path.join(root, f))) await fs.copyFile(path.join(root, f), path.join(rel, f));
   }
   // the launchers clear ELECTRON_RUN_AS_NODE: inherited from an Electron-based parent (an editor's tool host), it makes

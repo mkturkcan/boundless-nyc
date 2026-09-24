@@ -2,8 +2,8 @@
 
 BoundlessNYC is compiled almost entirely from public records and openly licensed assets. This file lists every
 external source contained in the repository, the compiled city or the release builds, with the attribution each
-licence requires. [boundlessjs/DATA_SOURCES.md](boundlessjs/DATA_SOURCES.md) records, field by field, what each
-dataset contributes.
+licence requires. [LICENSING.md](LICENSING.md) gives the licence of each part of the project, and
+[boundlessjs/DATA_SOURCES.md](boundlessjs/DATA_SOURCES.md) records, field by field, what each dataset contributes.
 
 ## City data
 
@@ -58,9 +58,9 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
   NYC-specific edits: taxi and police liveries, New York licence plates, a plain white box-truck body, removed CARLA
   lettering and recalibrated skin tones. *Vehicle and pedestrian models: CARLA Simulator (carla.org), CC BY 4.0.*
 
-  Several CARLA 0.10.0 pedestrian assets carry MetaHuman naming. CARLA distributes them under its CC BY 4.0
-  declaration. Users who plan commercial use of imagery that shows these pedestrians should also review Epic Games'
-  MetaHuman terms.
+  The pedestrian bank contains components created with Epic Games' MetaHuman. Those components are subject to Epic's
+  MetaHuman licence in addition to CC BY 4.0, and Epic's terms do not allow using them to train or enhance AI models.
+  See the MetaHuman notice in [LICENSING.md](LICENSING.md) and the server option `--pedestrians procedural`.
 - **100STYLE** locomotion dataset: I. Mason, S. Starke and T. Komura, *Real-Time Style Modelling of Human Locomotion
   via Feature-Wise Transformations and Local Motion Phases*, 2022, Zenodo record 8127870. **CC BY 4.0.** Sixteen
   styles (walk and idle) and four further walks are retargeted onto the pedestrian skeleton
@@ -99,6 +99,11 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
 | @electron/packager | BSD-2-Clause | release packaging |
 | Playwright, puppeteer-core | Apache-2.0 | headless render harnesses (tooling only) |
 | ffmpeg-static | GPL-3.0-or-later | video tooling only; not bundled or distributed |
+| Turbo colour map, polynomial fit (Anton Mikhailov, Google) | Apache-2.0 | depth visualisation in `tools/figures/` |
+
+Design references, both MIT-licensed: BuildingGeneratorThreeJS by achrefelouafi for the precipitation and
+wet-surface model and the window air-conditioner kit, and Threejs-Awesome-Graphics-Agent-Skills for the
+precipitation-surface conventions.
 
 ## Reference imagery
 

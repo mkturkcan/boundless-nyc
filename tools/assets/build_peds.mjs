@@ -14,6 +14,7 @@
 // Sources: CARLA 0.10.0 content, CC-BY 4.0 (boundlessjs/DATA_SOURCES.md; provenance note in docs/notes/peds-veh-v2.md).
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 import { Document, NodeIO } from '@gltf-transform/core';
@@ -548,7 +549,9 @@ if (PROPSET) for (const F of FITS) {
 }
 const variants = readVariants();
 const bodies = {};
-const manifest = { version: 2, built: new Date().toISOString(), source: 'CARLA 0.10.0 walkers (CC-BY 4.0)', skeletons: {}, bodies: {}, variants: [], arrays: {} };
+// licence block: the bank contains MetaHuman-derived components (LICENSING.md, MetaHuman notice); NOTICE.md is written next to it
+const LICENSE_BLOCK = {"spdx":"CC-BY-4.0","source":"CARLA 0.10.0 walkers (carla.org)","metahuman":true,"notice":"NOTICE.md","terms":["https://creativecommons.org/licenses/by/4.0/","https://www.metahuman.com/license"],"note":"Contains components created with Epic Games MetaHuman; not for training or enhancing AI models. See NOTICE.md."};
+const manifest = { version: 2, built: new Date().toISOString(), source: 'CARLA 0.10.0 walkers (CC-BY 4.0)', license: LICENSE_BLOCK, skeletons: {}, bodies: {}, variants: [], arrays: {} };
 const bodyNames = [...new Set(variants.map((v) => v.mesh.split('/').pop()))].filter((n) => !ONLY || ONLY.includes(n));
 for (const name of bodyNames) {
   const t0 = Date.now();
@@ -629,4 +632,5 @@ if (!NOTEX) {
   if (want('hair')) manifest.arrays.hair.file = await encodeArray('hair', hair, HL, 4, 'color'); else keep('hair');
 }
 fs.writeFileSync(path.join(OUT, 'manifest.json'), JSON.stringify(manifest));
+fs.copyFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'peds24_NOTICE.md'), path.join(OUT, 'NOTICE.md'));
 console.log(`manifest: ${manifest.variants.length} variants, ${Object.keys(manifest.bodies).length} bodies in ${((Date.now() - t00) / 1000).toFixed(0)} s`);

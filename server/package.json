@@ -5,7 +5,7 @@
   "description": "boundless.js NYC simulation server: the digital twin as a CARLA-style server, driven over TCP by the boundless Python API",
   "main": "main.js",
   "private": true,
-  "license": "SEE LICENSE IN ../LICENSE",
+  "license": "MIT",
   "scripts": {
     "start": "electron . --",
     "dev": "electron . --dev-url=http://127.0.0.1:5219",

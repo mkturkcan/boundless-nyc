@@ -21,6 +21,7 @@ BoundlessNYC.exe --headless            no window (the GPU still renders)
 | `--time` | day | `day`, `golden`, `dusk`, `night` |
 | `--quality` | high | `medium` renders cheaper frames |
 | `--headless` | off | hide the window |
+| `--pedestrians` | photoreal | `procedural`: built-in pedestrians instead of the photoreal bank, whose MetaHuman-derived components may not be used to train AI models (`LICENSING.md`) |
 | `--log FILE` / `--verbose` | | server log |
 
 The first start compiles shaders and streams the city: allow a minute or two. `server.status` answers at once, and

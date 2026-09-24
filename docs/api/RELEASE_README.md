@@ -27,5 +27,7 @@ hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v{{V
 **Requirements.** Windows 10/11 x64 and a GPU with Direct3D 11. On hybrid laptops the server requests the discrete
 GPU. The Python package needs Python ≥ 3.8; `numpy` is optional.
 
-**Licence.** See `LICENSE`. Third-party data and assets are listed in `ACKNOWLEDGEMENTS.md`, with the attributions
-their licences require.
+**Licensing.** Code: MIT (`LICENSE`). Compiled city: ODbL 1.0. Vehicle, prop and pedestrian models: CC BY 4.0. The
+photoreal pedestrians contain MetaHuman-derived components that may not be used to train AI models. For training
+data, start the server with `--pedestrians procedural`. `LICENSING.md` covers every component, and
+`ACKNOWLEDGEMENTS.md` lists the required attributions.

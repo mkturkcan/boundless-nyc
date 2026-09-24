@@ -98,6 +98,9 @@ export function initApi(ctx) {
         id: `walker.pedestrian.${String(i).padStart(4, '0')}`, tags: ['walker', 'pedestrian', v.age || 'adult', v.gender || ''],
         attributes: { name: v.name, gender: v.gender || '', age: v.age || 'adult', build: v.build || 'regular', uniform: v.uniform || '', speed: 1.3, role_name: '' },
       })),
+      // procedural mannequins (server --pedestrians procedural): one blueprint, no third-party assets
+      ...(peds && !variants.length ? [{ id: 'walker.pedestrian.procedural', tags: ['walker', 'pedestrian', 'procedural'],
+        attributes: { name: 'procedural', gender: '', age: 'adult', build: 'regular', uniform: '', speed: 1.3, role_name: '' } }] : []),
       { id: 'controller.ai.walker', tags: ['controller', 'walker'], attributes: { max_speed: 1.4 } },
       ...cams,
     ];
@@ -264,8 +267,9 @@ export function initApi(ctx) {
   }
   function spawnWalker(bpId, attrs, T) {
     need(peds, 'no_walkers', 'the pedestrian simulation is not running');
-    const vi = parseInt(bpId.split('.').pop(), 10);
-    need(isFinite(vi) && vi >= 0 && vi < variants.length, 'unknown_blueprint', `unknown walker blueprint ${bpId}`);
+    const procedural = bpId === 'walker.pedestrian.procedural' && !variants.length;
+    const vi = procedural ? -1 : parseInt(bpId.split('.').pop(), 10);
+    need(procedural || (isFinite(vi) && vi >= 0 && vi < variants.length), 'unknown_blueprint', `unknown walker blueprint ${bpId}`);
     need(peds.peds.length < peds.cap, 'pool_full', 'no free walker slot');
     const pi = rig.pool ? rig.pool.indexOf(vi) : -1;
     const skin = pi >= 0 ? (pi + 0.5) / rig.pool.length : Math.random();

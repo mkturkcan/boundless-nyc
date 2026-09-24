@@ -7,7 +7,7 @@ site_author: M. K. Turkcan
 repo_url: https://github.com/mkturkcan/boundless-nyc
 repo_name: mkturkcan/boundless-nyc
 edit_uri: ""
-copyright: BoundlessNYC. Data © NYC Open Data, NY State open data and OpenStreetMap contributors (ODbL).
+copyright: Code MIT, documentation CC BY 4.0, compiled city ODbL 1.0. Data © NYC Open Data, NY State open data and OpenStreetMap contributors.
 
 docs_dir: docs
 exclude_docs: |
@@ -95,6 +95,7 @@ nav:
       - Python API: api/python_api.md
       - Wire protocol: api/protocol.md
   - Data:
+      - Licensing: licensing.md
       - Data sources: data-sources.md
       - Acknowledgements: acknowledgements.md
       - Citation: citation.md

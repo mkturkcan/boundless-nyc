@@ -22,6 +22,7 @@ authors:
     given-names: Mehmet Kerem
     affiliation: Columbia University
 repository-code: "https://github.com/mkturkcan/boundless-nyc"
+license: MIT
 keywords:
   - digital twin
   - New York City

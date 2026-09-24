@@ -1,30 +1,21 @@
-LICENCE — NOT YET CHOSEN
-========================
+MIT License
 
-This file is a placeholder. The copyright holder has not yet selected a licence, and until this file is replaced
-no licence is granted: all rights are reserved by default under copyright law. Do not assume permission to copy,
-modify or redistribute the code.
+Copyright (c) 2026 Mehmet Kerem Turkcan
 
-Suggested arrangement:
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-  * Code: MIT. Replace this file with the MIT text (https://opensource.org/license/mit), the year and the copyright
-    holder's name.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-  * Data and third-party assets are not the copyright holder's to relicense. They remain under the terms of their
-    sources, whatever this file eventually says (details in ACKNOWLEDGEMENTS.md):
-
-      NYC Open Data and NY State open data           — the respective open-data terms of use
-      OpenStreetMap-derived data                     — ODbL 1.0, © OpenStreetMap contributors; attribution required,
-                                                       share-alike applies to derived databases
-      USGS 3DEP elevation, FHWA MUTCD outlines       — public domain
-      Poly Haven and ambientCG textures and skies    — CC0 1.0
-      CARLA 0.9.15 / 0.10.0 vehicles, pedestrians
-        and props; 100STYLE motion data; Sketchfab
-        bag models                                   — CC BY 4.0; attribution required
-      Inter typeface                                 — SIL Open Font License 1.1
-      npm dependencies and the Electron runtime      — their own licences
-
-  * Google Street View imagery is not part of this repository or of any build, and is not redistributable under
-    any terms. It was used for on-screen visual comparison only.
-
-When this file is replaced, also set the licence fields in CITATION.cff and in the package.json files.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

@@ -12,7 +12,7 @@
 //
 //   BoundlessNYC.exe [--port 2000] [--host 127.0.0.1] [--res 1280x720] [--headless] [--content <dir>]
 //                    [--dev-url=http://127.0.0.1:5219] [--start-lat 40.80955 --start-lon -73.95905] [--time day]
-//                    [--quality high|medium] [--verbose]
+//                    [--quality high|medium] [--pedestrians photoreal|procedural] [--verbose]
 'use strict';
 const { app, BrowserWindow, Menu, protocol, net, ipcMain } = require('electron');
 const path = require('node:path');
@@ -45,6 +45,9 @@ const START_LAT = Number(opt('start-lat', '40.80955'));   // W 120th St & Amster
 const START_LON = Number(opt('start-lon', '-73.95905'));
 const TIME = opt('time', 'day');
 const QUALITY = opt('quality', 'high');
+// photoreal: the CARLA 0.10 walker bank, which contains MetaHuman-derived components (LICENSING.md); procedural: the
+// built-in articulated mannequins, no third-party assets (use it for frames meant as AI training data)
+const PEDESTRIANS = opt('pedestrians', 'photoreal');
 // --log <file>: a GUI app on Windows has no console to print to, so the log can also go to a file
 const LOG_FILE = opt('log');
 const log = (...a) => {
@@ -200,6 +203,7 @@ app.whenReady().then(() => {
   const sx = (START_LON - LON0) * M_LON, sz = -(START_LAT - LAT0) * M_LAT;
   const q = new URLSearchParams({ api: '1', hud: '0', clean: '1', life: '0', x: sx.toFixed(1), z: sz.toFixed(1), y: '60', time: TIME, pedtarget: '520', lmwait: '150' });
   if (QUALITY === 'medium') q.set('crowdlod', '15,45');
+  if (PEDESTRIANS === 'procedural') q.set('crowd', '0');
   const base = DEV_URL ? DEV_URL.replace(/\/$/, '') + '/' : 'boundless://app/';
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({

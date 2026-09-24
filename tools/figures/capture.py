@@ -62,7 +62,8 @@ def pose(m, s):
 
 
 def turbo(x):
-    """Turbo colour map (polynomial fit, Mikhailov 2019) for x in [0, 1] -> uint8 RGB (numpy)."""
+    """Turbo colour map for x in [0, 1] -> uint8 RGB (numpy). Polynomial fit of Turbo by Anton Mikhailov (Google, 2019),
+    Apache-2.0."""
     import numpy as np
     x = np.clip(x, 0.0, 1.0)
     r = 0.13572138 + x * (4.61539260 + x * (-42.66032258 + x * (132.13108234 + x * (-152.94239396 + x * 59.28637943))))

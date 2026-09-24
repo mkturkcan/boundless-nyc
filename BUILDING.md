@@ -49,7 +49,7 @@ hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.1
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 ```
 
-This fetches 3,737 files (3.1 GB). While the dataset is private, run `hf auth login` first with an account that has
+This fetches 3,738 files (3.1 GB). While the dataset is private, run `hf auth login` first with an account that has
 access.
 
 ### Compile the tiles from public records
@@ -108,8 +108,9 @@ python PythonAPI/examples/quickstart.py
 ```
 
 Server options: `--port`, `--host`, `--res WxH`, `--headless`, `--content <dir>`, `--time day|golden|dusk|night`,
-`--quality high|medium`, `--start-lat/--start-lon` and `--verbose`. A URL option must use the `=` form, for example
-`--dev-url=http://127.0.0.1:5219`.
+`--quality high|medium`, `--pedestrians photoreal|procedural`, `--start-lat/--start-lon` and `--verbose`. A URL
+option must use the `=` form, for example `--dev-url=http://127.0.0.1:5219`. `--pedestrians procedural` renders the
+built-in pedestrians instead of the photoreal bank; use it for frames meant as AI training data (LICENSING.md).
 
 ## Release build
 

@@ -13,7 +13,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@dgreenheck/ez-tree": "^1.1.0",

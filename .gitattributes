@@ -1,0 +1,52 @@
+# Deterministic line endings and explicit binary marking.
+#
+# The large binary banks (tiles, models, textures) are distributed through the
+# Hugging Face dataset, not this repository. The binaries that remain (LUTs,
+# fonts, the Basis transcoder) and any locally installed banks are declared
+# binary outright, so no checkout can mangle them.
+
+# text files: LF in the repository, native in the working copy
+*                text=auto
+
+# source and docs: always LF
+*.js             text eol=lf
+*.mjs            text eol=lf
+*.json           text eol=lf
+*.html           text eol=lf
+*.css            text eol=lf
+*.md             text eol=lf
+*.yml            text eol=lf
+*.cff            text eol=lf
+*.py             text eol=lf
+*.cube           text eol=lf
+*.sh             text eol=lf
+*.cmd            text eol=crlf
+
+# ---------------------------------------------------------------- binary assets
+*.ktx2           binary
+*.basis          binary
+*.hdr            binary
+*.exr            binary
+*.jpg            binary
+*.jpeg           binary
+*.png            binary
+*.webp           binary
+*.glb            binary
+*.gltf           binary
+*.wasm           binary
+*.bin            binary
+*.blend          binary
+*.zip            binary
+*.mp4            binary
+*.mov            binary
+*.mp3            binary
+*.wav            binary
+*.shp            binary
+*.dbf            binary
+
+# derived / archive-only, keep out of language statistics and diffs
+boundlessjs/public/textures/**   linguist-vendored
+boundlessjs/public/models/**     linguist-vendored
+boundlessjs/public/luts/**       linguist-vendored
+boundlessjs/public/basis/**      linguist-vendored
+docs/techniques.md               linguist-documentation

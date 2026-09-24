@@ -1,0 +1,28 @@
+{
+  "name": "boundless.js",
+  "version": "1.0.0",
+  "description": "boundless.js - photorealistic, real-data NYC digital twin for public-facing simulation (Turkcan et al., arXiv:2409.03022)",
+  "main": "index.js",
+  "scripts": {
+    "test": "node tools/tests/geometry.mjs",
+    "dev": "vite",
+    "build": "vite build",
+    "fetch": "node tools/pipeline/fetch.mjs",
+    "compile": "node --max-old-space-size=6144 tools/pipeline/compile.mjs",
+    "shot": "node tools/shot.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "dependencies": {
+    "@dgreenheck/ez-tree": "^1.1.0",
+    "earcut": "^3.2.3",
+    "pngjs": "^7.0.0",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.3.0",
+    "vite": "^8.1.3"
+  }
+}

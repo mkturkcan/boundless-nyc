@@ -1,0 +1,71 @@
+cff-version: 1.2.0
+title: "BoundlessNYC: a real-data, real-time digital twin of New York City"
+message: >-
+  If you use this software, the compiled city or imagery rendered with it, please
+  cite this repository and the Boundless paper listed under preferred-citation.
+type: software
+version: "0.1.0"
+abstract: >-
+  A city-scale digital twin of four New York City boroughs compiled from public
+  municipal records. 930,787 building footprints, joined to tax-lot records and
+  facade-inspection filings, are extruded, classified into 16 facade typologies
+  and dressed with procedural architectural detail. Street centrelines with their
+  recorded widths, lane counts, directions and speed limits become the roadbed,
+  sidewalks, markings and the lane graph on which traffic is simulated. The city
+  is compiled offline into 2,884 binary 512 m tiles and 210 far-field 2,048 m
+  tiles, which a WebGL2 client streams within a 1 km detail radius and a 13 km
+  far-field radius. A CARLA-style server and Python API provide synchronous
+  stepping, vehicle and pedestrian control, and RGB, semantic, instance and depth
+  sensors with per-object visible and amodal boxes.
+authors:
+  - family-names: Turkcan
+    given-names: Mehmet Kerem
+    affiliation: Columbia University
+repository-code: "https://github.com/mkturkcan/boundless-nyc"
+keywords:
+  - digital twin
+  - New York City
+  - urban simulation
+  - synthetic data
+  - procedural generation
+  - semantic segmentation
+  - WebGL
+  - open data
+references:
+  - type: data
+    title: "NYC Open Data (Building Footprints, PLUTO, CSCL, Street Tree Census and others)"
+    institution:
+      name: City of New York
+    url: "https://opendata.cityofnewyork.us/"
+  - type: data
+    title: "OpenStreetMap"
+    notes: "© OpenStreetMap contributors, ODbL 1.0"
+    url: "https://www.openstreetmap.org/copyright"
+  - type: software
+    title: "CARLA Simulator"
+    notes: "Vehicle, pedestrian and prop assets, CC BY 4.0"
+    url: "https://carla.org"
+preferred-citation:
+  type: article
+  title: >-
+    Boundless: Generating photorealistic synthetic data for object detection in
+    urban streetscapes
+  authors:
+    - family-names: Turkcan
+      given-names: Mehmet Kerem
+    - family-names: Li
+      given-names: Yuyang
+    - family-names: Zang
+      given-names: Chengbo
+    - family-names: Ghaderi
+      given-names: Javad
+    - family-names: Zussman
+      given-names: Gil
+    - family-names: Kostic
+      given-names: Zoran
+  journal: "arXiv preprint arXiv:2409.03022"
+  year: 2024
+  identifiers:
+    - type: other
+      value: "arXiv:2409.03022"
+  url: "https://arxiv.org/abs/2409.03022"

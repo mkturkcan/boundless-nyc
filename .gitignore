@@ -1,0 +1,54 @@
+# Derived artefacts are not committed: they are reproducible from the pipeline (BUILDING.md) or downloadable from the
+# Hugging Face dataset. Raw downloads and third-party reference imagery are never committed.
+
+# ---------------------------------------------------------------- toolchain
+node_modules/
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.cache/
+.vite/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------- build output
+dist/
+dist-*/
+release/
+PythonAPI/build/
+PythonAPI/dist/
+server/.stage/
+
+# ---------------------------------------------------------------- binary banks (BUILDING.md: download, or compile tiles)
+# distributed through the Hugging Face dataset mehmetkeremturkcan/boundless-nyc (Content/)
+boundlessjs/public/tiles/
+boundlessjs/public/tiles_*/
+boundlessjs/public/models/
+boundlessjs/public/textures/
+
+# ---------------------------------------------------------------- raw source data (npm run fetch)
+boundlessjs/data/
+boundlessjs/raw_data/
+
+# ---------------------------------------------------------------- reference imagery (not redistributable)
+refs/
+ref_*.png
+
+# ---------------------------------------------------------------- renders, logs, local state
+shots/
+screenshots/
+boundlessjs/shots/
+_out/
+*.log
+*.mp4
+*.mov
+*.zip
+*.7z
+*.tar.gz
+tools/gpu.lock
+gpu.queue/
+.env
+.env.*
+.DS_Store
+Thumbs.db
+desktop.ini

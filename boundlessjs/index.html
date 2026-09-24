@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>boundless.js — NYC</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  html, body { margin: 0; padding: 0; overflow: hidden; background: #0a0e14; height: 100%; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  #hud { position: fixed; inset: 0; pointer-events: none; font-family: 'Segoe UI', system-ui, sans-serif; color: #eaf0f6; }
+  #cross { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; transform: translate(-50%, -50%); opacity: 0.9; }
+  #cross svg { display: block; }
+  #loc { position: absolute; top: 14px; left: 16px; font-size: 13px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; text-shadow: 0 1px 3px rgba(0,0,0,0.7); }
+  #loc b { font-size: 17px; display: block; letter-spacing: 0.16em; }
+  #stats { position: absolute; bottom: 12px; left: 16px; font-size: 12px; opacity: 0.8; text-shadow: 0 1px 3px rgba(0,0,0,0.7); line-height: 1.5; }
+  #tethers { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 26px; }
+  .teth { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.55); transition: all 0.12s; }
+  .teth.on { background: #7dd4ff; border-color: #bfeaff; box-shadow: 0 0 12px #7dd4ff; }
+  #help { position: absolute; top: 14px; right: 16px; font-size: 12px; text-align: right; opacity: 0.75; text-shadow: 0 1px 3px rgba(0,0,0,0.8); line-height: 1.55; }
+  #credits { position: absolute; bottom: 8px; right: 12px; font-size: 10px; opacity: 0.6; text-align: right; text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+  #msg { position: absolute; left: 50%; top: 42%; transform: translate(-50%, -50%); font-size: 15px; letter-spacing: 0.2em; text-transform: uppercase; opacity: 0; transition: opacity 0.5s; text-shadow: 0 2px 8px rgba(0,0,0,0.8); }
+  #loading { position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 40%, #16202e, #070a10); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #cfe0f0; font-family: 'Segoe UI', system-ui, sans-serif; z-index: 10; transition: opacity 0.7s; }
+  #loading h1 { letter-spacing: 0.5em; font-weight: 300; font-size: 34px; margin: 0 0 6px; }
+  #loading h1 b { font-weight: 700; }
+  #loading p { letter-spacing: 0.22em; font-size: 11px; text-transform: uppercase; opacity: 0.7; }
+  #bar { width: 320px; height: 3px; background: rgba(255,255,255,0.12); margin-top: 18px; border-radius: 2px; overflow: hidden; }
+  #bar div { height: 100%; width: 0%; background: linear-gradient(90deg, #4aa8e0, #7dd4ff); transition: width 0.25s; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="hud">
+  <div id="cross"><svg width="22" height="22"><circle cx="11" cy="11" r="3.5" fill="none" stroke="#fff" stroke-width="1.4"/><line x1="11" y1="0" x2="11" y2="6" stroke="#fff" stroke-width="1.2"/><line x1="11" y1="16" x2="11" y2="22" stroke="#fff" stroke-width="1.2"/><line x1="0" y1="11" x2="6" y2="11" stroke="#fff" stroke-width="1.2"/><line x1="16" y1="11" x2="22" y2="11" stroke="#fff" stroke-width="1.2"/></svg></div>
+  <div id="loc"><span>New York City</span><b id="hood">-</b></div>
+  <div id="stats"></div>
+  <div id="tethers"><div class="teth" id="tL"></div><div class="teth" id="tR"></div></div>
+  <div id="help">Click to fly. WASD move, mouse look<br/>Shift rise, Ctrl descend, <b>Tab</b> first-person<br/>G graphics, T time, 1-6 teleport, R rain, H help</div>
+  <div id="msg"></div>
+  <div id="credits">NYC Open Data · © OpenStreetMap contributors (ODbL) · vehicles and pedestrians: CARLA (CC BY 4.0) · full credits: ACKNOWLEDGEMENTS.md</div>
+</div>
+<div id="loading"><h1>boundless<b>.js</b></h1><p>photorealistic urban digital twin, loading manhattan</p><div id="bar"><div></div></div></div>
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "nyc-twin-asset-pipeline",
+  "private": true,
+  "type": "module",
+  "description": "Offline asset pipeline for the NYC twin's vehicles and pedestrians (CARLA 0.10 CC-BY 4.0 sources -> web-ready glTF)",
+  "dependencies": {
+    "@gltf-transform/core": "^4.2.1",
+    "@gltf-transform/extensions": "^4.2.1",
+    "@gltf-transform/functions": "^4.2.1",
+    "meshoptimizer": "^0.25.0",
+    "sharp": "^0.35.4"
+  }
+}

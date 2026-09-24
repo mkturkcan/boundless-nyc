@@ -1,0 +1,977 @@
+// FLEET24 — the CARLA 0.10 (2024) vehicle set (CC-BY 4.0, see DATA_SOURCES.md) for the traffic sim.
+// docs/notes/peds-veh-v2.md. `?fleet24=0` restores the legacy 0.9.15 fleet (sim/vehicles.js + sim/vehicleCull.js).
+//
+// Assets come from tools/assets/build_vehicle.mjs: one GLB per kind in public/models/fleet24/ with three LOD nodes
+// (LOD0 ~140k tris, LOD1 = CARLA's parked mesh ~10k, LOD2 ~3k), KTX2 textures, meshopt geometry, and per-vertex
+// `_wheel` (1..4 = FL FR RL RR) and `_lamp` (role, ROLE below) attributes. Model frame: +Z forward, +Y up, origin at
+// the ground centre, left side at +X.
+//
+// Rendering follows sim/vehicleCull.js: traffic.js keeps writing matrices/colours into its pool meshes, which are
+// invisible STORAGE here. Each frame the visible vehicles are compacted into per-(kind, pool, LOD) render sets — one
+// InstancedMesh per material part, all parts of a set SHARING one instance-matrix attribute and one per-instance data
+// attribute pair — plus shadow-only sets inside the near shadow box. Per-car state that the storage does not carry
+// (wheel spin, steering, brake, indicators) is derived from each slot's motion between frames.
+import * as THREE from 'three';
+import { ENV, applySnowCap, applySpecAA } from '../world/materials.js';
+import { Instancer } from '../city/instancer.js';
+import { csVehicles } from '../city/contactShadow.js';
+
+const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
+const BASE = 'models/fleet24/';
+const LODD = (QS.get('f24lod') || '24,75').split(',').map(Number);   // LOD0 < 24 m, LOD1 < 75 m, LOD2 beyond
+const LOD0_2 = LODD[0] * LODD[0], LOD1_2 = LODD[1] * LODD[1];
+const PAD_MAIN = 3, PAD_SHADOW = 12;
+
+// kind table. w: share of the MOVING spawn bag (of ~100), pw: parked share, cap: moving storage slots
+export const KIND24 = {
+  taxi: { w: 3, pw: 1, cap: 30, palette: 'taxi' },        // the Crown Victoria cab (retired from NYC ~2018): a rare sight
+  // TODAY'S CAB: most NYC yellow cabs are Toyota Camry / RAV4 / Sienna hybrids in the TLC "T" livery
+  // (refs/pv2/c_New_York_City_yellow_taxicabs*.jpg). No CC-BY Toyota exists; the 2024 Lincoln MKZ body is a Camry-sized
+  // sedan (4.89 m, 2.87 m wheelbase vs 4.88 / 2.83), so taxi2 = that body + taxi yellow + TLC livery + a roof light.
+  taxi2: { w: 13, pw: 3, cap: 120, palette: 'taxi', base: 'lincoln' },
+  lincoln: { w: 12, pw: 4, cap: 100, palette: 'black' },
+  suv: { w: 21, pw: 7, cap: 150, palette: 'car' },
+  charger: { w: 8, pw: 3, cap: 80, palette: 'car' },
+  impala: { w: 6, pw: 3, cap: 60, palette: 'car' },       // PV2 variety: the older CARLA sedans (build_vehicle.mjs); the 16k-tri
+                                                          // Impala reads dated inside ~8 m, so it stays a minority
+  mercedes: { w: 6, pw: 3, cap: 60, palette: 'car' },
+  mini: { w: 5, pw: 3, cap: 50, palette: 'car' },
+  van: { w: 14, pw: 3, cap: 110, palette: 'van' },
+  boxtruck: { w: 8, pw: 1, cap: 70, palette: 'truck' },
+  police: { w: 3, pw: 1, cap: 30, palette: 'livery' },
+  ambulance: { w: 1, pw: 0, cap: 12, palette: 'livery' },
+  minibus: { w: 1, pw: 0, cap: 12, palette: 'truck' },    // a Japanese Fuso Rosa: rare shuttle duty only
+  firetruck: { w: 1, pw: 0, cap: 8, palette: 'livery' },
+};
+// scene.environmentIntensity mirrored per frame: vehicle materials carry their OWN envMap (so their specular
+// reflection runs at full strength) but their env DIFFUSE is scaled back to what the rest of the scene gets
+const F24ENV = { value: 0.22 };
+export const ROLE = { head: 1, fbl: 2, fbr: 3, tail: 4, rbl: 5, rbr: 6, rev: 7, sirenR: 8, sirenB: 9 };
+// lamp mask bits (per instance)
+const L_HEAD = 1, L_TAIL = 2, L_BRAKE = 4, L_BLINKL = 8, L_BLINKR = 16, L_SIREN = 32;
+
+const TAXI_YELLOW = new THREE.Color(0xf2b705);
+
+// ---------------------------------------------------------------- shader patches
+// wheel spin (about +X through the hub) and front-wheel steer (about +Y), per vertex `_wheel`, per instance aVeh.xy
+const WHEEL_VERT_PARS = /* glsl */ `
+attribute float _wheel;
+attribute vec4 aVeh;     // x spin (rad), y steer (rad), z lamp mask, w seed
+attribute vec4 aPaint;   // x metallic, y dirt, z roughness, w -
+attribute vec3 aCol;     // paint colour (linear)
+uniform vec4 uHub[4];    // xyz hub centre, w radius
+varying vec4 vPaint;
+varying vec3 vCol;
+varying float vLampMask;
+varying float vSeed;
+varying vec3 vObjPos;
+varying vec3 vObjN;
+vec3 f24Wheel(vec3 p, int wi, bool isNormal) {
+  vec4 hub = uHub[wi - 1];
+  vec3 q = isNormal ? p : p - hub.xyz;
+  float c = cos(aVeh.x), s = sin(aVeh.x);
+  q = vec3(q.x, c * q.y - s * q.z, s * q.y + c * q.z);
+  if (wi <= 2) { float cs = cos(aVeh.y), ss = sin(aVeh.y); q = vec3(cs * q.x + ss * q.z, q.y, -ss * q.x + cs * q.z); }
+  return isNormal ? q : q + hub.xyz;
+}
+`;
+const WHEEL_VERT_NORMAL = /* glsl */ `
+#include <beginnormal_vertex>
+int f24wi = int(_wheel + 0.5);
+if (f24wi > 0) objectNormal = f24Wheel(objectNormal, f24wi, true);
+vObjN = objectNormal;
+`;
+const WHEEL_VERT_POS = /* glsl */ `
+#include <begin_vertex>
+if (f24wi > 0) transformed = f24Wheel(transformed, f24wi, false);
+vPaint = aPaint; vCol = aCol; vLampMask = aVeh.z; vSeed = aVeh.w; vObjPos = position;
+`;
+const FRAG_PARS = /* glsl */ `
+uniform float f24Night;
+uniform sampler2D f24Decal;
+uniform vec4 f24DecalBox;
+uniform float f24Env;
+float f24h(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float f24n(vec3 x) {
+  vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(mix(f24h(i), f24h(i + vec3(1, 0, 0)), f.x), mix(f24h(i + vec3(0, 1, 0)), f24h(i + vec3(1, 1, 0)), f.x), f.y),
+             mix(mix(f24h(i + vec3(0, 0, 1)), f24h(i + vec3(1, 0, 1)), f.x), mix(f24h(i + vec3(0, 1, 1)), f24h(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+varying vec4 vPaint;
+varying vec3 vCol;
+varying float vLampMask;
+varying float vSeed;
+varying vec3 vObjPos;
+varying vec3 vObjN;
+`;
+
+function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = null, sizeY = 1.5, decal = null, plate = false } = {}) {
+  const prev = mat.onBeforeCompile;
+  const hubU = { value: (hubs || []).concat([0, 0, 0, 0].map(() => ({ p: [0, -100, 0], r: 0 }))).slice(0, 4).map((h) => new THREE.Vector4(h.p[0], h.p[1], h.p[2], h.r)) };
+  mat.onBeforeCompile = (sh, r) => {
+    sh.uniforms.uHub = hubU;
+    sh.uniforms.f24Night = ENV.night;
+    sh.uniforms.f24Time = ENV.time;
+    sh.uniforms.f24Env = F24ENV;
+    if (decal) { sh.uniforms.f24Decal = { value: decal.tex }; sh.uniforms.f24DecalBox = { value: decal.box }; }
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n' + WHEEL_VERT_PARS)
+      .replace('#include <beginnormal_vertex>', WHEEL_VERT_NORMAL)
+      .replace('#include <begin_vertex>', WHEEL_VERT_POS);
+    // PLATE ATLAS: each car shows its own plate — a cell of the 8 x 8 atlas picked from the instance seed (cabs: the TLC
+    // row, others: the 56 NY rows)
+    if (plate) sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+      #ifdef USE_MAP
+      {
+        float pid = floor(fract(aVeh.w * 13.37 + 0.123) * ${/taxi/.test(kind) ? '8.0' : '56.0'})${/taxi/.test(kind) ? ' + 56.0' : ''};
+        vMapUv = (vMapUv + vec2(mod(pid, 8.0), floor(pid / 8.0))) / 8.0;
+      }
+      #endif`);
+    let fs = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_PARS + 'uniform float f24Time;\n');
+    fs = fs.replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
+      #ifdef USE_ENVMAP
+        iblIrradiance *= f24Env / max(envMapIntensity, 1e-3);
+      #endif`);
+    // albedo trim: the scene's sun and sky are hot by design (traffic.js vhTrim, materials.js applyLightTrim)
+    const trimDay = paint ? 0.82 : 0.88;
+    fs = fs.replace('#include <color_fragment>', `#include <color_fragment>
+      diffuseColor.rgb *= mix(${trimDay.toFixed(3)}, 1.0, f24Night);`);
+    if (paint) {
+      fs = fs.replace('#include <color_fragment>', `#include <color_fragment>
+      {
+        diffuseColor.rgb *= vCol;
+        ${decal ? `// SIDE DECAL SHEET (NYPD livery): object-space projection on the side panels; row 0 = the car's left (+X, front at
+        // the sheet's left), row 1 = its right (-X, mirrored layout), v = height over the sheet's top
+        if (abs(vObjN.x) > 0.25 && vObjPos.y < f24DecalBox.z) {
+          float ds = (f24DecalBox.x - vObjPos.z) / f24DecalBox.y;
+          float drow = vObjN.x > 0.0 ? 0.0 : 1.0;
+          vec2 duv = vec2(drow < 0.5 ? ds : 1.0 - ds, (drow + clamp(vObjPos.y / f24DecalBox.z, 0.0, 0.999)) * 0.5);
+          vec4 dc = texture2D(f24Decal, duv);
+          diffuseColor.rgb = mix(diffuseColor.rgb, dc.rgb, dc.a * smoothstep(0.25, 0.45, abs(vObjN.x)));
+        }` : ''}
+        // road film: a smooth rise toward the sills and wheel arches, streaked vertically — never splotches
+        // (thresholded blob noise read as dents and mud splats on the 125th St taxi)
+        float h = vObjPos.y / ${sizeY.toFixed(3)};
+        float n = 0.65 + 0.35 * f24n(vec3(vObjPos.x * 1.7, vObjPos.y * 11.0, vObjPos.z * 1.7) + vSeed * 37.0);
+        float dirt = vPaint.y * pow(1.0 - smoothstep(0.02, 0.5, h), 1.6) * n;
+        vec3 grime = vec3(0.30, 0.28, 0.25) * dot(diffuseColor.rgb, vec3(0.3333)) + vec3(0.045, 0.040, 0.034);
+        diffuseColor.rgb = mix(diffuseColor.rgb, grime, clamp(dirt, 0.0, 0.7));
+      }`)
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+      roughnessFactor = mix(vPaint.z, 0.7, clamp(vPaint.y * pow(1.0 - smoothstep(0.02, 0.5, vObjPos.y / ${sizeY.toFixed(3)}), 1.6), 0.0, 0.8));`)
+        .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+      metalnessFactor = vPaint.x;`);
+    }
+    if (lamp) {
+      // day: a tinted lens over a bright reflector; lit roles add emissive
+      fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      {
+        int role = int(vLamp + 0.5);
+        int m = int(vLampMask + 0.5);
+        vec3 tint = role == 4 ? vec3(0.9, 0.04, 0.03) : (role == 2 || role == 3 || role == 5 || role == 6) ? vec3(1.0, 0.45, 0.03)
+          : role == 8 ? vec3(1.0, 0.05, 0.03) : role == 9 ? vec3(0.08, 0.2, 1.0) : vec3(1.0, 0.96, 0.88);
+        diffuseColor.rgb *= mix(vec3(1.0), tint, 0.85);
+        float blink = step(0.5, fract(f24Time * 1.5));
+        float e = 0.0;
+        if (role == 1) e = ((m & 1) != 0 ? 7.0 : 0.0);
+        else if (role == 4) e = ((m & 4) != 0 ? 6.0 : ((m & 2) != 0 ? 1.6 : 0.0));
+        else if (role == 2 || role == 5) e = ((m & 8) != 0 ? 6.0 * blink : 0.0);
+        else if (role == 3 || role == 6) e = ((m & 16) != 0 ? 6.0 * blink : 0.0);
+        else if (role == 8) e = ((m & 32) != 0 ? 9.0 * step(0.5, fract(f24Time * 2.3)) : 0.0);
+        else if (role == 9) e = ((m & 32) != 0 ? 9.0 * (1.0 - step(0.5, fract(f24Time * 2.3))) : 0.0);
+        totalEmissiveRadiance += tint * e;
+      }`);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float _lamp;\nvarying float vLamp;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLamp = _lamp;');
+      fs = fs.replace('#include <common>', '#include <common>\nvarying float vLamp;');
+    }
+    if (glass) {
+      // premultiplied output: the pane's reflection is NOT attenuated by its opacity (a window is a mirror at
+      // grazing angles and a dark tint head-on) — blending is ONE, ONE_MINUS_SRC_ALPHA (see mkGlass)
+      fs = fs.replace('#include <opaque_fragment>', `
+      vec3 f24Dif = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
+      vec3 f24Spec = reflectedLight.directSpecular + reflectedLight.indirectSpecular;
+      gl_FragColor = vec4(f24Dif * diffuseColor.a + f24Spec + totalEmissiveRadiance, diffuseColor.a);`);
+    }
+    sh.fragmentShader = fs;
+    prev?.call(mat, sh, r);
+  };
+  const tag = `f24|${paint ? 'p' : ''}${lamp ? 'l' : ''}${glass ? 'g' : ''}${decal ? 'd' : ''}${plate ? (/taxi/.test(kind) ? 'P' : 'q') : ''}|${sizeY.toFixed(2)}`;
+  const prevKey = mat.customProgramCacheKey?.bind(mat);
+  mat.customProgramCacheKey = () => tag + (prevKey ? '|' + prevKey() : '');
+  mat.needsUpdate = true;
+  return mat;
+}
+
+function mkGlass(tint, opacity, rough = 0.03) {
+  const m = new THREE.MeshPhysicalMaterial({ color: tint, roughness: rough, metalness: 0, transparent: true, opacity, depthWrite: false, envMapIntensity: 1.25 });
+  m.blending = THREE.CustomBlending;
+  m.blendSrc = THREE.OneFactor;
+  m.blendDst = THREE.OneMinusSrcAlphaFactor;
+  return m;
+}
+
+// NYPD LIVERY (PV2): CARLA's cop livery ("POLICE 911" black/white) maps as blotches on the 2024 Charger and is not New
+// York's. Police cars paint white and carry the classic NYPD side livery (refs/pv2/c_125_St_green_light.jpg): navy
+// pinstripes under the beltline and along the doors, "NYPD" on the front doors, the red / blue chevron mark on the rear
+// doors, the unit number on the rear quarter. Positions are the 2024 Charger's (hubs at z +1.50 / -1.54, front door
+// +0.85..-0.30, rear door -0.30..-1.33, beltline from its side glass).
+const DECALS = new Map();
+// TLC LIVERY (taxi2): on each front door the black "T" roundel with "NYC" behind it (toward the rear), the medallion
+// number on the rear quarter under the window line, a thin rate-card block on the rear door (refs/pv2 taxi photos).
+function tlcDecal(meta) {
+  if (typeof document === 'undefined') return null;
+  const key = 'tlc|' + (meta.size || []).join(',');
+  if (DECALS.has(key)) return DECALS.get(key);
+  const L = meta.size?.[2] || 4.9, zF = L / 2, TOP = 1.2, W = 2048, H = 1024;
+  const hubs = meta.hubs || [];
+  const zfh = hubs[0]?.p?.[2] ?? 1.48, zrh = hubs[2]?.p?.[2] ?? -1.39;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const X = (z, row) => (row === 0 ? (zF - z) / L : 1 - (zF - z) / L) * W;
+  const Y = (y, row) => H * (1 - (row + Math.min(y, TOP) / TOP) * 0.5);
+  const hs = W / L, vs = H / 2 / TOP;
+  const text = (str, z, y, capH, font, col, row) => {
+    g.save(); g.translate(X(z, row), Y(y, row)); g.scale(hs / vs, 1);
+    g.font = font + ' ' + (capH * vs) / 0.72 + 'px Arial, Helvetica, sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(str, 0, 0); g.restore();
+  };
+  const med = ['7J42', '8H57', '5C81', '3L16', '9D24'][Math.floor(((meta.size?.[0] || 2) * 997) % 5)];
+  const zDoor = zfh - 1.0, zNyc = zDoor - 0.24, zMed = zrh + 0.05;
+  for (const row of [0, 1]) {
+    // "T" roundel: black disc, taxi-yellow T
+    g.save(); g.translate(X(zDoor, row), Y(0.74, row)); g.scale(hs / vs, 1);
+    g.fillStyle = '#111'; g.beginPath(); g.arc(0, 0, 0.085 * vs, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#f2b705'; g.font = 'bold ' + (0.12 * vs) / 0.72 + 'px Arial, Helvetica, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('T', 0, 0.008 * vs);
+    g.restore();
+    text('NYC', zNyc, 0.74, 0.05, 'bold', '#111', row);
+    text(med, zMed, 0.86, 0.075, 'bold', '#111', row);
+    // rate card: a few fine black lines on the rear door
+    g.fillStyle = 'rgba(17,17,17,0.85)';
+    for (let k = 0; k < 4; k++) { const y = 0.9 - k * 0.022, a = X(zrh + 0.62, row), b = X(zrh + 0.9, row); g.fillRect(Math.min(a, b), Y(y, row), Math.abs(b - a) * (k === 0 ? 1 : 0.8), 0.008 * vs); }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const out = { tex, box: new THREE.Vector4(zF, L, TOP, 0) };
+  DECALS.set(key, out);
+  return out;
+}
+
+// the roof light of a NYC cab: a slim box over the roof centre, its panel faces carrying "TAXI"
+function roofLight(meta, roofY, zc) {
+  const w = 0.62, h = 0.13, d = 0.2;
+  const parts = [new THREE.BoxGeometry(w, h, d).translate(0, roofY + 0.035 + h / 2, zc)];
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) parts.push(new THREE.BoxGeometry(0.03, 0.035, 0.03).translate(sx * (w / 2 - 0.05), roofY + 0.0175, zc + sz * (d / 2 - 0.04)));
+  let map = null;
+  if (typeof document !== 'undefined') {
+    const cvs = document.createElement('canvas');
+    cvs.width = 512; cvs.height = 128;
+    const g = cvs.getContext('2d');
+    g.fillStyle = '#f4efd9'; g.fillRect(0, 0, 512, 128);
+    g.fillStyle = '#222'; g.fillRect(0, 0, 512, 10); g.fillRect(0, 118, 512, 10);
+    g.font = 'bold 78px Arial, Helvetica, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('TAXI', 256, 66);
+    map = new THREE.CanvasTexture(cvs); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+  }
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, map, roughness: 0.35, metalness: 0 });
+  patch(applySnowCap(mat), 'taxi2', { hubs: meta.hubs, sizeY: meta.size?.[1] || 1.5 });
+  mat.envMapIntensity = 0.7;
+  mat.name = 'f24:taxi2:rooflight';
+  mat.userData.cls = 'detail';
+  const pos = [], nrm = [], uv = [];
+  for (const x0 of parts) { const x = x0.toNonIndexed(); pos.push(...x.attributes.position.array); nrm.push(...x.attributes.normal.array); uv.push(...x.attributes.uv.array); }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  out.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  out.computeBoundingSphere();
+  return { geometry: out, material: mat, cls: 'detail', tris: pos.length / 9 };
+}
+
+// NY PLATE QUADS: 12 x 6 in (0.305 x 0.152 m), placed 6 mm proud of the rearmost / frontmost body surface on the centre
+// line at plate height (probed on the LOD0 parts, glass excluded). Texture: the Empire Gold design drawn at runtime (the
+// same design tools/assets/livery_plate.mjs bakes for CARLA's shared plate sheet); cabs carry a TLC "T...C" medallion
+// plate with the TAXI legend.
+// 8 x 8 cells of 256 px laid out like CARLA's plate sheet (the plate in the band v 0.289-0.758, u 0.016-0.984; UV v runs
+// down, flipY off), so CARLA's own plate meshes and the procedural quads both index it. Rows 0-6: NY Empire Gold plates
+// "ABC-1234"; row 7: TLC cab plates "T123456C" with the TAXI legend.
+let PLATE_ATLAS = null;
+function plateAtlas() {
+  if (PLATE_ATLAS || typeof document === 'undefined') return PLATE_ATLAS;
+  const C = 256, c = document.createElement('canvas'); c.width = C * 8; c.height = C * 8;
+  const g = c.getContext('2d');
+  const NAVY = '#10295e';
+  let seed = 20260923;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  const LET = 'ABCDEFGHJKLMNPRSTUVWXYZ';
+  for (let k = 0; k < 64; k++) {
+    const x0 = (k % 8) * C, y0 = Math.floor(k / 8) * C, taxi = k >= 56;
+    g.fillStyle = '#2b2b2e'; g.fillRect(x0, y0, C, C);
+    const px = x0 + 4, py = y0 + 74, pw = C - 8, ph = 120;
+    g.fillStyle = '#f2c14e'; g.fillRect(px, py, pw, ph);
+    g.strokeStyle = NAVY; g.lineWidth = 3; g.strokeRect(px + 2, py + 2, pw - 4, ph - 4);
+    g.fillStyle = NAVY; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = 'bold 18px Arial, Helvetica, sans-serif'; g.fillText('NEW YORK', px + pw / 2, py + 19);
+    const text = taxi ? 'T' + String(700000 + Math.floor(rnd() * 99999)) + 'C'
+      : LET[Math.floor(rnd() * 23)] + LET[Math.floor(rnd() * 23)] + LET[Math.floor(rnd() * 23)] + '-' + String(1000 + Math.floor(rnd() * 8999));
+    g.save(); g.translate(px + pw / 2, py + 66); g.scale(0.78, 1);
+    g.font = 'bold ' + (taxi ? 50 : 62) + 'px Arial Narrow, Arial, Helvetica, sans-serif'; g.fillText(text, 0, 0); g.restore();
+    g.font = '13px Arial, Helvetica, sans-serif'; g.fillText(taxi ? 'TAXI' : 'THE EMPIRE STATE', px + pw / 2, py + 108);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.flipY = false;
+  PLATE_ATLAS = t;
+  return t;
+}
+function plateMaterial(kind, meta) {
+  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, map: plateAtlas(), roughness: 0.45, metalness: 0.1, side: THREE.DoubleSide });
+  patch(applySnowCap(mat), kind, { hubs: meta.hubs, sizeY: meta.size?.[1] || 1.5, plate: true });
+  mat.envMapIntensity = 0.7;
+  mat.name = 'f24:' + kind + ':plate';
+  mat.userData.cls = 'detail';
+  return mat;
+}
+function plateParts(kind, parts, meta) {
+  const W = 0.305, H = 0.152;
+  const probe = (sign, y0, y1) => {
+    let best = sign > 0 ? -1e9 : 1e9;
+    for (const p of parts) {
+      if (p.cls === 'glass' || p.cls === 'lens') continue;
+      const a = p.geometry.attributes.position;
+      for (let i = 0; i < a.count; i++) {
+        const x = a.getX(i), y = a.getY(i), z = a.getZ(i);
+        if (Math.abs(x) > 0.16 || y < y0 || y > y1) continue;
+        best = sign > 0 ? Math.max(best, z) : Math.min(best, z);
+      }
+    }
+    return Number.isFinite(best) && Math.abs(best) < 4 ? best : null;
+  };
+  const zr = probe(-1, 0.42, 0.62), zf = probe(1, 0.3, 0.5);
+  const quads = [];
+  if (zr != null) quads.push([zr - 0.006, 0.52, -1]);
+  if (zf != null) quads.push([zf + 0.006, 0.4, 1]);
+  if (!quads.length) return null;
+  const pos = [], nrm = [], uv = [], idx = [];
+  for (const [z, y, dir] of quads) {
+    const b = pos.length / 3;
+    // facing +Z (front) or -Z (rear); u runs left-to-right as seen by a viewer facing the plate
+    // viewer facing the front plate has +X on the right (u from -X); facing the rear plate, -X on the right. Both
+    // orders wind counter-clockwise toward their own normal
+    const xs = dir > 0 ? [-W / 2, W / 2] : [W / 2, -W / 2];
+    pos.push(xs[0], y - H / 2, z, xs[1], y - H / 2, z, xs[1], y + H / 2, z, xs[0], y + H / 2, z);
+    for (let k = 0; k < 4; k++) nrm.push(0, 0, dir);
+    const u0 = 4 / 256, u1 = 252 / 256, vT = 74 / 256, vB = 194 / 256;
+    uv.push(u0, vB, u1, vB, u1, vT, u0, vT);
+    idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nrm, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  geo.computeBoundingSphere();
+  return { geometry: geo, material: plateMaterial(kind, meta), cls: 'detail', tris: idx.length / 3 };
+}
+
+// a kind that shares another kind's geometry and non-paint materials (no extra GPU memory), with its own paint
+function deriveKind(kind, base) {
+  const meta = { ...base.meta };
+  const pp = base.lods[0].find((p) => p.cls === 'paint');
+  const paint = pp?.gm ? runtimeMaterial(kind, pp.gm, meta) : null;
+  // roof height and centre from ALL of the base's LOD0 parts over the centre line (the MKZ's roof is black panoramic
+  // GLASS, so the highest paint was its rear deck and the light landed over the trunk): the roof is the highest band,
+  // the light goes over the middle of it
+  let roofY = 0, zs = 0;
+  const cl = [];
+  for (const p of base.lods[0]) {
+    const a = p.geometry.attributes.position;
+    for (let i = 0; i < a.count; i++) if (Math.abs(a.getX(i)) < 0.25) { cl.push(a.getY(i), a.getZ(i)); roofY = Math.max(roofY, a.getY(i)); }
+  }
+  // lower a cut until the band above it spans 0.6 m along the car: an antenna fin or a spoiler tip is higher than the
+  // roof but short
+  for (let cut = roofY - 0.01; cut > roofY - 0.25; cut -= 0.01) {
+    let z0 = 1e9, z1 = -1e9;
+    for (let i = 0; i < cl.length; i += 2) if (cl[i] > cut) { z0 = Math.min(z0, cl[i + 1]); z1 = Math.max(z1, cl[i + 1]); }
+    if (z1 - z0 >= 0.6) { roofY = cut + 0.01; zs = (z0 + z1) / 2; break; }
+  }
+  const sign = kind === 'taxi2' && roofY > 0.8 ? roofLight(meta, roofY - 0.005, zs) : null;
+  const plate = /taxi/.test(kind) ? plateParts(kind, base.lods[0].filter((p) => !/:plate$/.test(p.material?.name || '')), meta) : null;
+  const lods = base.lods.map((parts) => {
+    const out = parts.map((p) => (p.cls === 'paint' && paint ? { ...p, material: paint } : p)).filter((p) => !(plate && /:plate$/.test(p.material?.name || '')));
+    if (plate) out.splice(1, 0, plate);
+    if (sign) out.splice(1, 0, sign);
+    return out;
+  });
+  const size = [...base.size];
+  if (sign) size[1] = Math.max(size[1], roofY + 0.2);
+  return { ...base, kind, meta, lods, size, radius: Math.hypot(size[0], size[1], size[2]) / 2 + 0.3 };
+}
+
+function nypdDecal(meta) {
+  if (typeof document === 'undefined') return null;
+  const key = 'nypd|' + (meta.size || []).join(',');
+  if (DECALS.has(key)) return DECALS.get(key);
+  const L = meta.size?.[2] || 5.24, zF = L / 2, TOP = 1.2, W = 2048, H = 1024;
+  const belt = meta.beltline || 0.9;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const X = (z, row) => (row === 0 ? (zF - z) / L : 1 - (zF - z) / L) * W;
+  const Y = (y, row) => H * (1 - (row + Math.min(y, TOP) / TOP) * 0.5);
+  const box = (z0, z1, y0, y1, row, col) => { g.fillStyle = col; const a = X(z0, row), b = X(z1, row); g.fillRect(Math.min(a, b), Y(y1, row), Math.abs(b - a), Y(y0, row) - Y(y1, row)); };
+  const hs = W / L, vs = H / 2 / TOP;   // px per metre along / up the car
+  const text = (str, z, y, capH, weight, col, row) => {
+    const px = capH * vs / 0.72;
+    g.save(); g.translate(X(z, row), Y(y, row)); g.scale(hs / vs, 1);
+    g.font = `${weight} ${px}px Arial, Helvetica, sans-serif`; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'alphabetic';
+    g.fillText(str, 0, 0); g.restore();
+  };
+  const NAVY = '#1c3a8c', RED = '#c8202c';
+  for (const row of [0, 1]) {
+    box(2.2, -2.35, belt - 0.085, belt - 0.05, row, NAVY);          // beltline pinstripe, fender to quarter
+    box(0.85, -1.33, 0.4, 0.43, row, NAVY);                          // door pinstripe
+    text('NYPD', 0.28, 0.5, 0.2, 'italic 900', NAVY, row);           // front door
+    for (let k = 0; k < 3; k++) {                                     // rear door chevron: three speed lines with a red lead
+      const y = 0.54 + k * 0.06, zc = -0.8, dir = row === 0 ? 1 : -1;
+      box(zc + 0.2, zc - 0.2, y, y + 0.03, row, NAVY);
+      g.fillStyle = RED; g.beginPath();
+      const xa = X(zc + 0.2, row), xb = X(zc + 0.3, row), yy0 = Y(y - 0.005, row), yy1 = Y(y + 0.035, row);
+      g.moveTo(xa, yy0); g.lineTo(xb, (yy0 + yy1) / 2); g.lineTo(xa, yy1); g.closePath(); g.fill();
+      void dir;
+    }
+    text(String(1000 + ((meta.size?.[0] || 2) * 1000 | 0) % 9000), -2.25, 0.6, 0.07, 'bold', '#111', row);   // unit number, behind the rear arch
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; tex.generateMipmaps = true;
+  const out = { tex, box: new THREE.Vector4(zF, L, TOP, 0) };
+  DECALS.set(key, out);
+  return out;
+}
+
+// runtime material for a glTF part material
+function runtimeMaterial(kind, gm, meta) {
+  const cls = gm.userData?.cls || 'detail';
+  const hubs = meta.hubs, sizeY = meta.size?.[1] || 1.5;
+  let m;
+  if (/licenseplate/i.test(gm.name || '')) {
+    m = plateMaterial(kind, meta);
+    m.name = `f24:${kind}:${gm.name}`;
+    return m;
+  }
+  if (cls === 'paint') {
+    const nypd = kind === 'police' ? nypdDecal(meta) : kind === 'taxi2' ? tlcDecal(meta) : null;
+    m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: nypd ? null : gm.map || null, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.035, envMapIntensity: 1.0 });
+    if (m.map) m.map.anisotropy = 8;
+    // the cop body's AO sheet maps through the same broken UVs as its livery (jagged grey patches on white paint)
+    if (gm.aoMap && !nypd) { m.aoMap = gm.aoMap; m.aoMapIntensity = 0.8; }
+    patch(applySnowCap(m), kind, { paint: true, hubs, sizeY, decal: nypd });
+    applySpecAA(m, { sigma2: 0.25, kappa: 0.2, clearcoat: true });
+  } else if (cls === 'glass') {
+    m = patch(mkGlass(0x0a0d10, 0.62), kind, { glass: true, hubs, sizeY });
+  } else if (cls === 'lens') {
+    m = patch(mkGlass(0xdfe4e8, 0.10, 0.02), kind, { glass: true, hubs, sizeY });
+  } else if (cls === 'lamp' || cls === 'siren') {
+    m = new THREE.MeshStandardMaterial({ color: 0xd8dade, roughness: 0.18, metalness: 0.55, emissive: 0x000000, envMapIntensity: 1.0 });
+    patch(m, kind, { lamp: true, hubs, sizeY });
+  } else if (cls === 'lampInner') {
+    m = new THREE.MeshStandardMaterial({ color: 0x0a0a0b, roughness: 0.22, metalness: 0.3 });
+    patch(m, kind, { hubs, sizeY });
+  } else {
+    m = gm.clone();
+    m.color?.set?.(0xffffff);
+    m.envMapIntensity = 1.0;
+    if (m.map) m.map.anisotropy = 8;
+    if (m.aoMap) m.aoMapIntensity = 0.85;
+    // UE's masked blend with Opacity = 1 is an opaque surface: never alpha-test the (zero) basecolor alpha
+    m.transparent = false; m.alphaTest = 0; m.alphaMap = null;
+    patch(applySnowCap(m), kind, { hubs, sizeY });
+    applySpecAA(m, { sigma2: 0.25, kappa: 0.2 });
+  }
+  m.envMapIntensity = { paint: 0.9, glass: 1.0, lens: 1.0, lamp: 1.0, siren: 1.0, lampInner: 0.8 }[cls] ?? 0.7;
+  m.name = `f24:${kind}:${gm.name || cls}`;
+  m.userData.cls = cls;
+  return m;
+}
+
+// ---------------------------------------------------------------- loading
+function toFloat(attr) {
+  if (!attr || (attr.array instanceof Float32Array && !attr.normalized)) return attr;
+  const out = new Float32Array(attr.count * attr.itemSize);
+  for (let i = 0; i < attr.count; i++) for (let c = 0; c < attr.itemSize; c++) out[i * attr.itemSize + c] = attr.getComponent(i, c);
+  return new THREE.BufferAttribute(out, attr.itemSize);
+}
+
+function buildKind(kind, gltf) {
+  gltf.scene.updateMatrixWorld(true);
+  // the vehicle node carries the build metadata (the glTF SCENE shares the kind's name, so search by content)
+  let root = null;
+  gltf.scene.traverse((o) => { if (!root && o.userData && o.userData.hubs) root = o; });
+  root = root || gltf.scene;
+  const meta = root.userData || {};
+  // beltline = the bottom of the side glass (side decal sheets hang their stripes under it)
+  if (meta.beltline == null) {
+    let yb = 1e9;
+    const v = new THREE.Vector3(), w = new THREE.Vector3();
+    root.getObjectByName('LOD0')?.traverse((o) => {
+      if (!o.isMesh || o.material?.userData?.cls !== 'glass' || !o.geometry.attributes.normal) return;
+      const p = o.geometry.attributes.position, n = o.geometry.attributes.normal;
+      for (let i = 0; i < p.count; i++) {
+        w.fromBufferAttribute(n, i).transformDirection(o.matrixWorld);
+        if (Math.abs(w.x) < 0.6) continue;
+        v.fromBufferAttribute(p, i).applyMatrix4(o.matrixWorld);
+        yb = Math.min(yb, v.y);
+      }
+    });
+    if (yb > 0.5 && yb < 1.6) meta.beltline = yb;
+  }
+  const matCache = new Map();
+  const lods = [];
+  for (let li = 0; li < 3; li++) {
+    const node = root.getObjectByName('LOD' + li);
+    const parts = [];
+    if (node) node.traverse((o) => {
+      if (!o.isMesh) return;
+      // meshopt QUANTIZE put a dequantisation transform on the node: bake it (float attributes first)
+      const g = new THREE.BufferGeometry();
+      for (const [k, a] of Object.entries(o.geometry.attributes)) g.setAttribute(k, toFloat(a));
+      g.setIndex(o.geometry.index);
+      g.applyMatrix4(o.matrixWorld);
+      g.computeBoundingSphere();
+      const gm = o.material;
+      const key = gm.name || gm.uuid;
+      if (!matCache.has(key)) matCache.set(key, runtimeMaterial(kind, gm, meta));
+      const mat = matCache.get(key);
+      parts.push({ geometry: g, material: mat, cls: mat.userData.cls, gm, tris: (g.index ? g.index.count : g.attributes.position.count) / 3 });
+    });
+    // opaque first, glass last (transparent sort within a set is by object, and every part shares the origin)
+    const order = { paint: 0, detail: 1, lampInner: 2, lamp: 3, siren: 3, lens: 4, glass: 5 };
+    parts.sort((a, b) => (order[a.cls] ?? 1) - (order[b.cls] ?? 1));
+    lods.push(parts);
+  }
+  // NY plates on kinds that ship without plate geometry (the 2024 Lincoln / Charger / Patrol / Ford cab): the plate
+  // material of the older kinds is named *LicensePlate*; everything else gets front + rear plate quads on its centre line
+  const hasPlate = lods[0].some((p) => /plate/i.test(p.gm?.name || '') || /plate/i.test(p.material?.name || ''));
+  if (!hasPlate && !/firetruck|boxtruck|minibus/.test(kind)) {
+    const plate = plateParts(kind, lods[0], meta);
+    if (plate) for (const parts of lods) parts.splice(1, 0, plate);
+  }
+  const size = meta.size || [2, 1.5, 4.6];
+  // lamp anchors for carlights.js (night glow sprites): per role and side from the LOD0 lamp vertices
+  const lamps = lampAnchors(lods[0]);
+  return { kind, meta, size, lods, lamps, radius: Math.hypot(size[0], size[1], size[2]) / 2 + 0.3 };
+}
+
+function lampAnchors(parts) {
+  const acc = {};
+  for (const p of parts) {
+    if (p.cls !== 'lamp') continue;
+    const pos = p.geometry.attributes.position, role = p.geometry.attributes._lamp;
+    if (!role) continue;
+    for (let i = 0; i < pos.count; i++) {
+      const r = role.getX(i);
+      const end = r === ROLE.head ? 'front' : r === ROLE.tail ? 'rear' : null;
+      if (!end) continue;
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const k = end + (x > 0 ? 'L' : 'R');
+      const a = acc[k] || (acc[k] = { n: 0, x: 0, y: 0, z: end === 'front' ? -1e9 : 1e9, x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 });
+      a.n++; a.x += x; a.y += y;
+      a.z = end === 'front' ? Math.max(a.z, z) : Math.min(a.z, z);
+      a.x0 = Math.min(a.x0, x); a.x1 = Math.max(a.x1, x); a.y0 = Math.min(a.y0, y); a.y1 = Math.max(a.y1, y);
+    }
+  }
+  const mk = (a, dir) => (a ? [a.x / a.n, a.y / a.n, a.z + dir * 0.01, Math.min(0.42, Math.max(0.055, (a.x1 - a.x0) / 2)), Math.min(0.32, Math.max(0.045, (a.y1 - a.y0) / 2))] : null);
+  const fL = mk(acc.frontL, 1), fR = mk(acc.frontR, 1), rL = mk(acc.rearL, -1), rR = mk(acc.rearR, -1);
+  if (!(fL || fR) && !(rL || rR)) return null;
+  return { front: fL || fR ? [fL || fR, fR || fL] : null, rear: rL || rR ? [rL || rR, rR || rL] : null };
+}
+
+export async function loadFleet24(renderer) {
+  const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
+    import('three/addons/loaders/GLTFLoader.js'), import('three/addons/loaders/KTX2Loader.js'), import('three/addons/libs/meshopt_decoder.module.js'),
+  ]);
+  const ktx2 = new KTX2Loader().setTranscoderPath('basis/').detectSupport(renderer);
+  const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
+  const only = QS.get('f24only') ? QS.get('f24only').split(',') : null;
+  const kinds = {};
+  const t0 = performance.now();
+  const wanted = Object.keys(KIND24).filter((k) => !only || only.includes(k));
+  const bases = new Set(wanted.map((k) => KIND24[k].base || k));
+  await Promise.all([...bases].map(async (k) => {
+    try { kinds[k] = buildKind(k, await loader.loadAsync(BASE + k + '.glb')); }
+    catch (e) { console.warn('[fleet24] unavailable:', k, e?.message || e); }
+  }));
+  for (const k of wanted) if (KIND24[k].base && kinds[KIND24[k].base]) kinds[k] = deriveKind(k, kinds[KIND24[k].base]);
+  // a base loaded only for a derived kind (f24only=taxi2) is not itself in traffic
+  for (const k of Object.keys(kinds)) if (!wanted.includes(k)) delete kinds[k];
+  const names = Object.keys(KIND24).filter((k) => kinds[k]);
+  if (!names.length) return null;
+  for (const k of names) {
+    const K = kinds[k];
+    console.log(`[fleet24] ${k}: ${K.size.map((v) => v.toFixed(2)).join('x')} m, LOD tris ${K.lods.map((l) => l.reduce((s, p) => s + p.tris, 0)).join('/')}, parts ${K.lods[0].map((p) => p.cls).join(',')}`);
+  }
+  console.log(`[fleet24] ${names.length} kinds in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+  // traffic.js's fleet contract: paint/dark geometries only size the storage (a box of the model's envelope)
+  const trafficFleet = {};
+  for (const k of names) {
+    const K = kinds[k];
+    const box = new THREE.BoxGeometry(K.size[0], K.size[1], K.size[2]).translate(0, K.size[1] / 2, 0);
+    trafficFleet[k] = { paint: box, dark: box, parts: {}, shell: null, cap: KIND24[k].cap, w: KIND24[k].w, lamps: K.lamps, f24: K };
+  }
+  // weighted parked kinds (traffic.js picks uniformly from this list; repeats = weight)
+  trafficFleet.__parkedKinds = names.flatMap((k) => Array(KIND24[k].pw).fill(k));
+  trafficFleet.__fleet24 = true;
+  return { kinds, trafficFleet, install: (traffic, engine) => installFleet24(traffic, engine, kinds) };
+}
+
+// ---------------------------------------------------------------- rendering
+const _pl = new Float32Array(24), _pl2 = new Float32Array(24);
+const _fr = new THREE.Frustum(), _pv = new THREE.Matrix4();
+function planesFrom(camera, out) {
+  _pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  _fr.setFromProjectionMatrix(_pv);
+  for (let i = 0; i < 6; i++) { const p = _fr.planes[i]; out[i * 4] = p.normal.x; out[i * 4 + 1] = p.normal.y; out[i * 4 + 2] = p.normal.z; out[i * 4 + 3] = p.constant; }
+}
+
+// one render set: every part of one LOD of one kind, sharing instance attributes
+class RenderSet {
+  constructor(scene, parts, name, shadow) {
+    this.name = name;
+    this.shadow = shadow;
+    this.cap = 0;
+    this.meshes = [];
+    this.parts = shadow ? parts.filter((p) => p.cls === 'paint' || p.cls === 'detail' || p.cls === 'lampInner') : parts;
+    this._alloc(32);
+    for (const p of this.parts) {
+      const g = new THREE.BufferGeometry();
+      for (const [k, a] of Object.entries(p.geometry.attributes)) g.setAttribute(k, a);
+      g.setIndex(p.geometry.index);
+      g.boundingSphere = p.geometry.boundingSphere;
+      const m = new THREE.InstancedMesh(g, p.material, this.cap);
+      m.instanceMatrix = this.im;
+      g.setAttribute('aVeh', this.aVeh); g.setAttribute('aPaint', this.aPaint); g.setAttribute('aCol', this.aCol);
+      m.name = `${shadow ? 'vehS' : 'veh'}:${name}:${p.cls}`;
+      m.count = 0;
+      m.frustumCulled = false;
+      m.matrixAutoUpdate = false;
+      m.castShadow = shadow;
+      m.receiveShadow = !shadow;
+      m.visible = false;
+      m.userData.f24part = p;
+      if (shadow) p.material.shadowSide = THREE.DoubleSide;   // see vehicleCull.js mkRender: a car is a closed shell
+      scene.add(m);
+      this.meshes.push(m);
+    }
+    this.k = 0;
+  }
+  _alloc(cap) {
+    const grow = (old, size) => {
+      const a = new THREE.InstancedBufferAttribute(new Float32Array(cap * size), size);
+      a.setUsage(THREE.DynamicDrawUsage);
+      if (old) a.array.set(old.array.subarray(0, Math.min(old.array.length, a.array.length)));
+      return a;
+    };
+    this.im = grow(this.im, 16);
+    this.aVeh = grow(this.aVeh, 4);
+    this.aPaint = grow(this.aPaint, 4);
+    this.aCol = grow(this.aCol, 3);
+    this.ic = this.ic ? grow(this.ic, 3) : null;
+    this.cap = cap;
+    for (const m of this.meshes || []) {
+      m.instanceMatrix = this.im;
+      m.geometry.setAttribute('aVeh', this.aVeh); m.geometry.setAttribute('aPaint', this.aPaint); m.geometry.setAttribute('aCol', this.aCol);
+      if (m.instanceColor) m.instanceColor = this.ic;
+    }
+  }
+  begin() { this.k = 0; }
+  push(A, o, veh, paint, col, idCol) {
+    if (this.k >= this.cap) this._alloc(this.cap * 2);
+    const k = this.k++;
+    this.im.array.set(A.subarray(o, o + 16), k * 16);
+    this.aVeh.array.set(veh, k * 4);
+    this.aPaint.array.set(paint, k * 4);
+    this.aCol.array.set(col, k * 3);
+    if (idCol) {
+      if (!this.ic) { this.ic = new THREE.InstancedBufferAttribute(new Float32Array(this.cap * 3).fill(1), 3); this.ic.setUsage(THREE.DynamicDrawUsage); }
+      this.ic.array.set(idCol, k * 3);
+    }
+  }
+  finish(idMode, idMat) {
+    const k = this.k;
+    for (const a of [this.im, this.aVeh, this.aPaint, this.aCol]) { a.clearUpdateRanges(); a.addUpdateRange(0, k * a.itemSize); a.needsUpdate = true; }
+    if (idMode && this.ic) { this.ic.clearUpdateRanges(); this.ic.addUpdateRange(0, k * 3); this.ic.needsUpdate = true; }
+    for (const m of this.meshes) {
+      m.count = k;
+      m.visible = !this.shadow && k > 0;
+      // ground-truth mode (world/gt.js swapped the STORAGE material): every part draws the id material with the
+      // storage instance colours; back to the part materials when it is restored
+      if (idMode) { if (m.material !== idMat) m.material = idMat; if (m.instanceColor !== this.ic) m.instanceColor = this.ic; }
+      else if (m.userData.__f24id) { m.material = m.userData.f24part.material; m.instanceColor = null; }
+      m.userData.__f24id = idMode;
+    }
+  }
+}
+
+// per-slot motion state for a moving pool
+class SlotState {
+  constructor(cap) {
+    const f = () => new Float32Array(cap);
+    this.x = f(); this.z = f(); this.yaw = f(); this.spin = f(); this.v = f(); this.steer = f(); this.brake = f(); this.blinkL = f(); this.blinkR = f();
+    this.ok = new Uint8Array(cap);
+    this.cap = cap;
+  }
+}
+
+function hash(a, b = 0) {
+  let h = Math.imul((a | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b | 0, 0xc2b2ae35);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12;
+  return ((h >>> 0) % 10007) / 10007;
+}
+
+// paint from the storage colour (traffic.js fleetColor, stable per car / parked record) + a stable seed
+const _c = new THREE.Color();
+// NYC PAINT MIX (street counts of US registrations, skewed to the city's dark/neutral fleet): each entry is a LINEAR
+// base colour and whether it is a metallic finish. The storage colour only seeds the pick (it is stable per car / per
+// parked record), so the palette is the fleet's own, not traffic.js's placeholder one (whose bronze read as taxi gold).
+const NYC_PAINTS = [
+  [22, [0.73, 0.73, 0.72], 0], [4, [0.62, 0.62, 0.60], 0.25],                 // white solid / pearl
+  [15, [0.010, 0.010, 0.011], 0], [7, [0.012, 0.013, 0.015], 0.3],            // black solid / metallic
+  [12, [0.16, 0.165, 0.17], 0.35], [5, [0.07, 0.072, 0.075], 0.35],           // grey / dark grey metallic
+  [13, [0.36, 0.37, 0.38], 0.35],                                              // silver
+  [4, [0.030, 0.050, 0.110], 0.35], [3, [0.012, 0.022, 0.060], 0.3],          // blue / navy
+  [5, [0.30, 0.018, 0.020], 0.2], [2, [0.13, 0.010, 0.012], 0.3],             // red / burgundy
+  [2, [0.20, 0.17, 0.12], 0.35], [2, [0.030, 0.050, 0.035], 0.3],             // champagne / dark green
+  [1, [0.40, 0.20, 0.035], 0.3],                                               // orange-brown (rare)
+];
+const PAINT_BAG = NYC_PAINTS.flatMap((p, i) => Array(p[0]).fill(i));
+function paintFor(palette, r, g, b, seed, outCol, outPaint) {
+  let metal = 0;
+  if (palette === 'taxi') { outCol[0] = TAXI_YELLOW.r; outCol[1] = TAXI_YELLOW.g; outCol[2] = TAXI_YELLOW.b; }
+  else if (palette === 'livery') { outCol[0] = outCol[1] = outCol[2] = 1; }
+  else {
+    const h = (Math.abs(Math.sin((r * 12.9898 + g * 78.233 + b * 37.719) * 43.1 + seed * 91.7)) * 43758.5453) % 1;
+    let p = NYC_PAINTS[PAINT_BAG[Math.floor(h * PAINT_BAG.length)]];
+    // vans and trucks run mostly white fleet paint; the Lincoln is the black-car service
+    if ((palette === 'van' && seed < 0.62) || (palette === 'truck' && seed < 0.78)) p = NYC_PAINTS[0];
+    else if (palette === 'black' && seed < 0.72) p = seed < 0.4 ? NYC_PAINTS[2] : NYC_PAINTS[3];
+    outCol[0] = p[1][0]; outCol[1] = p[1][1]; outCol[2] = p[1][2];
+    metal = p[2];
+  }
+  outPaint[0] = metal;
+  outPaint[1] = palette === 'truck' || palette === 'van' ? 0.25 + 0.5 * ((seed * 7.31) % 1) : 0.05 + 0.45 * ((seed * 13.7) % 1) ** 2;   // grime
+  outPaint[2] = metal > 0 ? 0.40 : 0.32;
+  outPaint[3] = 0;
+}
+
+// ---------------------------------------------------------------- city reflection probe
+// A clear coat or a window reflects the STREET, not an empty sky: the scene's own environment is a sun-free sky
+// PMREM with nothing below the horizon, which turned every side panel into a mirror of bright sky. This probe
+// renders the real surroundings (ground, buildings, trees, sky) into a small cube near the camera, ONE FACE PER
+// FRAME so the cost is spread, PMREM-filters it when the sixth face lands, and hands it to the fleet materials.
+// `?f24probe=0` falls back to scene.environment.
+class ReflectionProbe {
+  constructor(engine, groundAt, size = 128, period = 1.2) {
+    this.engine = engine;
+    this.groundAt = groundAt;
+    this.rt = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType });
+    this.cam = new THREE.CubeCamera(0.3, 600, this.rt);
+    this.pmrem = new THREE.PMREMGenerator(engine.renderer);
+    this.env = null;          // PMREM render target currently in use
+    this.face = -1;           // face being captured (-1 = idle)
+    this.wait = 0.2;
+    this.period = period;
+    this.hide = [];           // meshes hidden during a face render (the fleet itself)
+  }
+  update(dt, hideList) {
+    const e = this.engine, r = e.renderer, cam = e.camera;
+    if (this.face < 0) {
+      this.wait -= dt;
+      if (this.wait > 0) return null;
+      // street-level anchor under the camera: aerial views still get a street environment
+      const gy = this.groundAt ? this.groundAt(cam.position.x, cam.position.z) : null;
+      const y = gy != null && Number.isFinite(gy) ? Math.min(cam.position.y, gy + 2.2) : cam.position.y;
+      this.cam.position.set(cam.position.x, y, cam.position.z);
+      this.cam.updateMatrixWorld(true);
+      this.face = 0;
+    }
+    const cams = this.cam.children;
+    const prevRT = r.getRenderTarget(), prevXr = r.xr.enabled, auto = r.shadowMap.autoUpdate;
+    r.xr.enabled = false;
+    r.shadowMap.autoUpdate = false;
+    for (const m of hideList) { if (m.visible) { m.visible = false; this.hide.push(m); } }
+    r.setRenderTarget(this.rt, this.face);
+    r.render(e.scene, cams[this.face]);
+    for (const m of this.hide) m.visible = true;
+    this.hide.length = 0;
+    r.setRenderTarget(prevRT);
+    r.xr.enabled = prevXr;
+    r.shadowMap.autoUpdate = auto;
+    this.face++;
+    if (this.face < 6) return null;
+    this.face = -1;
+    this.wait = this.period;
+    const next = this.pmrem.fromCubemap(this.rt.texture);
+    const old = this.env;
+    this.env = next;
+    if (old) old.dispose();
+    return next.texture;
+  }
+}
+
+export function installFleet24(traffic, engine, kinds) {
+  const scene = engine.scene;
+  const groups = [];   // { kind, K, P, moving, tag, sets: [main LOD0..2], shadow: [LOD1, LOD2], state }
+  const add = (pools, moving) => {
+    for (const [k, P] of Object.entries(pools || {})) {
+      const K = kinds[k];
+      if (!K || !P.mb) continue;
+      const tag = `${moving ? 'm' : 'p'}:${k}`;
+      const sets = K.lods.map((parts, li) => new RenderSet(scene, parts, `${tag}:lod${li}`, false));
+      // shadow casters use the SAME LOD the car is drawn with: a coarser caster pokes through the drawn surface and
+      // self-shadows it in speckles (seen on the 125th St plates, docs/notes/peds-veh-v2.md)
+      const shadow = K.lods.map((parts, li) => new RenderSet(scene, parts, `${tag}:lod${li}`, true));
+      for (const s of [P.mb, P.md, ...(P.mx || []), P.shell]) if (s) { s.visible = false; s.castShadow = false; }
+      groups.push({ kind: k, K, P, moving, tag, sets, shadow, state: moving ? new SlotState(P.cap) : null, storeMat: P.mb.material, palette: KIND24[k]?.palette || 'car' });
+    }
+  };
+  add(traffic.pools, true);
+  add(traffic.parked, false);
+  const _rm = () => { const o = []; for (const G of groups) for (const s2 of [...G.sets, ...G.shadow]) o.push(...s2.meshes); return o; };
+  // contact-shadow blobs (city/contactShadow.js csVehicles): pseudo-groups per LOD main set
+  const csGroups = [];
+  for (const G of groups) for (const s of G.sets) {
+    const box = new THREE.BoxGeometry(G.K.size[0], G.K.size[1], G.K.size[2]).translate(0, G.K.size[1] / 2, 0);
+    box.computeBoundingBox();
+    csGroups.push({ srcs: [{ geometry: box }], main: [s.meshes[0] || { count: 0 }], lodMain: null, _set: s });
+  }
+  const camPos = new THREE.Vector3(1e9, 1e9, 1e9), camQ = new THREE.Quaternion();
+  const sunT = new THREE.Vector3(1e9, 0, 1e9), sunD = new THREE.Vector3(), v = new THREE.Vector3();
+  let shBoxV = -1;
+  const stats = { main: 0, shadow: 0, ms: 0, lod: [0, 0, 0] };
+  const veh = new Float32Array(4), paint = new Float32Array(4), col = new Float32Array(3), idc = new Float32Array(3);
+  let clock = 0;
+  const allMats = new Set();
+  for (const K of Object.values(kinds)) for (const parts of K.lods) for (const p of parts) allMats.add(p.material);
+  let lastEnv;
+  const probe = QS.get('f24probe') !== '0' ? new ReflectionProbe(engine, traffic.streamer?.surfaceAt ? (x, z) => traffic.streamer.surfaceAt(x, z) : null) : null;
+  const renderMeshes = _rm();
+  const cull = (dt) => {
+    const t0 = performance.now();
+    // RECORD MODE renders many dt = 0 frames between fixed sim steps (settling, the re-render before each capture): the
+    // world has not moved, so the motion state must HOLD. Treated as 16 ms with zero motion it decayed every car's speed
+    // to 0 before the capture and lit every brake light in the film.
+    const still = !(dt > 0);
+    dt = still ? 0 : Math.min(0.1, Math.max(1e-3, dt));
+    clock += dt;
+    // own envMap on every fleet material (three substitutes scene.environmentIntensity for envMapIntensity
+    // when a material falls back to scene.environment — 0.22 by day, which left the clear coat flat)
+    const probed = probe ? probe.update(dt, renderMeshes) : null;
+    const want = probed || (probe && probe.env ? probe.env.texture : scene.environment);
+    if (want !== lastEnv) { lastEnv = want; for (const m of allMats) m.envMap = lastEnv || null; }
+    F24ENV.value = scene.environmentIntensity ?? 1;
+    const cam = engine.camera;
+    cam.updateMatrixWorld();
+    if (cam.position.distanceToSquared(camPos) > 0.25 || 1 - Math.abs(cam.quaternion.dot(camQ)) > 2e-5) {
+      camPos.copy(cam.position); camQ.copy(cam.quaternion); planesFrom(cam, _pl);
+    }
+    const sun = engine.sun;
+    let shadowOn = false;
+    if (sun && sun.castShadow) {
+      shadowOn = true;
+      sun.updateMatrixWorld(); sun.target.updateMatrixWorld();
+      v.subVectors(sun.position, sun.target.position).normalize();
+      const bv = engine.shadowBoxV || 0;
+      if (sun.target.position.distanceToSquared(sunT) > 64 || v.dot(sunD) < 0.99995 || bv !== shBoxV) {
+        shBoxV = bv; sunT.copy(sun.target.position); sunD.copy(v);
+        sun.shadow.updateMatrices(sun);
+        planesFrom(sun.shadow.camera, _pl2);
+      }
+    }
+    const night = ENV.night.value;
+    const cx = cam.position.x, cz = cam.position.z;
+    let nMain = 0, nSh = 0;
+    stats.lod[0] = stats.lod[1] = stats.lod[2] = 0;
+    for (const G of groups) {
+      const P = G.P, src = P.mb;
+      const idMode = src.material !== G.storeMat;
+      const idMat = idMode ? src.material : null;
+      const n = src.count, A = src.instanceMatrix.array, C = src.instanceColor ? src.instanceColor.array : null;
+      const S = G.state, K = G.K, hubR = K.meta.hubs?.[0]?.r || 0.34, wb = K.meta.wheelbase || 2.8;
+      for (const s of G.sets) s.begin();
+      for (const s of G.shadow) s.begin();
+      const rMain = K.radius + PAD_MAIN, rSh = K.radius + PAD_SHADOW;
+      for (let i = 0; i < n; i++) {
+        const o = i * 16;
+        if (A[o] === 0 && A[o + 5] === 0 && A[o + 10] === 0) continue;
+        const x = A[o + 12], y = A[o + 13], z = A[o + 14];
+        // motion state (moving pools): spin from distance, steer from yaw rate, brake from deceleration / standstill
+        let lampMask = 0;
+        const seed = G.moving ? hash(i, G.kind.length * 131 + 7) : hash(Math.round(x * 10), Math.round(z * 10));
+        if (S && i < S.cap) {
+          const yaw = Math.atan2(A[o + 8], A[o + 10]);
+          if (still && S.ok[i]) { /* dt = 0 frame: keep spin / steer / brake / blinkers exactly as they were */ }
+          else if (S.ok[i]) {
+            const d = Math.hypot(x - S.x[i], z - S.z[i]);
+            if (d > 4) { S.ok[i] = 0; }
+            else {
+              S.spin[i] = (S.spin[i] + d / hubR) % (Math.PI * 2);
+              const vNow = d / dt;
+              const acc = (vNow - S.v[i]) / dt;
+              S.v[i] += (vNow - S.v[i]) * Math.min(1, dt * 6);
+              let dy = yaw - S.yaw[i];
+              if (dy > Math.PI) dy -= Math.PI * 2; else if (dy < -Math.PI) dy += Math.PI * 2;
+              const target = S.v[i] > 0.5 ? Math.max(-0.6, Math.min(0.6, Math.atan(wb * (dy / dt) / S.v[i]))) : S.steer[i];
+              S.steer[i] += (target - S.steer[i]) * Math.min(1, dt * 5);
+              S.brake[i] = acc < -1.4 || S.v[i] < 0.4 ? 0.5 : Math.max(0, S.brake[i] - dt);
+              if (S.steer[i] > 0.12) S.blinkL[i] = 1.2; else S.blinkL[i] = Math.max(0, S.blinkL[i] - dt);
+              if (S.steer[i] < -0.12) S.blinkR[i] = 1.2; else S.blinkR[i] = Math.max(0, S.blinkR[i] - dt);
+            }
+          }
+          if (!S.ok[i]) { S.ok[i] = 1; S.v[i] = 0; S.steer[i] = 0; S.brake[i] = 0; S.blinkL[i] = S.blinkR[i] = 0; S.spin[i] = seed * 6.28; }
+          S.x[i] = x; S.z[i] = z; S.yaw[i] = yaw;
+          if (night > 0.35) lampMask |= L_HEAD | L_TAIL;
+          if (S.brake[i] > 0) lampMask |= L_BRAKE;
+          if (S.blinkL[i] > 0) lampMask |= L_BLINKL;
+          if (S.blinkR[i] > 0) lampMask |= L_BLINKR;
+          if ((G.kind === 'police' || G.kind === 'ambulance' || G.kind === 'firetruck') && seed < 0.18) lampMask |= L_SIREN;
+          veh[0] = S.spin[i]; veh[1] = S.steer[i];
+        } else { veh[0] = seed * 6.28; veh[1] = 0; }
+        veh[2] = lampMask; veh[3] = seed;
+        const r = C ? C[i * 3] : 0.5, g = C ? C[i * 3 + 1] : 0.5, b = C ? C[i * 3 + 2] : 0.5;
+        paintFor(G.palette, r, g, b, seed, col, paint);
+        if (idMode) { idc[0] = r; idc[1] = g; idc[2] = b; }
+        const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
+        // main view
+        let inMain = true;
+        for (let q = 0; q < 24; q += 4) if (_pl[q] * x + _pl[q + 1] * y + _pl[q + 2] * z + _pl[q + 3] < -rMain) { inMain = false; break; }
+        if (inMain) {
+          const li = d2 < LOD0_2 ? 0 : d2 < LOD1_2 ? 1 : 2;
+          G.sets[li].push(A, o, veh, paint, col, idMode ? idc : null);
+          stats.lod[li]++;
+          nMain++;
+        }
+        if (shadowOn) {
+          let inSh = true;
+          for (let q = 0; q < 24; q += 4) if (_pl2[q] * x + _pl2[q + 1] * y + _pl2[q + 2] * z + _pl2[q + 3] < -rSh) { inSh = false; break; }
+          if (inSh) { G.shadow[d2 < LOD0_2 ? 0 : d2 < LOD1_2 ? 1 : 2].push(A, o, veh, paint, col, null); nSh++; }
+        }
+      }
+      for (const s of G.sets) s.finish(idMode, idMat);
+      for (const s of G.shadow) s.finish(false, null);
+    }
+    for (const cg of csGroups) cg.main[0] = cg._set.meshes[0] || { count: 0 };
+    csVehicles(scene, csGroups);
+    stats.main = nMain; stats.shadow = nSh; stats.ms = performance.now() - t0;
+  };
+  const orig = traffic.update.bind(traffic);
+  traffic.update = (dt, px, pz) => { orig(dt, px, pz); cull(dt); };
+  const shadowMeshes = [];
+  for (const G of groups) for (const s of G.shadow) shadowMeshes.push(...s.meshes);
+  engine.addShadowListener?.((phase) => {
+    if (phase === 'nearBegin') { const on = Instancer.shadowSets; for (const m of shadowMeshes) m.visible = on && m.count > 0; }
+    else if (phase === 'nearEnd') { for (const m of shadowMeshes) m.visible = false; }
+  });
+  traffic.cullStats = stats;
+  traffic.fleet24 = { kinds, groups, stats };
+  // perception: per-kind nominal dims for segRender / gt boxes
+  traffic.vehDims = Object.fromEntries(Object.entries(kinds).map(([k, K]) => [k, [+K.size[0].toFixed(2), +K.size[1].toFixed(2), +K.size[2].toFixed(2)]]));
+  return stats;
+}

@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "boundless"
+version = "0.1.0"
+description = "Python API of the boundless.js NYC simulator: spawn and control vehicles and pedestrians, and record RGB, semantic / instance segmentation, depth and bounding boxes"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{ name = "M. K. Turkcan" }]
+keywords = ["simulation", "digital twin", "autonomous driving", "synthetic data", "segmentation", "New York City"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = []
+
+[project.optional-dependencies]
+numpy = ["numpy>=1.21"]
+
+[tool.setuptools]
+packages = ["boundless"]

@@ -1,0 +1,17 @@
+{
+  "name": "boundless-nyc",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BoundlessNYC: shared dependencies of the client (boundlessjs/), the building generator (src/) and the render tools (tools/)",
+  "license": "SEE LICENSE IN LICENSE",
+  "type": "module",
+  "dependencies": {
+    "n8ao": "^2.0.1",
+    "playwright": "^1.62.1",
+    "postprocessing": "^6.39.4",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "ffmpeg-static": "^5.3.0"
+  }
+}

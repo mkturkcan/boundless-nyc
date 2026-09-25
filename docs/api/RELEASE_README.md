@@ -28,6 +28,6 @@ hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v{{V
 GPU. The Python package needs Python ≥ 3.8; `numpy` is optional.
 
 **Licensing.** Code: MIT (`LICENSE`). Compiled city: ODbL 1.0. Vehicle, prop and pedestrian models: CC BY 4.0. The
-photoreal pedestrians contain MetaHuman-derived components that may not be used to train AI models. For training
-data, start the server with `--pedestrians procedural`. `LICENSING.md` covers every component, and
+photoreal pedestrians contain MetaHuman-derived components that may not be used to build or enhance a dataset or to
+train or test AI models. For that work, start the server with `--pedestrians procedural`. `LICENSING.md` covers every component, and
 `ACKNOWLEDGEMENTS.md` lists the required attributions.

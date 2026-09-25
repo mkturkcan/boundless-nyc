@@ -59,7 +59,8 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
   lettering and recalibrated skin tones. *Vehicle and pedestrian models: CARLA Simulator (carla.org), CC BY 4.0.*
 
   The pedestrian bank contains components created with Epic Games' MetaHuman. Those components are subject to Epic's
-  MetaHuman licence in addition to CC BY 4.0, and Epic's terms do not allow using them to train or enhance AI models.
+  MetaHuman licence in addition to CC BY 4.0, which does not allow using them to build or enhance a database or to
+  train or test AI models.
   See the MetaHuman notice in [LICENSING.md](LICENSING.md) and the server option `--pedestrians procedural`.
 - **100STYLE** locomotion dataset: I. Mason, S. Starke and T. Komura, *Real-Time Style Modelling of Human Locomotion
   via Feature-Wise Transformations and Local Motion Phases*, 2022, Zenodo record 8127870. **CC BY 4.0.** Sixteen

@@ -16,6 +16,7 @@ import { buildBillboards } from '../city/billboards.js';
 import { placeCurbRamps } from '../city/streetNYC.js';
 import { StaticPool } from './staticPool.js';
 import { buildTower, buildSetbacks, TOWER_H } from './towers.js';
+import { ringOffsetMiter, upTri } from './ringOffset.js';   // NM24
 
 // `?nodatum=1` — A/B switch for the 2026-09-03 seam pass (docs/notes/seams.md).
 // It restores the legacy datums (building base as serialized, furniture as
@@ -237,11 +238,21 @@ function ringInset(pts, f, cx, cz) {
 // 40 m loft a 0.3 m parapet and a 6 m rowhouse a 4 cm one. Degenerate rings (a vertex
 // closer to the centroid than 2d) fall back to the proportional form.
 function ringInsetAbs(pts, d, cx, cz) {
+  // NM24 (owner 2026-09-24: "building faces sometimes get lost or disappear"): a TRUE offset first. The radial form below
+  // moves every vertex toward the centroid, which on a concave footprint (half of Harlem's pre-war stock: 20-100
+  // vertices with light-well notches) folds edges back on themselves. Every parapet inner skin, coping and roof rim band
+  // built on a folded edge then faced down or inward and was culled: 17,400 triangles over 1,928 buildings in the
+  // harlem125 ring were invisible from above, which reads as bites out of rooflines and holes at roof edges.
+  // `?nm24=0` keeps the radial inset everywhere.
+  // a footprint too tight for the full offset (short notch edges, necks) takes a thinner one before the radial fallback
+  if (NM24O) for (const k of [1, 0.6, 0.35]) { const o = ringOffsetMiter(pts, d * k); if (o) return o; }
   let minR = 1e9;
   for (const [x, z] of pts) minR = Math.min(minR, Math.hypot(x - cx, z - cz));
   if (minR < d * 2.2) return ringInset(pts, Math.max(0.5, 1 - d / Math.max(0.5, minR)), cx, cz);
   return pts.map(([x, z]) => { const r = Math.hypot(x - cx, z - cz); const f = 1 - d / r; return [cx + (x - cx) * f, cz + (z - cz) * f]; });
 }
+const NM24O = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('nm24') === '0');
+// ringOffsetMiter and upTri live in ./ringOffset.js (shared with towers.js)
 // ---------------------------------------------------------------------------
 // FAC8 PALETTE CORRECTION (docs/notes/facades-r8.md §2)
 // Measured over the whole lenoxRef frame against `ref_lenox.png`: our building
@@ -427,7 +438,7 @@ function fac8Membrane(b) {
   return 1;
 }
 // hip roof over the footprint's OBB: 4 slope quads to a ridge segment (never self-intersects)
-function hipRoof(buf, ring, topY, b, col, cx, cz, scale = 0.92, riseK = 0.3) {   // CH14b: riseK 0.3 copper / 0.5 slate
+function hipRoof(buf, ring, topY, b, col, cx, cz, scale = 0.92, riseK = 0.3, memb = 0) {   // CH14b: riseK 0.3 copper / 0.5 slate; CR24: memb 6 = slate courses
   const obb = ringOBB(ring);
   const w = obb.w * scale, d = obb.h * scale;
   const cA = Math.cos(obb.ang), sA = Math.sin(obb.ang);
@@ -439,14 +450,15 @@ function hipRoof(buf, ring, topY, b, col, cx, cz, scale = 0.92, riseK = 0.3) {  
   const ridgeY = topY + rise;
   const C1 = rot(-ridgeHalf, 0), C2 = rot(ridgeHalf, 0);
   const A1 = rot(-hw, -hd), A2 = rot(hw, -hd), B1 = rot(-hw, hd), B2 = rot(hw, hd);
-  const aux = [b.floorH, b.winW, 0, b.style];
+  const aux = [b.floorH, b.winW, memb, b.style];
   const aux2 = [b.height, b.lit, b.colorVar, 4];
-  // side slopes
-  buf.quad([A1[0], topY, A1[1]], [A2[0], topY, A2[1]], [C2[0], ridgeY, C2[1]], [C1[0], ridgeY, C1[1]], [sA, 0.75, -cA], col, [0, 0, 0, 0, 0, 0, 0, 0], aux, aux2);
-  buf.quad([B2[0], topY, B2[1]], [B1[0], topY, B1[1]], [C1[0], ridgeY, C1[1]], [C2[0], ridgeY, C2[1]], [-sA, 0.75, cA], col, [0, 0, 0, 0, 0, 0, 0, 0], aux, aux2);
-  // hip ends
-  buf.tri([A1[0], topY, A1[1]], [C1[0], ridgeY, C1[1]], [B1[0], topY, B1[1]], [-cA, 0.6, -sA], col, aux, aux2);
-  buf.tri([A2[0], topY, A2[1]], [B2[0], topY, B2[1]], [C2[0], ridgeY, C2[1]], [cA, 0.6, sA], col, aux, aux2);
+  // side slopes and hip ends. CR24: these were listed clockwise seen from outside (each face's own cross product pointed
+  // INTO the roof), so the FrontSide facade material culled every one of them from outside and the deck beneath showed
+  // through: Columbia's copper roofs, Teachers College's slate and every generic church roof were missing. Now outward.
+  buf.quad([A1[0], topY, A1[1]], [C1[0], ridgeY, C1[1]], [C2[0], ridgeY, C2[1]], [A2[0], topY, A2[1]], [sA, 0.75, -cA], col, [0, 0, 0, 0, 0, 0, 0, 0], aux, aux2);
+  buf.quad([B2[0], topY, B2[1]], [C2[0], ridgeY, C2[1]], [C1[0], ridgeY, C1[1]], [B1[0], topY, B1[1]], [-sA, 0.75, cA], col, [0, 0, 0, 0, 0, 0, 0, 0], aux, aux2);
+  buf.tri([A1[0], topY, A1[1]], [B1[0], topY, B1[1]], [C1[0], ridgeY, C1[1]], [-cA, 0.6, -sA], col, aux, aux2);
+  buf.tri([A2[0], topY, A2[1]], [C2[0], ridgeY, C2[1]], [B2[0], topY, B2[1]], [cA, 0.6, sA], col, aux, aux2);
 }
 // CH14 — CAMPUS HIP WINGS (critic r14, Amsterdam pair; docs/notes/round14-fixes.md). classify.mjs hands every
 // COLUMBIA_CAMPUS hall roofKind 2, but the hip above only fires when the ring FILLS its OBB (rectness > 0.78), so
@@ -461,7 +473,7 @@ const CH14 = !(typeof location !== 'undefined' && new URLSearchParams(location.s
 // CH14b: compiler roofKind shape 3 = a STEEP SLATE hip (Teachers College's Collegiate Gothic halls, classify.mjs
 // TEACHERS_COLLEGE, pre-1930) — the same wing decomposition as the copper campus hip, darker and at riseK 0.5.
 const SLATE_HIP = [0.16, 0.17, 0.19], COPPER_HIP = [0.17, 0.24, 0.21];
-const hipLook = (b) => b.roofKind === 3 ? { col: SLATE_HIP, riseK: 0.5 } : { col: COPPER_HIP, riseK: 0.3 };
+const hipLook = (b) => b.roofKind === 3 ? { col: SLATE_HIP, riseK: 0.5, memb: CR24 ? 6 : 0 } : { col: COPPER_HIP, riseK: 0.3, memb: 0 };
 function campusHipWings(buf, ring, topY, b, col, cx, cz, riseK = 0.3) {
   const obb = ringOBB(ring);
   const cA = Math.cos(obb.ang), sA = Math.sin(obb.ang);
@@ -502,11 +514,401 @@ function campusHipWings(buf, ring, topY, b, col, cx, cz, riseK = 0.3) {
     if (!best) break;
     for (let j = best.j0; j <= best.j1; j++) for (let i = best.i0; i <= best.i1; i++) if (mask[j * nx + i]) { mask[j * nx + i] = 0; left--; }
     const lx0 = mnx + best.i0 * CELL, lx1 = mnx + (best.i1 + 1) * CELL, lz0 = mnz + best.j0 * CELL, lz1 = mnz + (best.j1 + 1) * CELL;
-    hipRoof(buf, [toW(lx0, lz0), toW(lx1, lz0), toW(lx1, lz1), toW(lx0, lz1)], topY, b, col, cx, cz, 1.0, riseK);
+    hipRoof(buf, [toW(lx0, lz0), toW(lx1, lz0), toW(lx1, lz1), toW(lx0, lz1)], topY, b, col, cx, cz, 1.0, riseK, hipLook(b).memb);
     wings++;
   }
   if (wings && typeof console !== 'undefined') console.log(`[ch14] ${wings} wing hip(s) on building ${b.i} at ${Math.round(cx)},${Math.round(cz)} (area ${Math.round(b.area)}, h ${b.height.toFixed(1)}, kind ${b.roofKind})`);   // CH14 verification (plate logs)
   return wings;
+}
+// ---------------------------------------------------------------------------
+// CR24 — COLUMBIA CAMPUS ROOFS (owner 2026-09-24: "Columbia buildings' roofs are missing; look at Google Earth images
+// etc. to see what they look like and implement them correctly"). Two faults, in this order:
+//   1. hipRoof() wound every slope and hip end INWARD (each quad's own cross product points into the roof). The facade
+//      material culls back faces, so from outside the hip did not draw and the flat deck under it did: the copper roofs
+//      were literally missing, and so was every generic church roof and every Teachers College slate hip.
+//   2. Where a hip did draw (seen from inside), it was a low pyramid in a near-black green under the membrane's sky
+//      sheen. Google Earth (refs/earth/col_earth_{top,north,n,e,w}.png, reference only) shows light verdigris copper
+//      behind a limestone balustrade on the cornice: a steep MANSARD holding the attic storey, with a row of dormers
+//      and a flat top on the deep halls (Hartley, Wallach, John Jay, Furnald, Hamilton, Kent, Journalism, Havemeyer,
+//      Schermerhorn, Pupin, Dodge, CEPSR), a plain hip to a ridge on the narrow ones (Philosophy, Avery, Fayerweather,
+//      Lewisohn, Mathematics), brick chimneys on the dormitories, Earl Hall's pale dome and Pupin's two observatory domes.
+// The roof takes the building's top storey: the walls stop at the eave and the roof rises to the record's height, so
+// the silhouette keeps its measured height. Per-building facts come from BUILDING_OVERRIDES `roof` (landmarkSpec.js,
+// applied at tile read); any other campus record (compiler roofKind 2) takes the defaults. ?cr24=0 restores round 14.
+const CR24 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cr24') === '0');
+// patina bases (sRGB-ish, GeoBuf squares them), set against the Earth captures: sunlit verdigris reads about (100, 165, 145)
+const CR_TONE = { mint: [0.30, 0.52, 0.44], pale: [0.43, 0.50, 0.46], lead: [0.50, 0.55, 0.58], obs: [0.70, 0.71, 0.70], slate: [0.25, 0.26, 0.28] };
+const CR_STONE = [214, 205, 186], CR_GLASS = [0.10, 0.11, 0.12], CR_FRAME = [0.87, 0.86, 0.82], CR_BRICK = [0.56, 0.31, 0.23];
+const CR_MEMB = 7;        // materials.js roof branch 7: verdigris copper (vertex colour = patina base, uv = seam coords)
+const CR_E = 0.55;        // the copper foot stands this far inside the wall face (balustrade 0.35 + gutter)
+const CR_PH = 0.95;       // balustrade over the cornice
+const CR_DEG = Math.PI / 180;
+// Newell normal: sum of P_i x P_i+1, i.e. it points to the side the polygon is counter-clockwise from (three's front)
+function crNewell(P) {
+  let nx = 0, ny = 0, nz = 0;
+  for (let i = 0; i < P.length; i++) {
+    const a = P[i], c = P[(i + 1) % P.length];
+    nx += (a[1] - c[1]) * (a[2] + c[2]);
+    ny += (a[2] - c[2]) * (a[0] + c[0]);
+    nz += (a[0] - c[0]) * (a[1] + c[1]);
+  }
+  return [nx, ny, nz];
+}
+// a 3- or 4-gon wound so that its front face looks along `out`, whatever order the caller listed it in
+function crPoly(buf, P, out, col, aux, aux2, aux3, uv) {
+  const N = crNewell(P);
+  if (N[0] * out[0] + N[1] * out[1] + N[2] * out[2] < 0) { P = P.slice().reverse(); if (uv) uv = uv.slice().reverse(); N[0] = -N[0]; N[1] = -N[1]; N[2] = -N[2]; }
+  const L = Math.hypot(N[0], N[1], N[2]);
+  if (L < 1e-8) return;
+  const n = [N[0] / L, N[1] / L, N[2] / L];
+  const u = uv ? uv.flat() : null;
+  if (P.length === 4) buf.quad(P[0], P[1], P[2], P[3], n, col, u || [0, 0, 0, 0, 0, 0, 0, 0], aux, aux2, aux3);
+  else buf.tri(P[0], P[1], P[2], n, col, aux, aux2, u, aux3);
+}
+// inward miter offset of a shoelace-positive (x, z) ring; null when it folds over itself
+function crOffset(ring, d) {
+  const n = ring.length, out = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = ring[(i - 1 + n) % n], p1 = ring[i], p2 = ring[(i + 1) % n];
+    let ax = p1[0] - p0[0], az = p1[1] - p0[1];
+    const la = Math.hypot(ax, az) || 1; ax /= la; az /= la;
+    let bx = p2[0] - p1[0], bz = p2[1] - p1[1];
+    const lb = Math.hypot(bx, bz) || 1; bx /= lb; bz /= lb;
+    const nax = -az, naz = ax, nbx = -bz, nbz = bx;           // inward normals
+    let mx = nax + nbx, mz = naz + nbz;
+    const ml = Math.hypot(mx, mz);
+    if (ml < 1e-6) { out.push([p1[0] + nax * d, p1[1] + naz * d]); continue; }
+    mx /= ml; mz /= ml;
+    const k = d / Math.max(0.3, mx * nax + mz * naz);
+    out.push([p1[0] + mx * k, p1[1] + mz * k]);
+  }
+  for (let i = 0; i < n; i++) {                               // every edge keeps its direction and some length
+    const a = ring[i], b2 = ring[(i + 1) % n], c = out[i], e = out[(i + 1) % n];
+    const ox = b2[0] - a[0], oz = b2[1] - a[1], nx = e[0] - c[0], nz = e[1] - c[1];
+    if (ox * nx + oz * nz <= 0) return null;
+  }
+  let A = 0;
+  for (let i = 0; i < n; i++) { const [x0, z0] = out[i], [x1, z1] = out[(i + 1) % n]; A += x0 * z1 - x1 * z0; }
+  if (A <= 0) return null;
+  for (const p of out) if (!crInside(ring, p[0], p[1])) return null;
+  return out;
+}
+function crInside(ring, x, z) {
+  let ins = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, zi] = ring[i], [xj, zj] = ring[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) ins = !ins;
+  }
+  return ins;
+}
+// the per-building plan: form, eave height and slope run. Returns null when the campus path does not apply.
+function crPlan(b, ring, holes, topY) {
+  if (!CR24 || holes.length) return null;
+  const spec = b.campusRoof || (b.roofKind === 2 ? {} : null);
+  if (!spec || spec.form === 'flat' || b.area < 150 || b.height < 8) return null;
+  const obb = ringOBB(ring);
+  const depth = Math.min(obb.w, obb.h);
+  const form = spec.form || (depth > 17 ? 'mansard' : 'hip');
+  let rise, run = 0;
+  if (form === 'dome') rise = Math.min(Math.max(b.height * 0.42, 9), 17);
+  else if (form === 'hip') {
+    run = Math.max(1, depth / 2 - CR_E);
+    rise = Math.min(Math.max(run * Math.tan((spec.pitch || 38) * CR_DEG), 2.4), 6.5);
+  } else {
+    // the attic storey: a full floor and a bit, which is what puts the dormers' heads near the ridge line in the photos
+    rise = Math.min(Math.max((b.floorH || 3.4) * 1.2, 3.9), 5.4);
+    run = rise / Math.tan((spec.pitch || 70) * CR_DEG);
+  }
+  rise = Math.min(rise, b.height * 0.45);
+  return { spec, form, obb, rise, run, eaveY: topY - rise, topY };
+}
+// the roof itself, over walls the caller has already extruded to plan.eaveY
+function crBuild(buf, ring, b, P, cx, cz, y0) {
+  const { spec, form, obb } = P;
+  const eaveY = P.eaveY, topY = P.topY;
+  const jit = 0.96 + ((b.colorVar * 13.1) % 1) * 0.08;
+  const tone = (CR_TONE[spec.tone] || CR_TONE.mint).map((v) => v * jit);
+  const auxC = [b.floorH, b.winW, CR_MEMB, b.style], aux2R = [b.height, b.lit, b.colorVar, 4];
+  const auxB = [b.floorH, b.winW, 0, b.style], aux2B = [b.height, b.lit, b.colorVar, 2];     // blind masonry (chimneys, dormer glass)
+  const rf = roofFrame(ring);
+  // ---- the limestone balustrade on the cornice: outer skin flush with the wall, inner skin, a pale coping
+  const stone = { ...b, r: CR_STONE[0], g: CR_STONE[1], b: CR_STONE[2] };
+  const inner = ringInsetAbs(ring, 0.35, cx, cz);
+  extrudePrism(buf, ring, eaveY, eaveY + CR_PH, stone, { baseRef: y0, noStore: true, blindMask: 0xffffffff, colScale: 0.83, faceH: CR_PH });
+  extrudePrism(buf, inner.slice().reverse(), eaveY, eaveY + CR_PH, stone, { baseRef: y0, noStore: true, blindMask: 0xffffffff, colScale: 0.66, faceH: CR_PH, faceIn: true });
+  copingBand(buf, ringInsetAbs(ring, -0.04, cx, cz), inner, eaveY + CR_PH + 0.06, stone, 4);
+  // the gutter deck the copper stands on (dark, mostly hidden)
+  roofFill(buf, ring, eaveY + 0.03, b, false, form === 'dome' ? 1 : 2);
+  const yF = eaveY + 0.05;
+  if (form === 'dome') { crDomeRoof(buf, b, P, tone, auxC, aux2R, cx, cz); return; }
+  let foot = crOffset(ring, CR_E), top = null;
+  let mode = form;
+  if (form === 'mansard' && foot) top = crOffset(ring, CR_E + P.run);
+  if (!foot || (form === 'mansard' && !top)) mode = 'wings';
+  if (mode === 'mansard') {
+    crSlopes(buf, foot, top, yF, topY, tone, auxC, aux2R, rf);
+    // the flat top: the same copper, a shade paler and flatter-locked
+    const deck = tone.map((v, i) => v * 0.93 + [0.05, 0.03, 0.04][i]);
+    crDeck(buf, top, topY, deck, auxC, aux2R, rf);
+    if (spec.dormers !== 0) crDormers(buf, foot, yF, P, b, tone, auxC, aux2R, auxB, aux2B, spec.dormers ?? 1);
+    if (spec.chimneys) crChimneys(buf, top, topY, obb, b, spec.chimneys, auxB, aux2B, auxC, aux2R);
+    if (spec.domes) crObservatories(buf, top, topY, obb, spec.domes, auxC, aux2R, auxB, aux2B);
+    return;
+  }
+  if (mode === 'hip' && foot && ring.length <= 6 && b.area / Math.max(1, obb.w * obb.h) > 0.9) {
+    crHipRect(buf, obb, yF, P, tone, auxC, aux2R, rf, b, spec, auxB, aux2B);
+    return;
+  }
+  // concave or narrow: a hipped body over each rectangular wing (the CH14 decomposition), bodies interpenetrate
+  const wings = crWingRects(ring);
+  for (const w of wings) crWingBody(buf, w, yF, P, tone, auxC, aux2R, form);
+}
+// slope quads between two offset rings; uv = (metres along the eave from the face's own start, metres above the foot)
+function crSlopes(buf, foot, top, yA, yB, col, aux, aux2, rf) {
+  const n = foot.length;
+  for (let i = 0; i < n; i++) {
+    const a = foot[i], b2 = foot[(i + 1) % n], c = top[(i + 1) % n], d = top[i];
+    const ex = b2[0] - a[0], ez = b2[1] - a[1], L = Math.hypot(ex, ez);
+    if (L < 0.05) continue;
+    const ux = ex / L, uz = ez / L;
+    const along = (p) => (p[0] - a[0]) * ux + (p[1] - a[1]) * uz;
+    crPoly(buf, [[a[0], yA, a[1]], [b2[0], yA, b2[1]], [c[0], yB, c[1]], [d[0], yB, d[1]]], [uz, 0.55, -ux], col, aux, aux2,
+      [Math.atan2(ez, ex), a[0], a[1]], [[0, 0], [L, 0], [along(c), yB - yA], [along(d), yB - yA]]);
+  }
+}
+function crDeck(buf, ring, y, col, aux, aux2, rf) {
+  const flat = [];
+  for (const [x, z] of ring) flat.push(x, z);
+  const tris = earcut(flat);
+  const c = Math.cos(rf[0]), s = Math.sin(rf[0]);
+  const U = (p) => (p[0] - rf[1]) * c + (p[1] - rf[2]) * s;
+  for (let t = 0; t < tris.length; t += 3) {
+    const A = ring[tris[t]], B2 = ring[tris[t + 1]], C = ring[tris[t + 2]];
+    crPoly(buf, [[A[0], y, A[1]], [B2[0], y, B2[1]], [C[0], y, C[1]]], [0, 1, 0], col, aux, aux2, rf, [[U(A), 6], [U(B2), 6], [U(C), 6]]);
+  }
+}
+// dormers along every edge long enough for them: copper cheeks and cap, a white frame and dark glass facing out
+function crDormers(buf, foot, yF, P, b, col, auxC, aux2R, auxB, aux2B, dens) {
+  const tanP = P.rise / Math.max(0.3, P.run);
+  const dw = 1.5, dh = Math.min(2.35, P.rise * 0.56), zb = 0.35;      // width, face height, sill above the foot
+  const spacing = Math.max(3.2, Math.min(5.4, (b.winW || 2.6) * 1.65)) / Math.max(0.35, dens);
+  const n = foot.length;
+  for (let i = 0; i < n; i++) {
+    const a = foot[i], b2 = foot[(i + 1) % n];
+    const ex = b2[0] - a[0], ez = b2[1] - a[1], L = Math.hypot(ex, ez);
+    const margin = P.run + 1.4;
+    const cnt = Math.floor((L - 2 * margin) / spacing) + 1;
+    if (L < 6 || cnt < 1) continue;
+    const ux = ex / L, uz = ez / L, ix = -uz, iz = ux;                // along, inward
+    const s0 = (L - (cnt - 1) * spacing) / 2;
+    for (let k = 0; k < cnt; k++) {
+      const s = s0 + k * spacing;
+      const y1 = yF + zb, y2 = y1 + dh, yC = y2 + 0.28;
+      const d0 = zb / tanP + 0.12, dBack = (yC - yF) / tanP + 0.25;       // front plane, back (buried in the slope)
+      const W = (sAlong, dIn, y) => [a[0] + ux * sAlong + ix * dIn, y, a[1] + uz * sAlong + iz * dIn];
+      const sl = s - dw / 2, sr = s + dw / 2;
+      const out = [-ix, 0, -iz];
+      // cheeks and front in copper, the cap sloping back into the roof
+      crPoly(buf, [W(sl, d0, y1), W(sr, d0, y1), W(sr, d0, yC), W(sl, d0, yC)], out, col, auxC, aux2R, [Math.atan2(ez, ex), a[0], a[1]], [[0, 0], [dw, 0], [dw, yC - y1], [0, yC - y1]]);
+      crPoly(buf, [W(sl, d0, y1), W(sl, dBack, y1), W(sl, dBack, yC), W(sl, d0, yC)], [-ux, 0, -uz], col, auxC, aux2R, [0, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      crPoly(buf, [W(sr, d0, y1), W(sr, dBack, y1), W(sr, dBack, yC), W(sr, d0, yC)], [ux, 0, uz], col, auxC, aux2R, [0, 0, 0], [[0, 0], [1, 0], [1, 1], [0, 1]]);
+      crPoly(buf, [W(sl - 0.08, d0 - 0.10, yC), W(sr + 0.08, d0 - 0.10, yC), W(sr + 0.08, dBack, yC + 0.30), W(sl - 0.08, dBack, yC + 0.30)], [0, 1, 0], col, auxC, aux2R, [Math.atan2(ez, ex), a[0], a[1]], [[0, 1], [dw, 1], [dw, 1.3], [0, 1.3]]);
+      // the sash: a pale frame, dark glass 2 cm in front of it (overlap, never abut)
+      const fw = dw - 0.36, fh = dh - 0.30;
+      crPoly(buf, [W(s - fw / 2, d0 - 0.02, y1 + 0.12), W(s + fw / 2, d0 - 0.02, y1 + 0.12), W(s + fw / 2, d0 - 0.02, y1 + 0.12 + fh), W(s - fw / 2, d0 - 0.02, y1 + 0.12 + fh)],
+        out, CR_FRAME, auxB, aux2B, [0, 0, 0], [[0, 1], [1, 1], [1, 2], [0, 2]]);
+      crPoly(buf, [W(s - fw / 2 + 0.09, d0 - 0.04, y1 + 0.2), W(s + fw / 2 - 0.09, d0 - 0.04, y1 + 0.2), W(s + fw / 2 - 0.09, d0 - 0.04, y1 + fh + 0.04), W(s - fw / 2 + 0.09, d0 - 0.04, y1 + fh + 0.04)],
+        out, CR_GLASS, auxB, aux2B, [0, 0, 0], [[0, 1], [1, 1], [1, 2], [0, 2]]);
+    }
+  }
+}
+// brick chimneys on the flat top, along the building's long axis
+function crChimneys(buf, top, y, obb, b, count, auxB, aux2B, auxC, aux2R) {
+  const ca = Math.cos(obb.ang), sa = Math.sin(obb.ang);
+  const [ox, oz] = obb.centerW;
+  const half = obb.w * 0.5 - 3.2;
+  for (let k = 0; k < count; k++) {
+    const t = count === 1 ? 0 : -half + (2 * half * k) / (count - 1);
+    const off = ((b.colorVar * 31.7 + k * 0.37) % 1 - 0.5) * 2.2;
+    const px = ox + ca * t - sa * off, pz = oz + sa * t + ca * off;
+    if (!crInside(top, px, pz)) continue;
+    crBox(buf, px, pz, obb.ang, 0.95, 2.1, y - 0.2, y + 1.75, CR_BRICK, auxB, aux2B);
+  }
+}
+function crBox(buf, px, pz, ang, sx, sz, yA, yB, col, aux, aux2) {
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const C = (lx, lz, y) => [px + ca * lx - sa * lz, y, pz + sa * lx + ca * lz];
+  const hx = sx / 2, hz = sz / 2;
+  const sides = [[[-hx, -hz], [hx, -hz], [0, -1]], [[hx, -hz], [hx, hz], [1, 0]], [[hx, hz], [-hx, hz], [0, 1]], [[-hx, hz], [-hx, -hz], [-1, 0]]];
+  for (const [p, q, o] of sides) {
+    const out = [ca * o[0] - sa * o[1], 0, sa * o[0] + ca * o[1]];
+    crPoly(buf, [C(p[0], p[1], yA), C(q[0], q[1], yA), C(q[0], q[1], yB), C(p[0], p[1], yB)], out, col, aux, aux2, [0, 0, 0], [[0, 1], [1, 1], [1, 1 + yB - yA], [0, 1 + yB - yA]]);
+  }
+  crPoly(buf, [C(-hx, -hz, yB), C(hx, -hz, yB), C(hx, hz, yB), C(-hx, hz, yB)], [0, 1, 0], col.map((v) => v * 0.55), aux, aux2, [0, 0, 0], [[0, 1], [1, 1], [1, 2], [0, 2]]);
+}
+// a single rectangle hipped to a ridge along its long axis (the narrow halls)
+function crHipRect(buf, obb, yF, P, col, aux, aux2, rf, b, spec, auxB, aux2B) {
+  const ca = Math.cos(obb.ang), sa = Math.sin(obb.ang);
+  const [ox, oz] = obb.centerW;
+  const hw = obb.w / 2 - CR_E, hd = obb.h / 2 - CR_E;
+  const rise = P.rise, ridge = Math.max(0.2, hw - hd);
+  const W = (lx, lz, y) => [ox + ca * lx - sa * lz, y, oz + sa * lx + ca * lz];
+  const yT = yF + rise - 0.05;
+  const A1 = W(-hw, -hd, yF), A2 = W(hw, -hd, yF), B2 = W(hw, hd, yF), B1 = W(-hw, hd, yF);
+  const C1 = W(-ridge, 0, yT), C2 = W(ridge, 0, yT);
+  const dirW = (lx, lz) => [ca * lx - sa * lz, sa * lx + ca * lz];
+  const [sx, sz] = dirW(0, -1), [nx2, nz2] = dirW(0, 1), [wx, wz] = dirW(-1, 0), [exx, exz] = dirW(1, 0);
+  const ang = obb.ang;
+  const up = yT - yF;
+  crPoly(buf, [A1, A2, C2, C1], [sx, 0.6, sz], col, aux, aux2, [ang, A1[0], A1[2]], [[0, 0], [2 * hw, 0], [hw + ridge, up], [hw - ridge, up]]);
+  crPoly(buf, [B2, B1, C1, C2], [nx2, 0.6, nz2], col, aux, aux2, [ang + Math.PI, B2[0], B2[2]], [[0, 0], [2 * hw, 0], [hw + ridge, up], [hw - ridge, up]]);
+  crPoly(buf, [B1, A1, C1], [wx, 0.6, wz], col, aux, aux2, [ang - Math.PI / 2, B1[0], B1[2]], [[0, 0], [2 * hd, 0], [hd, up]]);
+  crPoly(buf, [A2, B2, C2], [exx, 0.6, exz], col, aux, aux2, [ang + Math.PI / 2, A2[0], A2[2]], [[0, 0], [2 * hd, 0], [hd, up]]);
+  if (spec.dormers) {   // a few small dormers on the long slopes, clear of the hip ends
+    const Pd = { ...P, run: hd, rise: up };
+    const foot = [[A1[0], A1[2]], [A2[0], A2[2]], [B2[0], B2[2]], [B1[0], B1[2]]];
+    crDormers(buf, foot, yF, Pd, b, col, aux, aux2, auxB, aux2B, spec.dormers * 0.7);
+  }
+  if (spec.chimneys) {
+    for (let k = 0; k < spec.chimneys; k++) {
+      const t = spec.chimneys === 1 ? 0 : (-ridge * 0.8) + (1.6 * ridge * k) / (spec.chimneys - 1);
+      const [px, pz] = [ox + ca * t, oz + sa * t];
+      crBox(buf, px, pz, ang, 1.0, 2.0, yT - 1.2, yT + 1.5, CR_BRICK, auxB, aux2B);
+    }
+  }
+}
+// rectangular wings of a concave footprint in its OBB frame, snapped to the footprint's own coordinates (0.75 m raster)
+function crWingRects(ring) {
+  const obb = ringOBB(ring);
+  const cA = Math.cos(obb.ang), sA = Math.sin(obb.ang);
+  const [ox, oz] = obb.centerW;
+  const toL = ([x, z]) => [(x - ox) * cA + (z - oz) * sA, -(x - ox) * sA + (z - oz) * cA];
+  const toW = (lx, lz) => [ox + lx * cA - lz * sA, oz + lx * sA + lz * cA];
+  const L = ring.map(toL);
+  let mnx = 1e9, mxx = -1e9, mnz = 1e9, mxz = -1e9;
+  for (const [lx, lz] of L) { mnx = Math.min(mnx, lx); mxx = Math.max(mxx, lx); mnz = Math.min(mnz, lz); mxz = Math.max(mxz, lz); }
+  const CELL = 0.75;
+  const nx = Math.max(1, Math.ceil((mxx - mnx) / CELL)), nz = Math.max(1, Math.ceil((mxz - mnz) / CELL));
+  if (nx * nz > 40000) return [];
+  const mask = new Uint8Array(nx * nz);
+  let total = 0;
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if (crInside(L, mnx + (i + 0.5) * CELL, mnz + (j + 0.5) * CELL)) { mask[j * nx + i] = 1; total++; }
+  const xs = [...new Set(L.map((p) => p[0]))], zs = [...new Set(L.map((p) => p[1]))];
+  const snap = (v, arr) => { let best = v, bd = CELL * 0.9; for (const a of arr) { const d = Math.abs(a - v); if (d < bd) { bd = d; best = a; } } return best; };
+  const MIN = Math.ceil(5 / CELL), hgt = new Int32Array(nx), out = [];
+  let left = total;
+  for (let guard = 0; left > total * 0.06 && guard < 24; guard++) {
+    let best = null;
+    hgt.fill(0);
+    for (let j = 0; j < nz; j++) {
+      for (let i = 0; i < nx; i++) hgt[i] = mask[j * nx + i] ? hgt[i] + 1 : 0;
+      const st = [];
+      for (let i = 0; i <= nx; i++) {
+        const h = i < nx ? hgt[i] : 0;
+        let start = i;
+        while (st.length && st[st.length - 1][1] > h) {
+          const [s0, hh] = st.pop();
+          const area = hh * (i - s0);
+          if (hh >= MIN && (i - s0) >= MIN && (!best || area > best.area)) best = { area, i0: s0, i1: i - 1, j0: j - hh + 1, j1: j };
+          start = s0;
+        }
+        st.push([start, h]);
+      }
+    }
+    if (!best) break;
+    for (let j = best.j0; j <= best.j1; j++) for (let i = best.i0; i <= best.i1; i++) if (mask[j * nx + i]) { mask[j * nx + i] = 0; left--; }
+    out.push({ toW, ang: obb.ang, x0: snap(mnx + best.i0 * CELL, xs), x1: snap(mnx + (best.i1 + 1) * CELL, xs), z0: snap(mnz + best.j0 * CELL, zs), z1: snap(mnz + (best.j1 + 1) * CELL, zs), L });
+  }
+  return out;
+}
+// one wing: sides on the footprint boundary step in by CR_E and slope; sides inside the building run on 0.4 m into the
+// neighbouring wing so the two bodies meet in a valley instead of leaving a gutter between them
+function crWingBody(buf, w, yF, P, col, aux, aux2, form) {
+  const onEdge = (ax, az, bx, bz, nx, nz) => {
+    let outs = 0;
+    for (const t of [0.2, 0.5, 0.8]) { const x = ax + (bx - ax) * t + nx * 0.6, z = az + (bz - az) * t + nz * 0.6; if (!crInside(w.L, x, z)) outs++; }
+    return outs >= 2;
+  };
+  const eS = onEdge(w.x0, w.z0, w.x1, w.z0, 0, -1), eN = onEdge(w.x0, w.z1, w.x1, w.z1, 0, 1);
+  const eW = onEdge(w.x0, w.z0, w.x0, w.z1, -1, 0), eE = onEdge(w.x1, w.z0, w.x1, w.z1, 1, 0);
+  const f = { x0: w.x0 + (eW ? CR_E : -0.4), x1: w.x1 - (eE ? CR_E : -0.4), z0: w.z0 + (eS ? CR_E : -0.4), z1: w.z1 - (eN ? CR_E : -0.4) };
+  const dx = f.x1 - f.x0, dz = f.z1 - f.z0;
+  if (dx < 2 || dz < 2) return;
+  const tanP = P.rise / Math.max(0.3, P.run || 1);
+  let run = form === 'mansard' ? P.run : Math.min(dx, dz) / 2;
+  let rise = form === 'mansard' ? P.rise : Math.min(P.rise, run * tanP);
+  const t = { x0: f.x0 + (eW ? run : 0), x1: f.x1 - (eE ? run : 0), z0: f.z0 + (eS ? run : 0), z1: f.z1 - (eN ? run : 0) };
+  if (t.x1 < t.x0) { const m = (f.x0 + f.x1) / 2; t.x0 = t.x1 = m; }
+  if (t.z1 < t.z0) { const m = (f.z0 + f.z1) / 2; t.z0 = t.z1 = m; }
+  const yT = yF + rise - 0.05;
+  const Wp = (lx, lz, y) => { const [x, z] = w.toW(lx, lz); return [x, y, z]; };
+  const ca = Math.cos(w.ang), sa = Math.sin(w.ang);
+  const dirW = (lx, lz) => [ca * lx - sa * lz, sa * lx + ca * lz];
+  const faces = [
+    [[f.x0, f.z0], [f.x1, f.z0], [t.x1, t.z0], [t.x0, t.z0], [0, -1]],
+    [[f.x1, f.z0], [f.x1, f.z1], [t.x1, t.z1], [t.x1, t.z0], [1, 0]],
+    [[f.x1, f.z1], [f.x0, f.z1], [t.x0, t.z1], [t.x1, t.z1], [0, 1]],
+    [[f.x0, f.z1], [f.x0, f.z0], [t.x0, t.z0], [t.x0, t.z1], [-1, 0]],
+  ];
+  for (const [a, b2, c, d, o] of faces) {
+    const A = Wp(a[0], a[1], yF), B2 = Wp(b2[0], b2[1], yF), C = Wp(c[0], c[1], yT), D = Wp(d[0], d[1], yT);
+    const [ox2, oz2] = dirW(o[0], o[1]);
+    const ex = B2[0] - A[0], ez = B2[2] - A[2], L = Math.hypot(ex, ez) || 1;
+    const al = (p) => ((p[0] - A[0]) * ex + (p[2] - A[2]) * ez) / L;
+    const flatSide = Math.hypot(C[0] - B2[0], C[2] - B2[2]) < 0.05 && Math.hypot(D[0] - A[0], D[2] - A[2]) < 0.05;
+    crPoly(buf, [A, B2, C, D], flatSide ? [ox2, 0, oz2] : [ox2, 0.6, oz2], col, aux, aux2, [Math.atan2(ez, ex), A[0], A[2]], [[0, 0], [L, 0], [al(C), yT - yF], [al(D), yT - yF]]);
+  }
+  if (t.x1 - t.x0 > 0.3 && t.z1 - t.z0 > 0.3) {
+    const deck = col.map((v, i) => v * 0.93 + [0.05, 0.03, 0.04][i]);
+    crPoly(buf, [Wp(t.x0, t.z0, yT), Wp(t.x1, t.z0, yT), Wp(t.x1, t.z1, yT), Wp(t.x0, t.z1, yT)], [0, 1, 0], deck, aux, aux2, [w.ang, ...w.toW(t.x0, t.z0)], [[0, 6], [t.x1 - t.x0, 6], [t.x1 - t.x0, 6], [0, 6]]);
+  }
+}
+// lathe helpers for domes and drums: quads between two circles
+function crRingQuads(buf, cx, cz, rA, yA, rB, yB, seg, col, aux, aux2, uA, uB, outUp) {
+  for (let k = 0; k < seg; k++) {
+    const t0 = (k / seg) * Math.PI * 2, t1 = ((k + 1) / seg) * Math.PI * 2;
+    const P = [[cx + Math.cos(t0) * rA, yA, cz + Math.sin(t0) * rA], [cx + Math.cos(t1) * rA, yA, cz + Math.sin(t1) * rA],
+      [cx + Math.cos(t1) * rB, yB, cz + Math.sin(t1) * rB], [cx + Math.cos(t0) * rB, yB, cz + Math.sin(t0) * rB]];
+    const tm = (t0 + t1) / 2;
+    const arc = (r, t) => t * Math.max(r, 0.3);
+    crPoly(buf, rB < 1e-3 ? [P[0], P[1], P[2]] : P, [Math.cos(tm), outUp, Math.sin(tm)], col, aux, aux2, [0, 0, 0],
+      rB < 1e-3 ? [[arc(rA, t0), uA], [arc(rA, t1), uA], [arc(rA, tm), uB]] : [[arc(rA, t0), uA], [arc(rA, t1), uA], [arc(rA, t1), uB], [arc(rA, t0), uB]]);
+  }
+}
+function crDome(buf, cx, cz, y0, r, rise, col, aux, aux2, seg = 20, bands = 6) {
+  for (let i = 0; i < bands; i++) {
+    const p0 = (i / bands) * Math.PI / 2, p1 = ((i + 1) / bands) * Math.PI / 2;
+    crRingQuads(buf, cx, cz, r * Math.cos(p0), y0 + rise * Math.sin(p0), i === bands - 1 ? 0 : r * Math.cos(p1), y0 + rise * Math.sin(p1), seg, col, aux, aux2, rise * p0, rise * p1, Math.sin((p0 + p1) / 2) * 1.2);
+  }
+}
+// Earl Hall: a pale lead-coated dome on a limestone drum, with a lantern
+function crDomeRoof(buf, b, P, tone, auxC, aux2R, cx, cz) {
+  const { obb } = P;
+  const yF = P.eaveY + 0.05, H = P.topY - yF;
+  const rD = Math.max(3.5, Math.min(8.5, Math.min(obb.w, obb.h) * 0.32));
+  const [ox, oz] = obb.centerW;
+  const drumH = H * 0.24, domeH = H * 0.46, lanH = H * 0.30;
+  const stoneC = CR_STONE.map((v) => (v / 255) * 0.9);
+  const auxS = [b.floorH, b.winW, 0, b.style], aux2S = [b.height, b.lit, b.colorVar, 2];
+  crRingQuads(buf, ox, oz, rD + 0.35, yF, rD + 0.35, yF + drumH, 24, stoneC, auxS, aux2S, 1, 1 + drumH, 0);
+  crRingQuads(buf, ox, oz, rD + 0.35, yF + drumH, rD, yF + drumH + 0.01, 24, stoneC, auxS, aux2S, 1, 1.1, 1);
+  crDome(buf, ox, oz, yF + drumH, rD, domeH, tone, auxC, aux2R, 24, 7);
+  const rL = Math.max(0.9, rD * 0.2), yL = yF + drumH + domeH * 0.97;
+  crRingQuads(buf, ox, oz, rL, yL, rL, yL + lanH * 0.62, 12, stoneC, auxS, aux2S, 1, 1 + lanH, 0);
+  crDome(buf, ox, oz, yL + lanH * 0.62, rL * 1.1, lanH * 0.38, tone, auxC, aux2R, 12, 3);
+}
+// Pupin's Rutherfurd Observatory: small painted domes on the flat top
+function crObservatories(buf, top, y, obb, count, auxC, aux2R, auxB, aux2B) {
+  const ca = Math.cos(obb.ang), sa = Math.sin(obb.ang);
+  const [ox, oz] = obb.centerW;
+  for (let k = 0; k < count; k++) {
+    const t = count === 1 ? 0 : (k - (count - 1) / 2) * 9.5;
+    const px = ox + ca * t, pz = oz + sa * t;
+    if (!crInside(top, px, pz)) continue;
+    const drum = [0.78, 0.78, 0.76];
+    crRingQuads(buf, px, pz, 3.0, y, 3.0, y + 1.5, 20, drum, auxB, aux2B, 1, 2.5, 0);
+    crDome(buf, px, pz, y + 1.5, 3.0, 2.9, CR_TONE.obs, auxC, aux2R, 20, 6);
+  }
 }
 // ---------------------------------------------------------------------------
 // FAC8 COPING BAND — the horizontal cap on top of a parapet, as its own
@@ -562,8 +964,9 @@ function copingBand(buf, outer, inner, y, b, membId) {
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n;
     const A = outer[i], B = outer[j], C = inner[j], D = inner[i];
-    buf.quad([A[0], y, A[1]], [D[0], y, D[1]], [C[0], y, C[1]], [B[0], y, B[1]],
-      [0, 1, 0], col, [0, 0, 0, 0, 0, 0, 0, 0], aux, aux2);
+    // NM24: a horizontal triangle faces up iff its (x, z) shoelace cross is negative; wind each half up explicitly
+    upTri(buf, [A[0], y, A[1]], [D[0], y, D[1]], [C[0], y, C[1]], col, aux, aux2);
+    upTri(buf, [A[0], y, A[1]], [C[0], y, C[1]], [B[0], y, B[1]], col, aux, aux2);
   }
 }
 // FAC8 PARAPET — outer skin flush with the facade, inner skin set back by the
@@ -951,8 +1354,9 @@ function roofFill(buf, ring, y, b, copper = false, membOverride = -1, holes = nu
     cx /= ring.length; cz /= ring.length;
     let minR = 1e9;
     for (const [x, z] of ring) minR = Math.min(minR, Math.hypot(x - cx, z - cz));
-    if (minR > RIM_M * 2.4) {
-      const rin = ringInsetAbs(ring, RIM_M, cx, cz);
+    // NM24: the band is exactly RIM_M wide (its uv codes the distance), so it takes the exact miter offset or nothing
+    const rin = minR > RIM_M * 2.4 ? (NM24O ? ringOffsetMiter(ring, RIM_M) : ringInsetAbs(ring, RIM_M, cx, cz)) : null;
+    if (rin) {
       const n = ring.length;
       // A radial inset is not a polygon offset: on a concave or L-shaped footprint the
       // inset ring can self-intersect, and earcut turns a self-intersecting ring into a
@@ -970,7 +1374,7 @@ function roofFill(buf, ring, y, b, copper = false, membOverride = -1, holes = nu
           const A = [flat[tris[i] * 2], y, flat[tris[i] * 2 + 1]];
           const B = [flat[tris[i + 1] * 2], y, flat[tris[i + 1] * 2 + 1]];
           const C2 = [flat[tris[i + 2] * 2], y, flat[tris[i + 2] * 2 + 1]];
-          buf.tri(A, C2, B, [0, 1, 0], col, aux, aux2, null, rf);
+          upTri(buf, A, C2, B, col, aux, aux2, null, rf);   // NM24
         }
         return;
       }
@@ -978,11 +1382,9 @@ function roofFill(buf, ring, y, b, copper = false, membOverride = -1, holes = nu
       for (let i = 0; i < n; i++) {
         const O0 = ring[i], O1 = ring[(i + 1) % n];
         const I0 = rin[i], I1 = rin[(i + 1) % n];
-        // same winding as the earcut output below (buf.tri(A, C, B) faces up)
-        buf.tri([O0[0], y, O0[1]], [I1[0], y, I1[1]], [O1[0], y, O1[1]], [0, 1, 0], col, aux, aux2,
-          [OUT, 0, IN, 0, OUT, 0], rf);
-        buf.tri([O0[0], y, O0[1]], [I0[0], y, I0[1]], [I1[0], y, I1[1]], [0, 1, 0], col, aux, aux2,
-          [OUT, 0, IN, 0, IN, 0], rf);
+        // NM24: wound up explicitly (upTri), not by assuming the inset kept every edge's direction
+        upTri(buf, [O0[0], y, O0[1]], [I1[0], y, I1[1]], [O1[0], y, O1[1]], col, aux, aux2, [OUT, 0, IN, 0, OUT, 0], rf);
+        upTri(buf, [O0[0], y, O0[1]], [I0[0], y, I0[1]], [I1[0], y, I1[1]], col, aux, aux2, [OUT, 0, IN, 0, IN, 0], rf);
       }
       const flatI = [];
       for (const [x, z] of rin) flatI.push(x, z);
@@ -991,7 +1393,7 @@ function roofFill(buf, ring, y, b, copper = false, membOverride = -1, holes = nu
         const A = [flatI[trisI[i] * 2], y, flatI[trisI[i] * 2 + 1]];
         const B = [flatI[trisI[i + 1] * 2], y, flatI[trisI[i + 1] * 2 + 1]];
         const C2 = [flatI[trisI[i + 2] * 2], y, flatI[trisI[i + 2] * 2 + 1]];
-        buf.tri(A, C2, B, [0, 1, 0], col, aux, aux2, [IN, 0, IN, 0, IN, 0]);
+        upTri(buf, A, C2, B, col, aux, aux2, [IN, 0, IN, 0, IN, 0], rf);   // NM24: up; RF13: the inner deck takes the roof frame too
       }
       return;
     }
@@ -1000,7 +1402,7 @@ function roofFill(buf, ring, y, b, copper = false, membOverride = -1, holes = nu
     const A = [flat[tris[i] * 2], y, flat[tris[i] * 2 + 1]];
     const B = [flat[tris[i + 1] * 2], y, flat[tris[i + 1] * 2 + 1]];
     const C2 = [flat[tris[i + 2] * 2], y, flat[tris[i + 2] * 2 + 1]];
-    buf.tri(A, C2, B, [0, 1, 0], col, aux, aux2, null, rf);
+    upTri(buf, A, C2, B, col, aux, aux2, null, rf);   // NM24: earcut on a self-touching ring can emit a few flipped triangles
   }
 }
 // ---------------------------------------------------------------------------
@@ -1582,7 +1984,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
         const wallTop = y0 + b.height * 0.66;
         extrudePrism(buf, ring, fndY, wallTop, b, opts);
         roofFill(buf, ring, wallTop, b);
-        hipRoof(buf, ring, wallTop, b, [b.r / 255 * 0.5, b.g / 255 * 0.5, b.b / 255 * 0.52], cx, cz, 0.98);
+        hipRoof(buf, ring, wallTop, b, [b.r / 255 * 0.5, b.g / 255 * 0.5, b.b / 255 * 0.52], cx, cz, 0.98, 0.3, CR24 ? 6 : 0);   // CR24: slate, not a membrane
       // R12: the mansard is the ONE non-flat roof New York actually has on a mid-block
       // pre-war building, and at 12 % of three styles it appeared about once per two
       // blocks. Second Empire brownstone rows (STYLE.ROWHOUSE) carry them too — 1870s
@@ -1626,14 +2028,22 @@ export async function assembleTile(key, arrayBuf, ctx) {
         // ROOF9 brief C: the modern-retail facade replaces the body extrusion
         // only — the roof fill, the parapet and the rooftop engine below are
         // shared with every other flat-roofed building.
-        if (ROOF9 && b.style === STYLE.RETAIL_MODERN && b.height > 6 && b.storeH > 2) {
+        // CR24: a campus roof (compiler roofKind 2, or a BUILDING_OVERRIDES `roof`) owns the top storey: walls to the eave
+        const crP = crPlan(b, ring, holes, topY);
+        if (crP) {
+          heroTop = crP.eaveY - y0;
+          extrudePrism(buf, ring, fndY, crP.eaveY, b, opts);
+          crBuild(buf, ring, b, crP, cx, cz, y0);
+        } else if (ROOF9 && b.style === STYLE.RETAIL_MODERN && b.height > 6 && b.storeH > 2) {
           retailModern(buf, ring, cx, cz, fndY, y0, topY, b, opts);
         } else extrudePrism(buf, ring, fndY, topY, b, opts);
-        if ((b.roofKind === 2 || (CH14 && b.roofKind === 3)) && rectness > 0.78 && !holes.length) {   // CY12: not over a light court; CH14b: 3 = slate
+        if (crP) {
+          // CR24 built the whole roof above
+        } else if ((b.roofKind === 2 || (CH14 && b.roofKind === 3)) && rectness > 0.78 && !holes.length) {   // CY12: not over a light court; CH14b: 3 = slate
           // campus copper hip roof (rectangular halls only) — weathered verdigris,
           // muted gray-green; the shader keep-color path brightens it ~1.15x in sun
           roofFill(buf, ring, topY, b);
-          hipRoof(buf, ring, topY, b, hipLook(b).col, cx, cz, 0.9, hipLook(b).riseK);
+          hipRoof(buf, ring, topY, b, hipLook(b).col, cx, cz, 0.9, hipLook(b).riseK, hipLook(b).memb);
         } else if (CH14 && (b.roofKind === 2 || b.roofKind === 3) && !holes.length && b.height < 60 && b.area > 350   // CH14c: 60, not 42 — the 49 m concave hall fell to the tower crown (a dome cap)
             && campusHipWings(buf, ring, topY, b, hipLook(b).col, cx, cz, hipLook(b).riseK)) {
           // CH14: the concave McKim hall — a copper hip over each rectangular wing (campusHipWings above). The

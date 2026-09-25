@@ -1062,6 +1062,17 @@ window.__GOTO_NODE = (dx = 14, dz = 10, dy = 1.7, pitch = -0.12) => {
   if (controller.vel) controller.vel.set(0, 0, 0);
   return { node: [Math.round(best.x), Math.round(best.z)], dist: Math.round(bd), cam: [Math.round(gx), +controller.pos.y.toFixed(1), Math.round(gz)] };
 };
+// NM24 harness: jump the camera (world x, y, z, yaw, pitch) mid-session, the way an API client or a fast flight does
+window.__TELEPORT = (x, y, z, yaw, pitch) => {
+  if (!controller) return 'no controller';
+  controller.pos.set(x, y, z);
+  if (yaw !== undefined) controller.yaw = yaw;
+  if (pitch !== undefined) controller.pitch = pitch;
+  if (controller.vel) controller.vel.set(0, 0, 0);
+  return [x, y, z];
+};
+// the same tear-proof capture outside record mode (the record-mode hook above keeps its own definition)
+if (!window.__capture) window.__capture = (type = 'image/jpeg', q = 0.95) => engine.capture(type, q);
 // frame profile: average ms per frame per subsystem (needs ?prof=1)
 window.__PROF_RESET = () => { const P = engine.prof; if (P) { P.n = 0; P.t = {}; } engine.profRender = null; };
 window.__PROF = () => {

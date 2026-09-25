@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { StaticPool } from './staticPool.js';
 import { assembleTile } from './assemble.js';
-import { FAR_UNIFORMS } from './materials.js';
+import { FAR_UNIFORMS, NEAR_MASK_N } from './materials.js';
 import { TILE, MACRO } from '../shared/geo.js';
 import { buildMacroCrowns } from './towers.js';
 import { NO_TOWER_FX } from './materials.js';
@@ -29,6 +29,8 @@ export class Streamer {
     this.macroGroup = new THREE.Group();
     scene.add(this.macroGroup);
     this.stats = { near: 0, macro: 0, pending: 0 };
+    this._maskVer = 0;     // NM24: bumped whenever a near tile becomes ready or is unloaded
+    this._maskKey = '';
   }
   async init(base = 'tiles') {
     // ?tiles=tiles_dev or ?tiles=http://127.0.0.1:5310/tiles_dev — test a dev compile without touching the live set
@@ -94,7 +96,7 @@ export class Streamer {
     if (!this.manifest) return;
     this.px = px; this.pz = pz;
     FAR_UNIFORMS.playerXZ.value.set(px, pz);
-    // only discard far buildings once the near ring is actually assembled
+    // only discard far buildings once the near ring is actually assembled (the ?nmask=0 circle; NM24 masks by tile)
     FAR_UNIFORMS.nearR.value = this.tiles.size > 4 ? NEAR_R * 0.82 : 0;
     // ---- near tiles
     const t0x = Math.floor((px - NEAR_R) / TILE), t1x = Math.floor((px + NEAR_R) / TILE);
@@ -134,8 +136,10 @@ export class Streamer {
         this.surfInfos.delete(key);
         this.roadAts.delete(key);
         this.tiles.delete(key);
+        this._maskVer++;
       }
     }
+    this._updateNearMask(px, pz);
     // ---- macros (all, nearest first, budget 1 concurrent)
     let macroLoading = 0;
     for (const m of this.macros.values()) if (m.state === 'loading') macroLoading++;
@@ -154,6 +158,22 @@ export class Streamer {
     this.stats.near = this.tiles.size;
     this.stats.macro = this.macros.size;
     this.stats.pending = this.fetching + this.queue.length;
+  }
+  // NM24: the far LoD is dropped only over near tiles that are READY (materials.js farHidden), on a NEAR_MASK_N x
+  // NEAR_MASK_N window of tiles centred on the player's; rebuilt when a tile's state or the window changes
+  _updateNearMask(px, pz) {
+    const N = NEAR_MASK_N;
+    const ox = Math.floor(px / TILE) - N / 2, oz = Math.floor(pz / TILE) - N / 2;
+    const key = `${ox}_${oz}_${this._maskVer}`;
+    if (key === this._maskKey) return;
+    this._maskKey = key;
+    const tex = FAR_UNIFORMS.nearMask.value, d = tex.image.data;
+    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+      const t = this.tiles.get(`${ox + i}_${oz + j}`);
+      d[j * N + i] = t && t.state === 'ready' ? 255 : 0;
+    }
+    FAR_UNIFORMS.nearMaskO.value.set(ox, oz);
+    tex.needsUpdate = true;
   }
   idle() {
     if (!this.manifest || this.fetching || this.queue.length || (this.outstanding ?? 1) !== 0) return false;
@@ -182,6 +202,7 @@ export class Streamer {
       this.scene.add(data.group);
       rec.state = 'ready';
       rec.data = data;
+      this._maskVer++;
       this.terrains.set(key, data.terrain);
       if (data.surfaceY) this.surfaces.set(key, data.surfaceY);
       if (data.surfaceInfo) this.surfInfos.set(key, data.surfaceInfo);

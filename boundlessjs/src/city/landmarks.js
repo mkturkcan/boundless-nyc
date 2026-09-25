@@ -872,6 +872,7 @@ export const BUILDERS = {
     const zGl = zF - 1.85;
 
     const lime = bin(), trim = bin(), gran = bin(), brk = bin(), gls = bin(), cop = bin(), brz = bin();
+    const deck = bin(), plant = bin();   // CR24: the flat roof and its plant
 
     /* ---- massing ---- */
     gran.add(box(W + 0.8, YP + 1.2, Dp + 0.8, 0, { y: -1.2, z: zC }));                 // granite footing
@@ -977,21 +978,37 @@ export const BUILDERS = {
     // the crowning cornice is GREEN COPPER, not stone: it is the strongest
     // horizontal in every photograph of the north front
     trim.add(box(W - 2.6, 0.35, Dp - 1.0, 0, { y: ATT, z: zC }));
-    cop.add(box(W - 1.4, 0.62, Dp + 0.4, 0, { y: ATT + 0.35, z: zC }));
+    // CR24 (owner 2026-09-24, "Columbia buildings' roofs are missing"): the copper is the cornice and the parapet RING.
+    // Both were solid slabs over the whole plan with a copper pyramid on them, so from above Butler was one green lid;
+    // Google Earth (refs/earth/col_earth_top.png, col_earth_n.png, reference only) shows a flat pale deck carrying the
+    // stack penthouse and its plant, with the copper only round the edge.
+    const ring4 = (bn, w, d, t, h, y) => {
+      bn.add(box(w, h, t, 0, { y, z: zC + d / 2 - t / 2 }));
+      bn.add(box(w, h, t, 0, { y, z: zC - d / 2 + t / 2 }));
+      bn.add(box(t, h, d - 2 * t, 0, { x: w / 2 - t / 2, y, z: zC }));
+      bn.add(box(t, h, d - 2 * t, 0, { x: -w / 2 + t / 2, y, z: zC }));
+    };
+    ring4(cop, W - 1.4, Dp + 0.4, 1.3, 0.62, ATT + 0.35);                                   // the crowning copper cornice
     for (let i = 0, n = Math.floor((W - 3) / 0.88); i < n; i++)
       cop.add(box(0.3, 0.26, 0.52, 0, { x: -(W - 3) / 2 + (i + 0.5) * ((W - 3) / n), y: ATT + 0.09, z: zF - 0.42 }));
-    cop.add(box(W - 3.4, 0.55, Dp - 1.8, 0, { y: ATT + 0.97, z: zC }));                // parapet
+    ring4(cop, W - 3.4, Dp - 1.8, 0.4, 0.55, ATT + 0.97);                                   // parapet
 
-    /* ---- green copper hipped roof behind the parapet ---- */
-    cop.add(pyramid(cW - 5, Dp - 9, Math.max(1.2, TOP - ATT - 1.6), 0, { y: ATT + 1.52, z: zC }));
+    /* ---- the roof: a pale coated deck, the penthouse over the stacks, packaged plant ---- */
+    deck.add(box(W - 3.0, 0.08, Dp - 1.6, 0, { y: ATT + 0.35, z: zC }));
+    trim.add(box(cW * 0.46, 4.4, Dp * 0.36, 0, { y: ATT + 0.43, z: zC + Dp * 0.04 }));
+    trim.add(box(cW * 0.24, 2.6, Dp * 0.2, 0, { y: ATT + 4.83, z: zC + Dp * 0.04 }));
+    for (const [px, pz] of [[-0.33, -0.27], [0.33, -0.27], [-0.37, 0.31], [0.37, 0.31]])
+      plant.add(box(3.2, 1.9, 2.4, 0, { x: px * cW, y: ATT + 0.43, z: zC + pz * Dp }));
 
     lime.into(r, CU_LIME, { rough: 0.88 });
     trim.into(r, CU_TRIM, { rough: 0.82 });
     gran.into(r, CU_GRAN, { rough: 0.93 });
     brk.into(r, 0x8e5138, { rough: 0.94 });
     gls.into(r, 0x1c2228, { rough: 0.30, metal: 0.16, flat: false });
-    cop.into(r, 0x5d8a72, { rough: 0.62, metal: 0.25 });
+    cop.into(r, 0x6e9c86, { rough: 0.74, metal: 0.05 });   // CR24: verdigris, a matte mineral crust
     brz.into(r, 0x413a2e, { rough: 0.5, metal: 0.5 });
+    deck.into(r, 0x9d9b94, { rough: 0.9 });
+    plant.into(r, 0x8f9392, { rough: 0.6, metal: 0.35 });
 
     return fin(g, ctx, [{ w: W, h: TOP, d: Dp, y: TOP / 2 }]);
   },
@@ -1156,7 +1173,7 @@ export const BUILDERS = {
     brk.into(r, 0x8b4d3b, { rough: 0.94 });
     lime.into(r, 0xd2cbb6, { rough: 0.84 });
     gls.into(r, 0x252b31, { rough: 0.3, metal: 0.12, flat: false });
-    cop.into(r, 0x54806b, { rough: 0.58, metal: 0.18, flat: true });
+    cop.into(r, 0x6a7a5c, { rough: 0.7, metal: 0.08, flat: true });   // CR24: olive, older than the halls' copper (col_earth_e.png)
     brz.into(r, 0x463c30, { rough: 0.5, metal: 0.5 });
     return fin(g, ctx, [{ w: W + 4, h: CORN + 1.2, d: D, y: (CORN + 1.2) / 2 },
       { w: dr * 2, h: DRT, d: dr * 2, y: DRT / 2 }]);

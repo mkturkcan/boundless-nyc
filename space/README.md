@@ -43,7 +43,8 @@ pedestrian models: CARLA Simulator (carla.org), CC BY 4.0. Motion data: 100STYLE
 Poly Haven and ambientCG (CC0). The complete list is in `ACKNOWLEDGEMENTS.md` in the repository.
 
 **Licensing.** The server code is MIT and the compiled city ODbL 1.0. The photoreal pedestrians contain components
-created with Epic Games' MetaHuman, which may not be used to train or enhance AI models; `LICENSING.md` in the
+created with Epic Games' MetaHuman, which may not be used to build or enhance a database or to train or test AI
+models; `LICENSING.md` in the
 repository explains the notice and the procedural alternative.
 
 **Citation.** M. K. Turkcan, Y. Li, C. Zang, J. Ghaderi, G. Zussman and Z. Kostic. *Boundless: Generating

@@ -33,6 +33,11 @@ function applyReadOverride(b, o) {
   if (o.storeH != null) b.storeH = o.storeH;
   if (o.wall) b.wall = o.wall;          // dresser wall family (nycDress FAMILY_LUM key); runtime only
   if (o.base) { b.baseWall = o.base.wall; b.baseFloors = o.base.floors; }   // dresser stone base; runtime only
+  // CR24 (campus roofs): runtime roof facts for assemble.js crPlan, a membrane override (packed bits 3-4), and the landmark id
+  // where the compiler put a landmark point on the wrong footprint (St. Paul's Chapel had replaced Fayerweather Hall)
+  if (o.roof) b.campusRoof = o.roof;
+  if (o.memb != null) b.roofKind = (b.roofKind & ~24) | ((o.memb & 3) << 3);
+  if (o.landmarkId != null) b.landmarkId = o.landmarkId;
 }
 // Binary tile parser (matches tools/pipeline/binio.mjs writer)
 export function parseTile(buf) {

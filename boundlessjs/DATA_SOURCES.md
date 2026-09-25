@@ -79,8 +79,8 @@ cached files are skipped). Compiled output: `public/tiles/`.
   public/models/fleet24/, and by build_peds.mjs / build_clips.mjs (25 walker bodies, 37 outfit variants, walk/run/turn/idle
   clips) into public/models/peds24/. Provenance note: many walker materials carry
   MetaHuman naming (`MI_EyeRefractive`, `MI_LacrimalFluid`, `*_MH`) and some bodies are tagged `_G3`/`GEN23`; CARLA ships
-  them under its CC-BY declaration; users planning commercial use of rendered imagery should also review Epic Games' MetaHuman
-  terms. Raw exports are not included.
+  them under its CC-BY declaration. Epic's MetaHuman licence forbids using MetaHuman characters to build or enhance a
+  database or to train or test AI (LICENSING.md quotes the clause): datasets are rendered with `--pedestrians procedural`. Raw exports are not included.
   NYC edits (tools/assets): the taxi's "CARLA TAXI" door logos repainted "NYC TAXI" (livery_taxi.mjs); the police car's
   CARLA livery replaced by an NYPD side livery drawn at runtime (sim/fleet24.js nypdDecal); "CARLA" lettering removed from
   the red bomber's albedo / normal / ORM (build_peds.mjs PATCHES); walker skin tones recalibrated per character.

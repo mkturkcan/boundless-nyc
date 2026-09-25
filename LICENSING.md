@@ -44,16 +44,23 @@ whole pedestrian bank is flagged:
 - `Content/models/peds24/NOTICE.md` repeats this notice next to the assets.
 
 MetaHuman-derived components are subject to Epic's MetaHuman licence (<https://www.metahuman.com/license>), which
-currently operates through the Unreal Engine EULA, in addition to CC BY 4.0. Epic's terms permit MetaHuman characters
-in other engines and software, including commercial projects. They do not permit using MetaHumans to train or enhance
-artificial-intelligence models, and revenue thresholds apply to commercial users. Read Epic's current terms before
-relying on this summary.
+operates through the Unreal Engine EULA, in addition to CC BY 4.0. On artificial intelligence the licence states:
+
+> You can use MetaHuman characters and animation in workflows that incorporate artificial intelligence technology.
+> However, you may not use MetaHuman characters or animation curves to build or enhance any database or train or test
+> artificial intelligence, machine learning, deep learning, neural networks, or similar technologies (as further
+> detailed in the Unreal Engine EULA). This includes the use of rendered output from MetaHuman digital characters and
+> animation curves, if created to replicate the functionality of MetaHuman.
+
+The Unreal Engine EULA gives the full terms. Read Epic's current terms before relying on this notice.
 
 In practice:
 
-- **Exploring, rendering and publishing images or video.** Use the photoreal pedestrians, with the attributions above.
-- **Frames meant to train, fine-tune, test or benchmark a machine-learning model.** Render without the MetaHuman-derived
-  assets, unless Epic's terms permit your use. The simulation server does this with `--pedestrians procedural`. It
-  replaces the bank with the built-in procedural pedestrians, which use no third-party assets and are MIT-licensed
-  like the rest of the code, and it exposes one walker blueprint, `walker.pedestrian.procedural`. In the browser
-  client, the URL parameter `?crowd=0` does the same.
+- **Exploring, rendering and publishing images or video, and workflows that incorporate AI technology.** The
+  photoreal pedestrians may be used, with the attributions above.
+- **Building or enhancing a dataset, and training or testing a model.** This covers the simulator's main uses:
+  recording labelled frames, and training or evaluating perception, prediction or driving models on such frames or in
+  closed loop. Do not use the MetaHuman-derived assets for these unless Epic's terms permit your use. Start the
+  simulation server with `--pedestrians procedural`: it replaces the bank with the built-in procedural pedestrians,
+  which use no third-party assets and are MIT-licensed like the rest of the code, and it exposes one walker blueprint,
+  `walker.pedestrian.procedural`. In the browser client, the URL parameter `?crowd=0` does the same.

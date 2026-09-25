@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TILE } from '../shared/geo.js';
 import { fasciaTexture } from '../city/fasciaAtlas.js';  // 2 x 16 slots of 512x64 (inlined in the GLSL below)
 
 // GLOBAL height fog (aerial perspective): override three's fog chunks BEFORE
@@ -152,7 +153,33 @@ if (typeof location !== 'undefined') {
   t.needsUpdate = true;
   ENV.cityAO.value = t;
 }
-export const FAR_UNIFORMS = { playerXZ: { value: new THREE.Vector2(0, 0) }, nearR: { value: 0 } };
+// NM24 (owner 2026-09-24: "building faces sometimes get lost or disappear"). The far LoD (the macro buildings and the
+// macro terrain) was discarded inside a fixed circle of 0.82 x NEAR_R round the player as soon as five near tiles
+// EXISTED, loading ones included. Wherever a near tile was still being fetched or assembled, neither representation drew,
+// so whole blocks and their ground went missing after a teleport or a fast move. Past the circle both drew over the same
+// footprints, and the macro box sits up to 8 m off its near twin (its 0.996 shrink is about the macro origin), so facades
+// traded places as the circle moved with the camera. Now a NEAR_MASK_N x NEAR_MASK_N mask centred on the player's tile
+// marks the near tiles that are READY (streamer.js), and a far fragment is dropped exactly where a ready near tile covers
+// it: never both, never neither. ?nmask=0 restores the circle.
+export const NEAR_MASK_N = 16;
+const NM24 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('nmask') === '0');
+const nearMaskTex = new THREE.DataTexture(new Uint8Array(NEAR_MASK_N * NEAR_MASK_N), NEAR_MASK_N, NEAR_MASK_N, THREE.RedFormat, THREE.UnsignedByteType);
+nearMaskTex.magFilter = nearMaskTex.minFilter = THREE.NearestFilter;
+nearMaskTex.generateMipmaps = false;
+nearMaskTex.needsUpdate = true;
+export const FAR_UNIFORMS = {
+  playerXZ: { value: new THREE.Vector2(0, 0) }, nearR: { value: 0 },
+  nearMask: { value: nearMaskTex }, nearMaskO: { value: new THREE.Vector2(-1e5, -1e5) }, nearMaskOn: { value: NM24 ? 1 : 0 },
+};
+// declared after `playerXZ` and `nearR` in both far shaders (the macro buildings and the ground's far terrain, matId 8)
+const NEARMASK_GLSL = `
+        uniform sampler2D nearMask; uniform vec2 nearMaskO; uniform float nearMaskOn;
+        bool farHidden(vec2 xz) {
+          if (nearMaskOn < 0.5) return distance(xz, playerXZ) < nearR;
+          vec2 t = floor(xz / ${TILE}.0) - nearMaskO;
+          if (t.x < 0.0 || t.y < 0.0 || t.x >= ${NEAR_MASK_N}.0 || t.y >= ${NEAR_MASK_N}.0) return false;
+          return texture2D(nearMask, (t + 0.5) / ${NEAR_MASK_N}.0).r > 0.5;
+        }`;
 
 // Snow-cap any lit material: up-facing fragments whiten with ENV.snow. Uses
 // the fully-transformed VIEW-SPACE normal, so it's correct for skinned rigs,
@@ -999,7 +1026,34 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
           float rollTint = (hash12(vec2(floor(rollV), cvar * 53.0)) - 0.5) * 0.06 * rollVis;   // roll-to-roll batch tint
           vec3 roofC;
           bool patterned = false; // pavers/sedum/slate carry their own detail
-          if (membF > 5.5) {         // mansard slate: horizontal shingle courses
+          bool copperF = false;   // CR24 verdigris copper: keeps its own albedo (no colour-keep test, no membrane terms)
+          if (membF > 6.5 && membF < 7.5) {
+            // ---- CR24 VERDIGRIS COPPER (Columbia's McKim roofs, domes and dormers; assemble.js crBuild). The vertex
+            // colour is the patina base (mint verdigris, the paler grey-green, lead, painted metal); uv.x runs along the
+            // eave in metres and uv.y is the height above the eave, so the standing seams run DOWN every slope and the
+            // gutter line is where the drip darkens it. Patina is a matte mineral crust: dielectric, rough, no sheen.
+            float sx = vFUv.x / 0.46;
+            float sAA = max(fwidth(sx), 1e-4);
+            float sVis = smoothstep(0.75, 0.22, sAA);
+            float sd = abs(fract(sx) - 0.5) * 2.0;                        // 0 mid-pan, 1 on the seam
+            float rib = smoothstep(0.86 - sAA, 0.95, sd) * sVis;
+            float ribLit = smoothstep(0.80 - sAA, 0.88, sd) * (1.0 - rib) * sVis;
+            float pan = floor(sx);
+            float hy = vFUv.y;
+            vec3 base = diffuseColor.rgb;
+            float pT = hash12(vec2(pan, cvar * 97.0)) - 0.5;               // sheet-to-sheet patina batch
+            float blt = fbm(vec2(vFUv.x, hy) * 0.28 + cvar * 13.0);         // soft weathering blotches
+            float strk = vnoise(vec2(vFUv.x * 1.6 + cvar * 31.0, hy * 0.20)); // run-off streaks down the slope
+            vec3 cu = base * (0.92 + 0.12 * pT + 0.22 * (blt - 0.5));
+            cu = mix(cu, base * vec3(0.70, 0.80, 0.74), smoothstep(0.58, 0.88, strk) * 0.42);
+            cu = mix(cu, base * vec3(0.46, 0.44, 0.38), smoothstep(0.55, 0.0, hy) * 0.40);   // the drip over the gutter
+            cu *= 1.0 - rib * 0.24;
+            cu *= 1.0 + ribLit * 0.07;
+            roofC = cu;
+            FAC_rough = 0.76 + 0.08 * blt;
+            patterned = true;
+            copperF = true;
+          } else if (membF > 5.5) {         // mansard slate: horizontal shingle courses
             float crs = vWP.y / 0.34;
             float cAA = max(fwidth(crs), 1e-4);
             float cLine = smoothstep(0.1 + cAA, 0.0, abs(fract(crs) - 0.5) * 2.0 - 0.8);
@@ -1143,7 +1197,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
           }` : ''}
           if (!patterned) roofC *= (1.0 - seamL * 0.10) * (1.0 + rollTint);   // RF13 roll seams + batch tint on coated/bitumen/gravel
           albedo = roofC;
-          if (diffuseColor.g > diffuseColor.r * 1.25 && diffuseColor.g > diffuseColor.b * 1.12) { // copper verdigris only: greens, not blue-glass teals
+          if (!copperF && diffuseColor.g > diffuseColor.r * 1.25 && diffuseColor.g > diffuseColor.b * 1.12) { // copper verdigris only: greens, not blue-glass teals
             albedo = diffuseColor.rgb * (0.85 + 0.2 * blotch + 0.1 * micro);
             FAC_rough = 0.6;
           }
@@ -3126,6 +3180,7 @@ export function makeGroundMaterial() {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.playerXZ = FAR_UNIFORMS.playerXZ;
     sh.uniforms.nearR = FAR_UNIFORMS.nearR;
+    sh.uniforms.nearMask = FAR_UNIFORMS.nearMask; sh.uniforms.nearMaskO = FAR_UNIFORMS.nearMaskO; sh.uniforms.nearMaskOn = FAR_UNIFORMS.nearMaskOn;   // NM24
     sh.uniforms.night = ENV.night;
     sh.uniforms.wet = ENV.wet;
     sh.uniforms.windT = ENV.windT;
@@ -3163,7 +3218,7 @@ export function makeGroundMaterial() {
         }`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec2 playerXZ; uniform float nearR; uniform float night;
+        uniform vec2 playerXZ; uniform float nearR; uniform float night;${NEARMASK_GLSL}
         uniform sampler2D t_asC; uniform sampler2D t_asN; uniform sampler2D t_asR; uniform sampler2D t_asD;
         uniform sampler2D t_coC; uniform sampler2D t_coN;
         uniform sampler2D t_grC; uniform sampler2D t_grN;
@@ -3193,7 +3248,7 @@ export function makeGroundMaterial() {
         GND_patch = 0.0; GND_manhole = 0.0; GND_oil = 0.0; GND_tn = vec3(0.0, 0.0, 1.0); GND_tnW = 0.0;
         GND_paint = 0.0; GND_rock = 0.0; GND_spec = 1.0;
         GND_age = 0.5; GND_wheel = 0.0; GND_cast = 0.0;
-        if (m == 8 && distance(vWPos.xz, playerXZ) < nearR) discard;
+        if (m == 8 && farHidden(vWPos.xz)) discard;   // NM24: far terrain only where no ready near tile is
         GND_rough = 0.95;
         vec3 albedo;
         float n1 = vnoise(vWPos.xz * 0.35); // macro variation (~9m) only
@@ -4394,6 +4449,7 @@ export function makeFarMaterial() {
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.playerXZ = FAR_UNIFORMS.playerXZ;
     sh.uniforms.nearR = FAR_UNIFORMS.nearR;
+    sh.uniforms.nearMask = FAR_UNIFORMS.nearMask; sh.uniforms.nearMaskO = FAR_UNIFORMS.nearMaskO; sh.uniforms.nearMaskOn = FAR_UNIFORMS.nearMaskOn;   // NM24
     sh.uniforms.night = ENV.night;
     sh.uniforms.wet = ENV.wet;
     sh.uniforms.snowA = ENV.snow;
@@ -4417,7 +4473,7 @@ export function makeFarMaterial() {
         vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec2 playerXZ; uniform float nearR; uniform float night;
+        uniform vec2 playerXZ; uniform float nearR; uniform float night;${NEARMASK_GLSL}
         uniform float wet; uniform float snowA;
         uniform vec3 sunDirF; uniform vec3 sunColF; uniform vec3 skyAmbF;
         uniform sampler2D cityAO; uniform vec4 cityAORect; uniform float cityAOAmt;
@@ -4426,7 +4482,7 @@ export function makeFarMaterial() {
         ${SKYREFL_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
       {
-        if (distance(vWPos.xz, playerXZ) < nearR) discard;
+        if (farHidden(vWPos.xz)) discard;   // NM24: a ready near tile draws this ground
         diffuseColor.rgb *= diffuseColor.rgb; // sRGB bytes → approx linear
         // LIT far macro (was flat unlit albedo = the "whole horizon looks
         // flat" root cause): flat-shaded facet normals from derivatives,

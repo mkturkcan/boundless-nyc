@@ -550,7 +550,7 @@ if (PROPSET) for (const F of FITS) {
 const variants = readVariants();
 const bodies = {};
 // licence block: the bank contains MetaHuman-derived components (LICENSING.md, MetaHuman notice); NOTICE.md is written next to it
-const LICENSE_BLOCK = {"spdx":"CC-BY-4.0","source":"CARLA 0.10.0 walkers (carla.org)","metahuman":true,"notice":"NOTICE.md","terms":["https://creativecommons.org/licenses/by/4.0/","https://www.metahuman.com/license"],"note":"Contains components created with Epic Games MetaHuman; not for training or enhancing AI models. See NOTICE.md."};
+const LICENSE_BLOCK = {"spdx":"CC-BY-4.0","source":"CARLA 0.10.0 walkers (carla.org)","metahuman":true,"notice":"NOTICE.md","terms":["https://creativecommons.org/licenses/by/4.0/","https://www.metahuman.com/license"],"note":"Contains components created with Epic Games MetaHuman. The MetaHuman licence forbids using them to build or enhance a database or to train or test AI models. See NOTICE.md."};
 const manifest = { version: 2, built: new Date().toISOString(), source: 'CARLA 0.10.0 walkers (CC-BY 4.0)', license: LICENSE_BLOCK, skeletons: {}, bodies: {}, variants: [], arrays: {} };
 const bodyNames = [...new Set(variants.map((v) => v.mesh.split('/').pop()))].filter((n) => !ONLY || ONLY.includes(n));
 for (const name of bodyNames) {

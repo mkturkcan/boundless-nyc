@@ -46,7 +46,8 @@ const START_LON = Number(opt('start-lon', '-73.95905'));
 const TIME = opt('time', 'day');
 const QUALITY = opt('quality', 'high');
 // photoreal: the CARLA 0.10 walker bank, which contains MetaHuman-derived components (LICENSING.md); procedural: the
-// built-in articulated mannequins, no third-party assets (use it for frames meant as AI training data)
+// built-in articulated mannequins, no third-party assets. The MetaHuman licence forbids using the photoreal bank to build
+// or enhance a database or to train or test AI, so datasets, training and evaluation runs take `--pedestrians procedural`.
 const PEDESTRIANS = opt('pedestrians', 'photoreal');
 // --log <file>: a GUI app on Windows has no console to print to, so the log can also go to a file
 const LOG_FILE = opt('log');
@@ -189,6 +190,7 @@ app.whenReady().then(() => {
   }
   if (root) {
     log('content', root);
+    if (PEDESTRIANS !== 'procedural') log('pedestrians: photoreal (MetaHuman-derived; not for building datasets or training or testing AI models, LICENSING.md); --pedestrians procedural for that work');
     protocol.handle('boundless', (req) => {
       const u = new URL(req.url);
       let p = decodeURIComponent(u.pathname);

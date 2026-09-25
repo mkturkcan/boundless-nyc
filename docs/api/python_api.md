@@ -41,7 +41,8 @@ client.close()                          # also a context manager: `with boundles
   `class`, `width`, `height`, `length`, `color` (`"r,g,b"`), `role_name`.
 - `walker.pedestrian.0000` .. `0036`: 37 outfits. Attributes: `name`, `gender`, `age`, `build`, `uniform`, `speed`,
   `outfit` (a bit mask: 1 coat, 2 hoodie, 4 backpack, 8 bag, 16 phone, 32 umbrella). These photoreal pedestrians contain
-  MetaHuman-derived components, which may not be used to train AI models (LICENSING.md). With the server option
+  MetaHuman-derived components, which may not be used to build or enhance a dataset or to train or test AI models
+  (LICENSING.md). With the server option
   `--pedestrians procedural` the library instead holds one blueprint, `walker.pedestrian.procedural`, the built-in
   procedural pedestrian.
 - `controller.ai.walker`: attach to a walker.

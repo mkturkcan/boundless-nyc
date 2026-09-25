@@ -161,6 +161,15 @@ const PRESETS = {
   // ---- GOOGLE EARTH <-> TWIN SWIPES (owner 2026-09-16): the Earth web camera pose (target, 320 m, heading 29, tilt 62, fov 35)
   amst120Earth:  L(873, -2670, 153.7, 1009.9, -2917.1, -0.470),   // matches refs/earth/amst120_obl_n.png; render with fov=35 (Earth's 35y is the VERTICAL fov — critic r13)
   lenoxEarth:    L(2030, -2493, 153.6, 2167, -2740, -0.470),      // matches refs/earth/lenox_swipe.png; render with fov=35 (Earth's 35y is the VERTICAL fov — critic r13)
+  // ---- COLUMBIA ROOFS (owner 2026-09-24: "Columbia buildings' roofs are missing"): the Earth web poses of
+  // refs/earth/col_earth_{n,e,w,top}.png (target 40.807576,-73.96171 = world (800,-2720), 500 m, tilt 55; render fov=35)
+  colEarthN:     L(601.4, -2361.8, 290.3, 800, -2720, -0.611),   // heading 29: up the campus from over 114th St
+  colEarthE:     L(1158.2, -2521.4, 290.3, 800, -2720, -0.611),  // heading 299: across the campus from over Amsterdam Ave
+  colEarthW:     L(441.8, -2918.6, 290.3, 800, -2720, -0.611),   // heading 119: across the campus from over Broadway
+  colTop:        L(800, -2720, 700, 800.05, -2720.09, -1.55),     // plan view, avenues up the frame (Earth heading 29, tilt 0, 700 m)
+  colHalls:      L(700, -2560, 70, 760, -2660, -0.5),             // 70 m over 114th & Broadway looking NNE at the Furnald / Journalism / Lewisohn roofs
+  colDorms:      L(700, -2630, 28, 800, -2620, -0.12),            // 28 m over South Lawn looking E at the Hamilton / Hartley mansards and dormers
+  colEarl:       L(745, -2772, 22, 716, -2835, -0.10),            // 22 m over the lawn west of Low looking NNW at Earl Hall's dome
   wbEarthBedford:  L(1043, 7571, 153.6, 1180, 7324, -0.470),      // Williamsburg: Bedford Ave & N 7th at the Earth swipe pose (refs/earth/wburg_bedford_swipe.png); fov=35 (vertical)
   wbEarthBroadway: L(870, 8492, 153.6, 1007, 8245, -0.470),       // Williamsburg: Broadway & Havemeyer (compiled node 1007,8245 = 40.70891,-73.95925) under the JMZ el; fov=35 (vertical). The 09-16 first aim (1197,8213) was the BQE at Rodney.
   wbUnderEl:     L(1003, 8251, 1.7, 1046, 8210, 0.06),           // EL14: under the J/M/Z el on Broadway at Havemeyer, looking NE toward Marcy (refs/streetview Broadway & Havemeyer)

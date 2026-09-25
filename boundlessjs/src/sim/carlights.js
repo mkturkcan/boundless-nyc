@@ -1,8 +1,10 @@
 // Night vehicle lighting: camera-facing head/tail light sprites, brake-light
-// boost from the IDM deceleration, and a warm headlight pool projected on the
-// asphalt ahead of each car. One additive InstancedMesh, rebuilt per frame
-// from the car poses traffic already computes (240 cars x 7 quads is nothing).
+// boost from the IDM deceleration, and (HL24) real headlamp beams on the nearest
+// cars. One additive InstancedMesh, rebuilt per frame from the car poses traffic
+// already computes (240 cars x 7 quads is nothing).
 import * as THREE from 'three';
+// HL24: the low-beam pattern every SpotLight evaluates (patches three's spot chunk at import, before any compile)
+import { HL24, AIM_RAD } from './headlamps.js';
 import { ENV } from '../world/materials.js';
 import { lampSpots } from '../world/life.js';
 // N11 — night ambient (docs/notes/night-r11.md 1.4): colour temperature per
@@ -98,11 +100,22 @@ export class CarLights {
       this.dynLamps.push(L);
     }
     this.dynCars = [];
+    // HL24 (owner 2026-09-24): the headlamps. A car's "light" used to be a PointLight 3 m ahead of its nose, lighting
+    // everything round it including itself, plus an additive ellipse laid on the asphalt: the translucent circles the
+    // owner called silly and basic. Now the nearest cars carry a SpotLight each at their lamps' midpoint, aimed
+    // AIM_RAD below the horizon, and headlamps.js gives it a low-beam pattern: cut-off, kerb-side step, hot spot and
+    // spread. No decal is drawn. `?hl24=0` restores the point light and the ellipse.
     for (let i = 0; i < this.DYN_CARS; i++) {
-      const L = new THREE.PointLight(0xfff4dd, 0, 28, 2);
+      let L;
+      if (HL24) {
+        L = new THREE.SpotLight(0xfff2e0, 0, 75, 0.72, 0.35, 2);
+        L.castShadow = false;
+        scene.add(L.target);
+      } else L = new THREE.PointLight(0xfff4dd, 0, 28, 2);
       scene.add(L);
       this.dynCars.push(L);
     }
+    this._hlCol = [new THREE.Color(0xe9efff), new THREE.Color(0xfff0d6)];   // HL24: LED and halogen whites
     this._lampAcc = 9;
   }
   _updateLamps(camera, night, dt) {
@@ -173,9 +186,12 @@ export class CarLights {
       this._c.setRGB(F.head[0] * night, F.head[1] * night, F.head[2] * night);
       this.glowMesh.setColorAt(gN, this._c);
       gN++;
-      this._m.compose(this._v.set(s[0], hy, s[2]), this._q, this._s.set(2.6, 1.9, 1));
+      // HL24: the halo was a 2.6 x 1.9 m translucent disc hung round every lamp head (the other "transparent
+      // circle"); the bloom pass already spreads the HDR core, so the sprite only has to carry the near haze
+      const hk = HL24 ? 0.45 : 1;
+      this._m.compose(this._v.set(s[0], hy, s[2]), this._q, this._s.set(HL24 ? 1.05 : 2.6, HL24 ? 0.8 : 1.9, 1));
       this.glowMesh.setMatrixAt(gN, this._m);
-      this._c.setRGB(F.halo[0] * night, F.halo[1] * night, F.halo[2] * night);
+      this._c.setRGB(F.halo[0] * night * hk, F.halo[1] * night * hk, F.halo[2] * night * hk);
       this.glowMesh.setColorAt(gN, this._c);
       gN++;
     }
@@ -200,6 +216,13 @@ export class CarLights {
     this._updateLamps(camera, night, dt);
     let n = 0;
     const camQ = camera.quaternion;
+    // HL24: a lamp is a directional source. A headlamp glares at a camera in front of the car, shows its lit lens from
+    // the side, and nothing from behind; a tail lamp the other way round. `face(px, py, pz, fx, fz)` is the cosine
+    // between the lamp's own axis and the direction to the camera.
+    const face = (px, py, pz, fx, fz) => {
+      const dx = cpx - px, dy = cpy - py, dz = cpz - pz, dl = Math.hypot(dx, dy, dz) || 1;
+      return (dx * fx + dz * fz) / dl;
+    };
     const put = (x, y, z, w, h, r, g2, b, billboard, yaw) => {
       if (n >= this.max) return;
       if (billboard) this._q.copy(camQ);
@@ -211,6 +234,7 @@ export class CarLights {
       n++;
     };
     // nearest moving cars get REAL headlight lights from the pool
+    const cpx = camera.position.x, cpy = camera.position.y, cpz = camera.position.z;
     const byDist = [];
     for (const car of cars) {
       if (!car._pose) continue;
@@ -223,7 +247,23 @@ export class CarLights {
       const ent = byDist[i];
       if (!ent || ent[0] > 180 * 180) { L.intensity = 0; continue; }
       const [x, y, z, yaw] = ent[1]._pose;
-      if (!this.lamps) {
+      if (HL24) {
+        // the lamp pair's midpoint on THIS model (VH13 anchors), the beam axis along the car, AIM_RAD down
+        const A = this.lamps && (this.lamps[ent[1].kind] || FALLBACK_LAMPS);
+        const F0 = (A && A.front) || FALLBACK_LAMPS.front;
+        let ly = 0, lz = 0;
+        for (const f of F0) { ly += f[1] / F0.length; lz += f[2] / F0.length; }
+        const fx = Math.sin(yaw), fz = Math.cos(yaw);
+        const hx = x + fx * (lz - 0.05), hy = y + ly, hz = z + fz * (lz - 0.05);
+        L.position.set(hx, hy, hz);
+        L.target.position.set(hx + fx * 30, hy - 30 * Math.tan(AIM_RAD), hz + fz * 30);
+        L.target.updateMatrixWorld();
+        // photometric scale: night11.js puts a cobrahead at 245 cd (3.6 under an 8.2 m mount), about an eighth of a
+        // catalogue fixture, and the pair's hot spot here keeps that ratio to a real low beam's ~20,000 cd
+        L.intensity = 3600 * night;
+        if (ent[1]._hlc === undefined) ent[1]._hlc = Math.random() < 0.34 ? 1 : 0;   // a third halogen, the rest LED; stable per car
+        L.color.copy(this._hlCol[ent[1]._hlc]);
+      } else if (!this.lamps) {
         L.position.set(x + Math.sin(yaw) * 3.6, y + 0.9, z + Math.cos(yaw) * 3.6);
         L.intensity = 55 * night;
       } else {
@@ -269,7 +309,7 @@ export class CarLights {
         }
         const pk0 = car._dyn ? 0.0 : 1.0;
         car._dyn = false;
-        put(x + fx * 5.2, y + 0.06, z + fz * 5.2, 3.4, 6.5, 0.28 * pk0, 0.26 * pk0, 0.2 * pk0, false, yaw);
+        if (!HL24) put(x + fx * 5.2, y + 0.06, z + fz * 5.2, 3.4, 6.5, 0.28 * pk0, 0.26 * pk0, 0.2 * pk0, false, yaw);
         continue;
       }
       // VH13 — sprites on the MODEL'S OWN LAMPS. `car._brakeT` is the latched
@@ -283,21 +323,36 @@ export class CarLights {
       for (const L of F) {
         const hx = x + rx * L[0] + fx * L[2], hz = z + rz * L[0] + fz * L[2], hy = y + L[1];
         const w = Math.min(0.20, Math.max(0.09, L[3] * 0.9)), h = Math.min(0.16, Math.max(0.07, L[4] * 0.9));
-        put(hx, hy, hz, w, h, 3.2, 3.0, 2.6, true);
-        put(hx, hy, hz, w * 3.1, h * 3.1, 0.34, 0.32, 0.27, true);
+        if (HL24) {
+          // lens: bright from the front, a dim lit lens from the side, dark from behind; the glare halo only
+          // where the camera looks into the beam
+          const c = face(hx, hy, hz, fx, fz);
+          const lens = c > 0 ? 0.22 + 0.78 * Math.pow(c, 0.7) : Math.max(0, 0.22 + c * 0.6);
+          const glare = c > 0.25 ? Math.pow((c - 0.25) / 0.75, 2.2) : 0;
+          if (lens > 0.01) put(hx, hy, hz, w, h, 3.2 * lens, 3.05 * lens, 2.75 * lens, true);
+          if (glare > 0.01) put(hx, hy, hz, w * 3.0, h * 2.2, 0.22 * glare, 0.215 * glare, 0.19 * glare, true);
+        } else {
+          put(hx, hy, hz, w, h, 3.2, 3.0, 2.6, true);
+          put(hx, hy, hz, w * 3.1, h * 3.1, 0.34, 0.32, 0.27, true);
+        }
       }
       for (const L of R) {
         const hx = x + rx * L[0] + fx * L[2], hz = z + rz * L[0] + fz * L[2], hy = y + L[1];
         const w = Math.min(0.18, Math.max(0.08, L[3] * 0.85)), h = Math.min(0.15, Math.max(0.06, L[4] * 0.85));
-        put(hx, hy, hz, w, h, 3.0 * tail, 0.12 * tail, 0.08 * tail, true);
+        const k = HL24 ? (() => { const c = face(hx, hy, hz, -fx, -fz); return c > 0 ? 0.3 + 0.7 * c : Math.max(0, 0.3 + c * 0.9); })() : 1;
+        if (k > 0.01) put(hx, hy, hz, w, h, 3.0 * tail * k, 0.12 * tail * k, 0.08 * tail * k, true);
       }
       // asphalt pool ahead of THIS model's nose (flat, yaw-aligned, elongated).
       // It is the only thing in the rig with a forward beam SHAPE, so it is now
       // reduced rather than switched off when a pooled point light attaches.
       const pk = car._dyn ? 0.4 : 1.0;
       car._dyn = false;
-      const pd = (F[0][2] ?? 2.05) + 3.15;
-      put(x + fx * pd, y + 0.06, z + fz * pd, 3.4, 6.5, 0.26 * pk, 0.24 * pk, 0.19 * pk, false, yaw);
+      // HL24: no decal. Beyond the headlamp pool a car lights nothing but its own lenses, which is also what a far
+      // car shows in a night photograph; the ellipse drawn ahead of every car was the "transparent circle".
+      if (!HL24) {
+        const pd = (F[0][2] ?? 2.05) + 3.15;
+        put(x + fx * pd, y + 0.06, z + fz * pd, 3.4, 6.5, 0.26 * pk, 0.24 * pk, 0.19 * pk, false, yaw);
+      }
     }
     this.mesh.count = n;
     this.mesh.instanceMatrix.needsUpdate = true;

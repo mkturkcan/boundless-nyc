@@ -27,6 +27,7 @@
 // ring here is produced by scaling toward the centroid — never by reversing.
 // ============================================================================
 import earcut from 'earcut';
+import { ringOffsetMiter, upTri } from './ringOffset.js';   // NM24
 
 // facade-shader flag bits packed into aux2.w (assemble.js sets 1/2/4/8)
 export const FF = { CORNICE: 1, BLIND: 2, ROOF: 4, STORE: 8, MECH: 16, CROWN: 32, FACEH: 64, FACEIN: 128 };
@@ -92,6 +93,7 @@ function pointInRing(x, z, ring) {
   }
   return ins;
 }
+const NM24T = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('nm24') === '0');
 function insetM(ring, d, cx, cz, minF = 0.3) {
   const R = meanRadius(ring, cx, cz);
   return scaleRing(ring, Math.max(minF, (R - d) / Math.max(R, 0.01)), cx, cz);
@@ -175,8 +177,10 @@ function cap(buf, ring, y, col, style, floorH, winW, aux2v, membId = 2) {
     cx /= ring.length; cz /= ring.length;
     let minR = 1e9;
     for (const [x, z] of ring) minR = Math.min(minR, Math.hypot(x - cx, z - cz));
-    if (minR > RIM_M * 2.4) {
-      const rin = ring.map(([x, z]) => { const r = Math.hypot(x - cx, z - cz); const f = 1 - RIM_M / r; return [cx + (x - cx) * f, cz + (z - cz) * f]; });
+    // NM24: the band is exactly RIM_M wide (its uv codes the distance): a clean miter offset or no band
+    const rin = minR > RIM_M * 2.4 ? (NM24T ? ringOffsetMiter(ring, RIM_M)
+      : ring.map(([x, z]) => { const r = Math.hypot(x - cx, z - cz); const f = 1 - RIM_M / r; return [cx + (x - cx) * f, cz + (z - cz) * f]; })) : null;
+    if (rin) {
       const n = ring.length, OUT = 1.0, IN = 1.0 + RIM_M;
       // a radial inset is not a polygon offset: on a concave ring it can self-intersect,
       // and earcut turns that into a bow tie. Shoelace ratio is the cheap guard.
@@ -187,15 +191,15 @@ function cap(buf, ring, y, col, style, floorH, winW, aux2v, membId = 2) {
           const A = [flat[tris[i] * 2], y, flat[tris[i] * 2 + 1]];
           const B = [flat[tris[i + 1] * 2], y, flat[tris[i + 1] * 2 + 1]];
           const C = [flat[tris[i + 2] * 2], y, flat[tris[i + 2] * 2 + 1]];
-          buf.tri(A, C, B, [0, 1, 0], col, aux, a2);
+          upTri(buf, A, C, B, col, aux, a2);
         }
         return;
       }
       for (let i = 0; i < n; i++) {
         const O0 = ring[i], O1 = ring[(i + 1) % n];
         const I0 = rin[i], I1 = rin[(i + 1) % n];
-        buf.tri([O0[0], y, O0[1]], [I1[0], y, I1[1]], [O1[0], y, O1[1]], [0, 1, 0], col, aux, a2, [OUT, 0, IN, 0, OUT, 0]);
-        buf.tri([O0[0], y, O0[1]], [I0[0], y, I0[1]], [I1[0], y, I1[1]], [0, 1, 0], col, aux, a2, [OUT, 0, IN, 0, IN, 0]);
+        upTri(buf, [O0[0], y, O0[1]], [I1[0], y, I1[1]], [O1[0], y, O1[1]], col, aux, a2, [OUT, 0, IN, 0, OUT, 0]);
+        upTri(buf, [O0[0], y, O0[1]], [I0[0], y, I0[1]], [I1[0], y, I1[1]], col, aux, a2, [OUT, 0, IN, 0, IN, 0]);
       }
       const flatI = [];
       for (const [x, z] of rin) flatI.push(x, z);
@@ -205,7 +209,7 @@ function cap(buf, ring, y, col, style, floorH, winW, aux2v, membId = 2) {
           const A = [flatI[trisI[i] * 2], y, flatI[trisI[i] * 2 + 1]];
           const B = [flatI[trisI[i + 1] * 2], y, flatI[trisI[i + 1] * 2 + 1]];
           const C = [flatI[trisI[i + 2] * 2], y, flatI[trisI[i + 2] * 2 + 1]];
-          buf.tri(A, C, B, [0, 1, 0], col, aux, a2, [IN, 0, IN, 0, IN, 0]);
+          upTri(buf, A, C, B, col, aux, a2, [IN, 0, IN, 0, IN, 0]);
         }
         return;
       }
@@ -215,7 +219,7 @@ function cap(buf, ring, y, col, style, floorH, winW, aux2v, membId = 2) {
     const A = [flat[tris[i] * 2], y, flat[tris[i] * 2 + 1]];
     const B = [flat[tris[i + 1] * 2], y, flat[tris[i + 1] * 2 + 1]];
     const C = [flat[tris[i + 2] * 2], y, flat[tris[i + 2] * 2 + 1]];
-    buf.tri(A, C, B, [0, 1, 0], col, aux, a2);
+    upTri(buf, A, C, B, col, aux, a2);   // NM24
   }
 }
 // horizontal ANNULUS between two rings (inner, outer) — the top surface of a
@@ -231,8 +235,9 @@ function strip(buf, inner, outer, y, col, aux, aux2v) {
   for (let i = 0; i < n; i++) {
     const O0 = outer[i], O1 = outer[(i + 1) % n];
     const I0 = inner[i], I1 = inner[(i + 1) % n];
-    buf.tri([O0[0], y, O0[1]], [I1[0], y, I1[1]], [O1[0], y, O1[1]], [0, 1, 0], col, aux, a2);
-    buf.tri([O0[0], y, O0[1]], [I0[0], y, I0[1]], [I1[0], y, I1[1]], [0, 1, 0], col, aux, a2);
+    // NM24: an inset of a concave ring can carry an edge across itself; wind each half up explicitly
+    upTri(buf, [O0[0], y, O0[1]], [I1[0], y, I1[1]], [O1[0], y, O1[1]], col, aux, a2);
+    upTri(buf, [O0[0], y, O0[1]], [I0[0], y, I0[1]], [I1[0], y, I1[1]], col, aux, a2);
   }
 }
 // a box in the OBB frame: 4 walls + a lid. Used for bulkheads, penthouses,

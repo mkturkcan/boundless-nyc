@@ -289,11 +289,11 @@ export function placeProps(instancer) {
       // N11: + the fixture kind (3000 K / 4000 K LED / sodium) and the luminaire's
       // MOUNTING HEIGHT, which carlights.js had hard-coded at 6.6 m for every lamp
       // against a kit cobrahead that puts its head 9.1 m up.
-      lampSpots.push([x + Math.sin(rotY) * 3.4, y + 0.07, z + Math.cos(rotY) * 3.4, lampKind(x, z, false), 8.2]);
+      lampSpots.push([x + Math.sin(rotY) * 3.4, y + 0.07, z + Math.cos(rotY) * 3.4, lampKind(x, z, false), 8.2, rotY]);   // CL24: arm yaw for the throw
     } else if (name === 'lampCrook') {
       // N11: Bishop's Crook — teardrop luminaire 6.6 m up and 1.7 m out, so a much
       // smaller and (mostly) sodium-warmer pool than a cobrahead's.
-      lampSpots.push([x + Math.sin(rotY) * 1.7, y + 0.07, z + Math.cos(rotY) * 1.7, lampKind(x, z, true), 5.9]);
+      lampSpots.push([x + Math.sin(rotY) * 1.7, y + 0.07, z + Math.cos(rotY) * 1.7, lampKind(x, z, true), 5.9, null]);   // CL24: a teardrop throws round
     } else if (name === 'ventPipe') {
       // some roof vents breathe: photoreal smoke plumes (world/life.js)
       if (r < 0.16) plumeSpots.push([x, y + 1.6, z, 0.5 + h2(x, z, 21)]);

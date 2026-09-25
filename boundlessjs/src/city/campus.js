@@ -6,13 +6,16 @@
 // compiler (public/data/columbia_campus.json, OSM-derived — see DATA_SOURCES.md).
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { applySnowCap, applyLightTrim, ENV } from '../world/materials.js';
+import { applySnowCap, applyLightTrim, applyStoneDetail, ENV } from '../world/materials.js';
 import { COLLIDERS } from './colliders.js';
 import { setCampusPads } from './landmarks.js';
+import { FW25, FW26, fountainSpray, poolRings, veilMat } from './fountainFX.js';   // FW25: spray, ring waves; FW26: water veils, foam
 
 // every campus material takes the scene light trim (see applyLightTrim): the
 // untrimmed granite and limestone clipped to pure white at noon
 const LT = (m) => applyLightTrim(m);
+// LP26: no kit stone panels over Low Plaza's compiled paving (see the plaza block)
+const LP26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('lp26') === '0');
 const GRANITE = LT(new THREE.MeshStandardMaterial({ color: 0x8f8a80, roughness: 0.82, metalness: 0.02 }));
 const STONE = LT(new THREE.MeshStandardMaterial({ color: 0x7d7468, roughness: 0.9 }));
 const BRONZE = LT(new THREE.MeshStandardMaterial({ color: 0x51604a, roughness: 0.55, metalness: 0.55 })); // patinated
@@ -37,6 +40,12 @@ const PAVSTONE = LT(new THREE.MeshStandardMaterial({ color: 0x958c7c, roughness:
 // the fountain stone the falling water keeps wet: darker and glossier than the dry coping
 const WETGRANITE = LT(new THREE.MeshStandardMaterial({ color: 0x6c675f, roughness: 0.4, metalness: 0.02 }));
 for (const m of [GRANITE, STONE, BRONZE, ALMABRONZE, MARBLE, DARKMETAL, GREENPOST, HEDGE, PAVBRICK, PAVSTONE]) applySnowCap(m); // walls, balustrades, hedges, monuments cap over
+// CT25 (materials.js applyStoneDetail): photographed stone surfaces on the campus kit, triplanar in the campus frame
+applyStoneDetail(GRANITE, 'cgranite', { amt: 0.8, nrm: 0.75, rgh: 0.45 });
+applyStoneDetail(STONE, 'cgranite', { amt: 0.85, nrm: 0.8, rgh: 0.4, scale: 1.3 });
+applyStoneDetail(PAVSTONE, 'cpave', { amt: 0.9, nrm: 0.7, rgh: 0.35 });
+applyStoneDetail(PAVBRICK, 'cpave', { amt: 0.6, nrm: 0.6, rgh: 0.3, scale: 0.7 });
+applyStoneDetail(WETGRANITE, 'cgranite', { amt: 0.7, nrm: 0.5, rgh: 0.15 });
 
 // ---------- fountain water, all procedural (no image assets)
 // Owner review 2026-09-24: "the fountains look too basic". The veil and jet were
@@ -122,7 +131,7 @@ const FW = (() => {
           'vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;',
           'vec3 mapN = normalize( texture2D( normalMap, vNormalMapUv + fwT * fwSpd ).xyz * 2.0 - 1.0 + texture2D( normalMap, vNormalMapUv * 1.61 + fwT * vec2( -fwSpd.y, fwSpd.x ) * 1.3 ).xyz * 2.0 - 1.0 );'))
         // the strands and the foam run along the lathe profile (v): over the lip, down the veil, out across the pool
-        .replace('#include <alphamap_fragment>', '#ifdef USE_ALPHAMAP\n  diffuseColor.a *= texture2D( alphaMap, vAlphaMapUv - fwT * fwSpd ).g;\n#endif');
+        .replace('#include <alphamap_fragment>', '#ifdef USE_ALPHAMAP\n  diffuseColor.a *= ' + (FW25 ? 'smoothstep( 0.18, 0.82, texture2D( alphaMap, vAlphaMapUv - fwT * fwSpd ).g )' : 'texture2D( alphaMap, vAlphaMapUv - fwT * fwSpd ).g') + ';\n#endif');
     };
     const key = m.customProgramCacheKey.bind(m);
     m.customProgramCacheKey = () => key() + '|fwScroll';
@@ -135,9 +144,10 @@ const FW = (() => {
     color: 0x121c19, roughness: 0.1, metalness: 0.0, specularIntensity: 0.72,
     normalMap: own(ripple, rep, rep), normalScale: new THREE.Vector2(0.42, 0.42),
   })), 0.021, 0.013);
+  // FW25: a clear, glossy sheet (the white frosted look was a 0.22-rough near-opaque skin)
   const sheet = (ru, rv, speed, opacity) => scroll(LT(new THREE.MeshStandardMaterial({
-    color: 0xe4eceb, roughness: 0.22, metalness: 0.0, alphaMap: own(streak, ru, rv), transparent: true, opacity,
-    side: THREE.DoubleSide, depthWrite: false,
+    color: FW25 ? 0xd6e2e2 : 0xe4eceb, roughness: FW25 ? 0.05 : 0.22, metalness: 0.0, alphaMap: own(streak, ru, rv), transparent: true,
+    opacity: FW25 ? opacity * 0.62 : opacity, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: FW25 ? 1.6 : 1.0,
   })), 0, speed);
   const froth = (ru, rv, speed) => scroll(LT(new THREE.MeshStandardMaterial({
     color: 0xf1f5f4, roughness: 0.6, metalness: 0.0, alphaMap: own(foam, ru, rv), transparent: true, vertexColors: true,
@@ -564,12 +574,20 @@ export async function buildCampus(scene) {
     }
     ca /= pts.length; cc /= pts.length;
     if (ca < -70 || ca > 60 || Math.abs(cc) > 100) continue;
-    const kerbY = (ca < -6 && Math.abs(cc) < 56) ? yApron : yTop;
+    // LP26: the Low Plaza parterres are the compiler's AUTHORED panels (compile.mjs PANEL_POLYS) with their own granite
+    // edging; these raw OSM outlines there are ragged, so kerbs along them crossed the panel lawns off their real edges,
+    // and where they met the compiled edging their tops were coplanar with it (both 4.79)
+    if (LP26 && ca > -46 && ca < -2 && Math.abs(cc) < 54) continue;
+    // TL26: the College Walk lawns (along < -44) lie on the walk datum, not the plaza apron: their kerbs floated 1.2 m up
+    const kerbY = LP26 && ca < -44 ? yWalk : (ca < -6 && Math.abs(cc) < 56) ? yApron : yTop;
+    // TL26: kerb tops 0.12 over the pad (was 0.09): the compiled beds now sit 4 cm higher (0.20 over terrain, 4 cm
+    // over the brick ribbons that run across them), and the granite must stay proud of the grass it edges
+    const kTop = LP26 ? 0.12 : 0.09;
     for (let i = 0; i < pts.length; i++) {
       const [ax2, az2] = pts[i], [bx2, bz2] = pts[(i + 1) % pts.length];
       const L = Math.hypot(bx2 - ax2, bz2 - az2);
       if (L < 0.6) continue;
-      granite.add((ax2 + bx2) / 2, kerbY - 0.16, (az2 + bz2) / 2, 0.34, 0.5, L + 0.34,
+      granite.add((ax2 + bx2) / 2, kerbY + kTop - 0.25, (az2 + bz2) / 2, 0.34, 0.5, L + 0.34,
         Math.atan2(bx2 - ax2, bz2 - az2));
     }
   }
@@ -606,7 +624,10 @@ export async function buildCampus(scene) {
       }
       return false;
     };
-    for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) {
+    // LP26 (owner 2026-09-25: "fix the weird square pads above the tile pattern near the fountains, they don't exist in
+    // real life"). The compiled plaza already carries the real paving, red-brick squares nested on pale stone (Google
+    // Earth top view, refs/earth/col_earth_top.png); these kit panels were a misreading of it laid on top. `?lp26=0` keeps them.
+    if (!LP26) for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) {
       const a = aC + (r - (ROWS - 1) / 2) * PITCH;
       const c = (k - (COLS - 1) / 2) * PITCH;
       // the fountains sit inside their own granite medallions
@@ -1075,7 +1096,10 @@ export async function buildCampus(scene) {
     part(lathe([[o - 0.15, rimH - 0.15], [o - 0.07, rimH - 0.14], [o - 0.02, rimH - 0.11], [o, rimH - 0.07],
       [o - 0.02, rimH - 0.03], [o - 0.08, rimH - 0.01], [R + 0.1, rimH], [R + 0.03, rimH - 0.02], [R, rimH - 0.06],
       [R, wl - 0.12]], seg), GRANITE);
-    part(new THREE.CircleGeometry(R + 0.01, seg), FW.water(small ? 1.5 : 4.5), wl, false).rotation.x = -Math.PI / 2;
+    const poolMat = FW.water(small ? 1.5 : 4.5);
+    const setPool = FW25 ? poolRings(poolMat, { impR: small ? 0.5 : 2.4, amp: small ? 0.06 : FW26 ? 0.08 : 0.16, k: 17, foam: small ? 0 : 1, foamIn: 0.55, foamOut: 1.3 }) : null;
+    if (setPool) setPool(x, z);
+    part(new THREE.CircleGeometry(R + 0.01, seg), poolMat, wl, false).rotation.x = -Math.PI / 2;
     if (!small) {
       // the pedestal: a torus foot in the pool, a swelling baluster, a collar
       part(lathe([[1.3, 0.2], [1.3, 0.4], [1.2, 0.44], [1.05, 0.46], [0.95, 0.52], [0.95, 0.58], [0.8, 0.62],
@@ -1085,18 +1109,31 @@ export async function buildCampus(scene) {
       part(lathe([[0.42, 1.5], [0.75, 1.54], [1.15, 1.62], [1.55, 1.74], [1.85, 1.86], [2.02, 1.95], [2.1, 2.0],
         [2.14, 2.04], [2.15, 2.1], [2.12, 2.14], [2.04, 2.155], [1.96, 2.14], [1.93, 2.1], [1.8, 2.04],
         [1.2, 1.98], [0, 1.96]], 72), WETGRANITE);
-      part(new THREE.CircleGeometry(1.95, 72), FW.water(1.8), 2.11, false).rotation.x = -Math.PI / 2;
+      const bowlMat = FW.water(1.8);
+      const setBowl = FW25 ? poolRings(bowlMat, { impR: 0.8, amp: FW26 ? 0.06 : 0.12, k: 22, foam: 0.85, foamIn: 0.7, foamOut: 2.2 }) : null;
+      if (setBowl) setBowl(x, z);
+      part(new THREE.CircleGeometry(1.95, 72), bowlMat, 2.11, false).rotation.x = -Math.PI / 2;
+      // FW25: the drops (sheet breakup, landing splash, jet column, bowl crowns), local to the fountain group
+      if (FW25) G.add(fountainSpray({ lipR: 2.12, lipY: 2.15, wl, impR: 2.4, jetY: 2.11, jetH: 1.25, bowlY: 2.11, bowlR: 1.9, seed: plazaFi * 7919 }));
       // the veil: over the lip, then a falling sheet thrown slightly outward
       // (0.4 m/s off the lip, 1.8 m of fall) into the pool
+      // FW26: the veil, the jet and its crown are water along their own travel time (fountainFX veilMat); the landing
+      // froth is the pools' own foam (poolRings), not a separate transparent ring
+      const fallT = (h, v0) => (-v0 + Math.sqrt(v0 * v0 + 19.62 * h)) / 9.81;
       part(lathe([[1.92, 2.112], [2.02, 2.165], [2.12, 2.17], [2.18, 2.13], [2.22, 2.02], [2.26, 1.85], [2.29, 1.6],
-        [2.33, 1.25], [2.36, 0.85], [2.4, wl]], 96), FW.sheet(16, 1.5, 2.4, 0.85), 0, false).renderOrder = 2;
-      part(foamRing(wl + 0.006, [[3.5, 0], [3.0, 0.3], [2.62, 0.8], [2.44, 1], [2.3, 0.55]], 96), FW.froth(24, 2, -0.12), 0, false).renderOrder = 1;
+        [2.33, 1.25], [2.36, 0.85], [2.4, wl]], 96), FW26
+        ? veilMat({ y0: 2.17, dir: 1, v0: 0.3, tMax: fallT(2.17 - wl, 0.3), aer: [0.42, 1.0], holes: 0.55, body: 0.26, freq: 5.5 }, LT)
+        : FW.sheet(16, 1.5, 2.4, 0.85), 0, false).renderOrder = 2;
+      if (!FW26) part(foamRing(wl + 0.006, [[3.5, 0], [3.0, 0.3], [2.62, 0.8], [2.44, 1], [2.3, 0.55]], 96), FW.froth(24, 2, -0.12), 0, false).renderOrder = 1;
       // the centre jet and the crown of water it throws back into the bowl
-      part(lathe([[0.075, 2.11], [0.07, 2.4], [0.075, 2.8], [0.085, 3.1], [0.1, 3.25], [0.07, 3.33], [0, 3.35]], 24),
-        FW.sheet(3, 2, 6.4, 0.9), 0, false).renderOrder = 1;
-      part(lathe([0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1].map((t) => [0.1 + 0.75 * t, 3.28 + 0.08 * t - 1.25 * t * t]), 48),
-        FW.sheet(8, 1.2, 1.9, 0.6), 0, false).renderOrder = 1;
-      part(foamRing(2.116, [[1.25, 0], [0.98, 0.55], [0.86, 0.9], [0.72, 0.5], [0.45, 0.3], [0.22, 0.85], [0.09, 0.7]], 48),
+      const jetV0 = Math.sqrt(19.62 * 1.24);
+      part(lathe([[0.075, 2.11], [0.07, 2.4], [0.075, 2.8], [0.085, 3.1], [0.1, 3.25], [0.07, 3.33], [0, 3.35]], 24), FW26
+        ? veilMat({ y0: 2.11, dir: -1, v0: jetV0, tMax: jetV0 / 9.81, aer: [0.3, 0.95], holes: 0.2, body: 0.34, freq: 30 }, LT)
+        : FW.sheet(3, 2, 6.4, FW25 ? 0.75 : 0.9), 0, false).renderOrder = 1;
+      part(lathe([0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1].map((t) => [0.1 + 0.75 * t, 3.28 + 0.08 * t - 1.25 * t * t]), 48), FW26
+        ? veilMat({ y0: 3.37, dir: 1, v0: 0.4, tMax: fallT(3.37 - 2.11, 0.4), aer: [0.1, 0.8], holes: 0.6, body: 0.3, freq: 9 }, LT)
+        : FW.sheet(8, 1.2, 1.9, 0.6), 0, false).renderOrder = 1;
+      if (!FW26) part(foamRing(2.116, [[1.25, 0], [0.98, 0.55], [0.86, 0.9], [0.72, 0.5], [0.45, 0.3], [0.22, 0.85], [0.09, 0.7]], 48),
         FW.froth(10, 1.5, -0.1), 0, false).renderOrder = 1;
     }
     G.position.set(x, y, z);

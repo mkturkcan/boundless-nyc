@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import earcut from 'earcut';
 import { parseTile, buildingsOf, roadsOf, furnitureOf, holesOf } from './tiledata.js';   // CY12: holesOf
 import { COLLIDERS } from '../city/colliders.js';
-import { KIND_MAP, TREE_ARCH, SG13, SG13_ARM } from '../city/furnitureKit.js';   // TC13: shared canopy envelope, SG13: signal geometry contract
+import { KIND_MAP, TREE_ARCH, SG13, SG13_ARM, TV25, treePoolFor } from '../city/furnitureKit.js';   // TC13: shared canopy envelope, SG13: signal geometry contract, TV25: species-form tree pools
 import { FURN, STYLE, BF } from '../shared/geo.js';
 import { LANDMARKS } from '../shared/landmarkSpec.js';
 import { buildSignText } from '../city/signText.js';
@@ -31,6 +31,8 @@ const NO_DATUM = typeof location !== 'undefined' && new URLSearchParams(location
 // shot in the SAME session as the AFTER. Machine load varies; an fps
 // number compared across sessions is a number compared across CPU loads.
 const NO_TOWER = typeof location !== 'undefined' && new URLSearchParams(location.search).get('notower') === '1';
+// TL26: the drawn terrain grid stays under every ground section laid on it (see the ground block); ?tl26=0 restores the flat 0.12 m drop
+const NO_TL26 = typeof location !== 'undefined' && new URLSearchParams(location.search).get('tl26') === '0';
 // `?fac8=0` — A/B switch for the round-8 facade/roof pass (docs/notes/facades-r8.md):
 // real parapets with a recessed deck and its own coping, the roof-membrane
 // redistribution, and the masonry palette correction. Everything below guarded
@@ -1564,7 +1566,12 @@ export async function assembleTile(key, arrayBuf, ctx) {
   // 24 m long, and on those a barycentric 0.3 is seven metres of slop while on
   // a 1 m corner triangle it is 30 cm. `-l_i * 2A/|e_i|` converts the
   // barycentric overshoot on each edge into the real distance to that edge.
+  // TL26: the campus lawn underlay compiles into its own section (grassU); every question about grass asks it too
   const sectionY = (name, x, z, tol) => {
+    const y = sectionY0(name, x, z, tol);
+    return y === null && name === 'grass' ? sectionY0('grassU', x, z, tol) : y;
+  };
+  const sectionY0 = (name, x, z, tol) => {
     const rec = surfHash(name);
     if (!rec) return null;
     const { a, H } = rec;
@@ -2323,12 +2330,37 @@ export async function assembleTile(key, arrayBuf, ctx) {
   // that, so at 400 m with a 3.4 m eye a stable pair would need 5.9 METRES of
   // lift. The shader does it in one line and one draw call. docs/notes/zfight.md.
   {
-    const sections = [['asphalt', 0], ['sidewalk', 1], ['curb', 2], ['paintW', 3], ['paintY', 4], ['grass', 5], ['path', 6], ['paintG', 9], ['brick', 10], ['gutter', 11], ['busred', 12], ['warn', 13], ['warnIron', 14]];
+    const sections = [['asphalt', 0], ['sidewalk', 1], ['curb', 2], ['paintW', 3], ['paintY', 4], ['grass', 5], ['path', 6], ['paintG', 9], ['brick', 10], ['gutter', 11], ['busred', 12], ['warn', 13], ['warnIron', 14], ['grassU', 15]];
     let total = 0;
     for (const [name] of sections) total += (tile.S[name]?.length ?? 0) / 3;
     // terrain grid
     const res = tile.header.res, n = res + 1;
     const terr = tile.S.terrain;
+    // TL26 (owner 2026-09-25: "I don't want to see ground heightmaps clip into grass"). The drawn grid sits 0.12 m under
+    // its own samples, but a 4 m terrain cell is flat where a lawn or a path over it slopes or steps down (the Low Plaza
+    // parterres, the terrace lawns), so the grid rose through the surface laid on it: 251 points of the plaza alone
+    // (scratchpad probe_layers.mjs). Each drawn grid vertex now also stays 0.12 m under the lowest section triangle
+    // touching its four cells, at most 1.5 m below its sample; the samples themselves (terrainAt) are untouched.
+    const terrDraw = new Float32Array(n * n);
+    for (let k = 0; k < n * n; k++) terrDraw[k] = terr[k] - 0.12;
+    if (!NO_TL26) {
+      const cw = TILE_OF(tile) / res;
+      for (const [name] of sections) {
+        const src = tile.S[name];
+        if (!src) continue;
+        for (let i = 0; i + 8 < src.length; i += 9) {
+          const x0 = Math.min(src[i], src[i + 3], src[i + 6]), x1 = Math.max(src[i], src[i + 3], src[i + 6]);
+          const z0 = Math.min(src[i + 2], src[i + 5], src[i + 8]), z1 = Math.max(src[i + 2], src[i + 5], src[i + 8]);
+          const y = Math.min(src[i + 1], src[i + 4], src[i + 7]) - 0.12;
+          const i0 = Math.max(0, Math.floor(x0 / cw)), i1 = Math.min(res, Math.ceil(x1 / cw));
+          const j0 = Math.max(0, Math.floor(z0 / cw)), j1 = Math.min(res, Math.ceil(z1 / cw));
+          for (let j = j0; j <= j1; j++) for (let ii = i0; ii <= i1; ii++) {
+            const k = j * n + ii;
+            if (y < terrDraw[k]) terrDraw[k] = Math.max(y, terr[k] - 1.62);
+          }
+        }
+      }
+    }
     const terrVerts = res * res * 6;
     const pos = new Float32Array((total + terrVerts) * 3);
     const mat = new Float32Array(total + terrVerts);
@@ -2345,7 +2377,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
       const x0 = ox + (i / res) * T, x1 = ox + ((i + 1) / res) * T;
       const z0 = oz + (j / res) * T, z1 = oz + ((j + 1) / res) * T;
-      const y00 = terr[j * n + i] - 0.12, y10 = terr[j * n + i + 1] - 0.12, y01 = terr[(j + 1) * n + i] - 0.12, y11 = terr[(j + 1) * n + i + 1] - 0.12;
+      const y00 = terrDraw[j * n + i], y10 = terrDraw[j * n + i + 1], y01 = terrDraw[(j + 1) * n + i], y11 = terrDraw[(j + 1) * n + i + 1];
       const quad = [[x0, y00, z0], [x1, y11, z1], [x1, y10, z0], [x0, y00, z0], [x0, y01, z1], [x1, y11, z1]];
       for (const [x, y, z] of quad) { pos[o * 3] = x; pos[o * 3 + 1] = y; pos[o * 3 + 2] = z; mat[o] = 7; o++; }
     }
@@ -2557,8 +2589,11 @@ export async function assembleTile(key, arrayBuf, ctx) {
       const nV = sp.arch === 'A' ? 3 : 2; // variant pools per species
       const vH = Math.abs((wx * 31.7 + wz * 17.3) % nV) | 0;
       const suff = vH === 0 ? '' : String(vH + 1);
-      const poolT = `tree${sp.arch}${suff}Trunk`, poolC = `tree${sp.arch}${suff}Crown`;
-      const crownCol = (TC13 ? (sp.c13 ?? sp.c) : sp.c) + ((wx | 0) % 3) * 0x050803;
+      // TV25 (trees agent 2026-09-25): census species -> species-FORM pools (furnitureKit TREE_FORM_MIX). The crown
+      // colour now lives in the leaf atlas, so the instance tint is white and instancer.js U10 adds the per-tree spread.
+      const tv = TV25 ? treePoolFor(f.p0, wx, wz, f.p1, f.p2) : null;   // census dbh <= 4 -> the young sub-form
+      const poolT = tv ? tv + 'Trunk' : `tree${sp.arch}${suff}Trunk`, poolC = tv ? tv + 'Crown' : `tree${sp.arch}${suff}Crown`;
+      const crownCol = tv ? 0xffffff : (TC13 ? (sp.c13 ?? sp.c) : sp.c) + ((wx | 0) % 3) * 0x050803;
       const idT = inst.claim(poolT, wx, f.y, wz, f.rot, sW, sH * jitter, sW);
       const idC = inst.claim(poolC, wx, f.y, wz, f.rot, sW, sH * jitter, sW, crownCol);
       if (idT >= 0) claims.push([poolT, idT]);

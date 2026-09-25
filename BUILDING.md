@@ -179,6 +179,23 @@ enabled for the repository (Source: GitHub Actions).
    downloads.
 4. `compose.mjs` lays out each figure and renders it with headless Chromium.
 
+The architecture diagram is a draw.io file, `docs/assets/figures/src/architecture.drawio`. After editing it in
+draw.io, render it with the draw.io viewer in headless Chromium:
+
+```
+node tools/figures/drawio.mjs docs/assets/figures/src/architecture.drawio \
+    --svg docs/assets/figures/architecture.svg --png docs/assets/figures/architecture.png --scale 3
+```
+
+The images and console transcripts of the tutorials (`docs/assets/tutorials/`) are the outputs of the scripts in
+`PythonAPI/examples/tutorials/`. One command runs them all and converts the outputs; with `--server` it starts that
+server headless at 1280 × 720 and stops it afterwards, and without it the scripts use a server that is already
+listening:
+
+```
+bash tools/figures/tutorial_images.sh --server release/BoundlessNYC_0.1.0_win64/BoundlessNYC.exe [--python python]
+```
+
 ## Coordinate frames
 
 - **Client and tiles.** Metres, with x east and z south; +y is up. Tiles are 512 m squares on the projected plane

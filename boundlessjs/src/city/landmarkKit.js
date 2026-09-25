@@ -8,7 +8,7 @@
 //   * materials are shared through a cache keyed by color+options — never dispose
 //   * geometry is cached/shared where cheap (unit box, repeated cylinders, cones...)
 import * as THREE from 'three';
-import { applyLightTrim, applySkyGlass, applySkyMetal } from '../world/materials.js';
+import { applyLightTrim, applySkyGlass, applySkyMetal, applyStoneDetail } from '../world/materials.js';
 
 /* --------------------------------- materials --------------------------------- */
 const _mats = new Map();
@@ -30,9 +30,10 @@ export function mat(hex, opts = {}) {
   // docs/notes/facades-r6.md section 0. Declared on the shared GLS / MET / mCr
   // option objects, so every glass landmark and every metal crown gets it at once.
   const skyG = opts.skyGlass || null, skyM = opts.skyMetal || null;
+  const stone = opts.stone || null;   // CT25: a stone detail set (materials.js applyStoneDetail)
   const key = (basic ? 'B' : 'S') + hex + '|' + rough + '|' + metal + '|' + emissive +
     '|' + ei + '|' + (flat ? 1 : 0) + (ds ? 'D' : '') +
-    (skyG ? '|G' + JSON.stringify(skyG) : '') + (skyM ? '|M' + JSON.stringify(skyM) : '');
+    (skyG ? '|G' + JSON.stringify(skyG) : '') + (skyM ? '|M' + JSON.stringify(skyM) : '') + (stone ? '|T' + JSON.stringify(stone) : '');
   let m = _mats.get(key);
   if (!m) {
     if (basic) {
@@ -45,6 +46,7 @@ export function mat(hex, opts = {}) {
       }));
       if (skyM) applySkyMetal(m, skyM);
       else if (skyG) applySkyGlass(m, skyG);
+      if (stone) applyStoneDetail(m, stone.set || stone, typeof stone === 'object' ? stone : {});
     }
     _mats.set(key, m);
   }

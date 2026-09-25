@@ -45,6 +45,7 @@ theme:
   features:
     - navigation.tabs
     - navigation.sections
+    - navigation.indexes
     - navigation.top
     - navigation.footer
     - content.code.copy
@@ -91,6 +92,15 @@ nav:
       - Getting started: api/getting_started.md
       - Interactive client: client.md
       - Building from source: building.md
+  - Tutorials:
+      - tutorials/index.md
+      - First steps: tutorials/first-steps.md
+      - Cameras: tutorials/cameras.md
+      - Semantic and instance segmentation: tutorials/segmentation.md
+      - Depth: tutorials/depth.md
+      - Bounding boxes: tutorials/bounding-boxes.md
+      - Recording a dataset: tutorials/recording-a-dataset.md
+      - Controlling actors: tutorials/controlling-actors.md
   - Reference:
       - Python API: api/python_api.md
       - Wire protocol: api/protocol.md

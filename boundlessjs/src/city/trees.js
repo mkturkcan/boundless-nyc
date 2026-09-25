@@ -4,8 +4,10 @@
 // census positions) stay; trunk pools get a bark-textured material, crown
 // pools keep the shared wind/snow crownMat whose map becomes the ez-tree leaf.
 import * as THREE from 'three';
-import { ENV, applySnowCap } from '../world/materials.js';
-import { alphaMipTexture, TREE_ARCH } from './furnitureKit.js';
+import { ENV, applySnowCap, applyLightTrim, applyCityAO } from '../world/materials.js';
+import { alphaMipTexture, alphaMipDataTexture, TREE_ARCH, TV25, TREE_FORMS, TV25_POOLS, tv25Spec, TV25_BAKE } from './furnitureKit.js';
+import { buildTree, bakeKey25 } from './treeGen.js';
+import { ATLAS, LEAF_CELLS, cellUV25, paintLeafAtlas25, planeCamoCanvas25 } from './treeAtlas.js';
 
 // TC13 STREET CANOPY (docs/notes/canopy-r13.md, critic-r13 ranked fix 9).
 // `?tc13=0` restores the r12 crown: height-only normalisation, 0.32x leaf
@@ -16,7 +18,10 @@ const TC13 = !(typeof location !== 'undefined' && new URLSearchParams(location.s
 const FD14T = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('fd14') === '0');
 
 export async function upgradeTrees(instancer) {
+  if (TV25) return upgradeTreesTV25(instancer);   // TV25 species forms (below); ?tv25=0 runs the round-14 build
+  const tBoot0 = performance.now();   // (TV25 boot census: timing only)
   const { Tree } = await import('@dgreenheck/ez-tree');
+  const tBoot1 = performance.now();
   // variant pools per species: same preset, DIFFERENT SEEDS + small parameter
   // jitter, so neighboring street trees stop being clones.
   // TC13 adds `k` — this variant's size relative to its archetype's mature
@@ -255,36 +260,9 @@ export async function upgradeTrees(instancer) {
       }
     } catch (e) { console.warn('[trees] failed', sp, e); }
   }
-  // EDGE-ON FADE: leaf cards carry crown-radial normals for lighting, so a card
-  // seen edge-on is still "fully lit" and, after the alpha test, renders as a
-  // bright hairline sliver (critic round 2, defect 9). `aFace` (set above) is
-  // the card's true facing; fade alpha as the view direction grazes it, before
-  // the alpha test discards. Geometries without `aFace` read (0,0,0) -> no fade.
-  if (!instancer.crownMat.__edgeFade) {
-    const m = instancer.crownMat;
-    const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
-    m.onBeforeCompile = (sh, r) => {
-      prev?.call(m, sh, r);
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec3 aFace; varying float vFaceDot;')
-        .replace('#include <project_vertex>', `#include <project_vertex>
-        {
-          vec3 fN = aFace;
-          #ifdef USE_INSTANCING
-            fN = mat3(instanceMatrix) * fN;
-          #endif
-          fN = normalMatrix * fN;
-          float fl = length(fN);
-          vFaceDot = fl < 0.5 ? 1.0 : abs(dot(normalize(-mvPosition.xyz), fN / fl));
-        }`);
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying float vFaceDot;')
-        .replace('#include <alphatest_fragment>', 'diffuseColor.a *= smoothstep(0.10, 0.32, vFaceDot);\n#include <alphatest_fragment>');
-    };
-    m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|edgefade';
-    m.__edgeFade = true;
-    m.needsUpdate = true;
-  }
+  applyEdgeFade(instancer);
+  if (typeof window !== 'undefined') window.__TREE25_BOOT = { from: 'ez-tree', wallMs: performance.now() - tBoot0, mainMs: performance.now() - tBoot1, readyS: performance.now() / 1000 };
+  console.log(`[trees] ez-tree build: ${(performance.now() - tBoot0).toFixed(0)} ms wall, ${(performance.now() - tBoot1).toFixed(0)} ms main thread after the module import`);
   // the shared crown material now samples the ez-tree leaf card texture.
   // MIP RULE for alpha cutouts: transparent texels ship with BLACK rgb, and
   // street-distance mips blend that black into every sample (slate canopy) —
@@ -357,4 +335,313 @@ export async function upgradeTrees(instancer) {
     };
     apply();
   }
+}
+
+// EDGE-ON FADE: leaf cards carry crown-radial normals for lighting, so a card
+// seen edge-on is still "fully lit" and, after the alpha test, renders as a
+// bright hairline sliver (critic round 2, defect 9). `aFace` (set above) is
+// the card's true facing; fade alpha as the view direction grazes it, before
+// the alpha test discards. Geometries without `aFace` read (0,0,0) -> no fade.
+// (TV25: factored out of upgradeTrees unchanged, so both builds share it.)
+function applyEdgeFade(instancer) {
+  if (!instancer.crownMat.__edgeFade) {
+    const m = instancer.crownMat;
+    const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+    m.onBeforeCompile = (sh, r) => {
+      prev?.call(m, sh, r);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec3 aFace; varying float vFaceDot;')
+        .replace('#include <project_vertex>', `#include <project_vertex>
+        {
+          vec3 fN = aFace;
+          #ifdef USE_INSTANCING
+            fN = mat3(instanceMatrix) * fN;
+          #endif
+          fN = normalMatrix * fN;
+          float fl = length(fN);
+          vFaceDot = fl < 0.5 ? 1.0 : abs(dot(normalize(-mvPosition.xyz), fN / fl));
+        }`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vFaceDot;')
+        .replace('#include <alphatest_fragment>', 'diffuseColor.a *= smoothstep(0.10, 0.32, vFaceDot);\n#include <alphatest_fragment>');
+    };
+    m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|edgefade';
+    m.__edgeFade = true;
+    m.needsUpdate = true;
+  }
+}
+
+// =====================================================================================================================
+// TV25 SPECIES TREES (trees agent, 2026-09-25). `?tv25=0` runs the round-14 build above, untouched.
+//
+// What the round-14 build did, measured before this was written (scratchpad trees_agent/notes.md):
+//   * 74 % of the census drew ONE ez-tree preset in three seeds, one oak spray for every crown, the road's yaw on
+//     every tree in a row -> same-variant neighbours were exact clones;
+//   * the oak spray card was ~1.8 m, so its leaves rendered ~28 cm (2x a real leaf): the "coarse card" canopy;
+//   * the crown albedo was the spray x the c13 tint decoded to LINEAR (0.047, 0.084, 0.033): ~0.018 green, a tenth
+//     of a leaf, while the IBL specular was not scaled at all -> crowns measured (35-46, 40-60, 42-56), neutral to
+//     blue-grey with a pale sheen on grazing cards, where Street View foliage is clearly yellow-green;
+//   * DoubleSide + crown-volume normals: three flips the normal on back faces, so ~half the cards shaded with an
+//     INWARD normal (salt-and-pepper dark cards);
+//   * the bark had no light trim (props take 0.30 x STREET_CAL), so trunks rendered pale.
+// TV25: per-species forms from city/treeGen.js; a 2048^2 leaf atlas of species sprays at the right leaf scale
+// (painted here, plus ez-tree's oak/ash sprays and its aspen spray recoloured for linden); four bark materials
+// with the prop light trim; the crown shaded with outward normals on both faces, wrap + transmission for thin
+// backlit leaves, and the baked crown AO on the ambient; far trees carry their trunk in the crown LOD.
+const T25 = { NC: ATLAS.NC, CS: ATLAS.CS, ALPHA: 0.42, LOD: 90 };
+// calibration uniforms, live-tunable from a measurement page (window.__TREE25)
+const LEAF25 = {
+  gain: { value: new THREE.Vector3(1.75, 1.75, 1.55) },       // x mix(0.30, 0.88, night): the prop light-trim contract
+  light: { value: new THREE.Vector4(0.4, 4.0, 0.45, 0.3) },  // x transmission, y its view exponent, z AO on direct, w wrap
+  trans: { value: new THREE.Vector3(0.85, 1.25, 0.3) },       // transmitted tint (chlorophyll passes a deep yellow-green)
+  // direct-diffuse gain, indirect-diffuse gain, indirect-specular gain, AO floor. A canopy's shade is lit by light the
+  // leaves around it scattered (each passes ~10 % and reflects ~10 %): measured against Street View the first TV25 plates
+  // had the shaded crown at ~0.45x the reference while sun-facing cards blew out to cream, i.e. too much key, too little fill.
+  // Swept at harlemRow (sweep1/sweep3): (0.72, 1.5) left sun-facing cards cream and the shade at ~0.5x the reference;
+  // (0.32, 3.2) puts the mid canopy at (96-102, 109-115, 44-46) against Street View's (93-123, 113-143, 50-69).
+  bal: { value: new THREE.Vector4(0.32, 3.2, 0.75, 0.3) },
+};
+if (typeof window !== 'undefined') window.__TREE25 = LEAF25;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// ---- leaf atlas cells (cell index = cx + cy * NC, v up; 15 = solid bark swatch for the far-LOD trunk proxy)
+// (leaf atlas cells, sprays and the plane bark painter live in ./treeAtlas.js — shared with the offline bake)
+async function texImage25(tex) {
+  for (let i = 0; i < 240 && !(tex && tex.image && tex.image.width); i++) await sleep(50);
+  return tex && tex.image && tex.image.width ? tex.image : null;
+}
+function canvasTex25(cv) {
+  const t = new THREE.CanvasTexture(cv);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  return t;
+}
+function wrapTex25(img, srgb) {
+  if (!img) return null;
+  const t = new THREE.Texture(img);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = 8; t.needsUpdate = true;
+  return t;
+}
+// the crown's TV25 shading, chained after every other hook on the shared crownMat
+function applyCrownShading25(m) {
+  if (m.__tv25) return;
+  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+  m.onBeforeCompile = (sh, r) => {
+    prev?.call(m, sh, r);
+    sh.uniforms.uLeafGain = LEAF25.gain; sh.uniforms.uLeafLight = LEAF25.light; sh.uniforms.uLeafTrans = LEAF25.trans; sh.uniforms.uLeafBal = LEAF25.bal;
+    sh.uniforms.uLeafNight = ENV.night;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aAO; varying float vAO25;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO25 = aAO;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uLeafGain; uniform vec4 uLeafLight; uniform vec3 uLeafTrans; uniform vec4 uLeafBal; uniform float uLeafNight; varying float vAO25;')
+      // the prop light-trim contract (materials.js applyLightTrim), with the atlas carrying a real leaf albedo
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uLeafGain * mix(0.30, 0.88, uLeafNight);')
+      // both faces of a card take the OUTWARD crown-volume normal (three flips it on back faces)
+      .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif')
+      // wrap + transmission: thin leaves light around the terminator, and a backlit crown rim glows
+      .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>
+void RE_Direct_Leaf25( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
+  float dotNL = dot( geometryNormal, directLight.direction );
+  float w = uLeafLight.w;
+  vec3 irradiance = saturate( ( dotNL + w ) / ( 1.0 + w ) ) * directLight.color;
+  reflectedLight.directSpecular += saturate( dotNL ) * directLight.color * BRDF_GGX_Multiscatter( directLight.direction, geometryViewDir, geometryNormal, material );
+  reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );
+  float back = pow( saturate( dot( geometryViewDir, -directLight.direction ) ), uLeafLight.y );
+  float away = saturate( -dotNL );
+  reflectedLight.directDiffuse += directLight.color * material.diffuseContribution * uLeafTrans * ( 0.3 * away + back ) * uLeafLight.x * RECIPROCAL_PI;
+}
+#undef RE_Direct
+#define RE_Direct RE_Direct_Leaf25`)
+      // baked crown AO: all of the ambient, part of the direct (self-shadowing the shadow map is too coarse for)
+      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+      reflectedLight.indirectDiffuse *= mix(uLeafBal.w, 1.0, vAO25) * uLeafBal.y;
+      reflectedLight.indirectSpecular *= mix(0.35, 1.0, vAO25) * uLeafBal.z;
+      reflectedLight.directDiffuse *= mix(1.0, vAO25, uLeafLight.z) * uLeafBal.x;
+      reflectedLight.directSpecular *= mix(1.0, vAO25, uLeafLight.z) * uLeafBal.x;`);
+  };
+  m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|tv25';
+  m.__tv25 = true;
+  m.needsUpdate = true;
+}
+
+// ---- the TV25 set: BAKED (public/models/trees25, tools/bake_trees.mjs) or, when the bake is missing or stale, generated
+// here. Both return { geos: Map(base -> { trunk0, leaves0, leaves1, bark }), atlas, barkTex, stats, main }.
+// `main` is the main-thread time spent (the loader's work is fetches and image decodes, which run off the main thread).
+const BAKE25 = 'models/trees25/';
+const TA25 = { f32: Float32Array, i8: Int8Array, u8: Uint8Array, u16: Uint16Array, u32: Uint32Array };
+function geoFromBake25(bin, G) {
+  const g = new THREE.BufferGeometry();
+  for (const [name, [off, count, size, type, norm]] of Object.entries(G.attrs)) g.setAttribute(name, new THREE.BufferAttribute(new TA25[type](bin, off, count * size), size, norm));
+  const [ioff, icount, itype] = G.index;
+  g.setIndex(new THREE.BufferAttribute(new TA25[itype](bin, ioff, icount), 1));
+  g.computeBoundingSphere(); g.computeBoundingBox();
+  return g;
+}
+function texFromBitmap25(bm, srgb) {
+  const t = new THREE.Texture(bm);
+  t.flipY = false;   // ImageBitmaps ignore UNPACK_FLIP_Y; the bark is decoded flipped (imageOrientation) to match TextureLoader
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+  t.anisotropy = 8; t.needsUpdate = true;
+  return t;
+}
+// gzip -> ArrayBuffer off the main thread: a throwaway worker running DecompressionStream (main-thread fallback)
+function gunzip25(getSlice) {
+  const inflate = (b) => new Response(new Blob([b]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  try {
+    const src = "onmessage=async(e)=>{try{const o=await new Response(new Blob([e.data]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();postMessage(o,[o]);}catch(err){postMessage(null);}}";
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' }));
+    const w = new Worker(url);
+    return new Promise((res) => {
+      const done = (v) => { w.terminate(); URL.revokeObjectURL(url); res(v); };
+      w.onmessage = (e) => done(e.data || inflate(getSlice()));
+      w.onerror = () => done(inflate(getSlice()));
+      const c = getSlice();
+      w.postMessage(c, [c]);
+    });
+  } catch (e) { return inflate(getSlice()); }
+}
+const px25 = (r, g, b, a = 255) => { const t = new THREE.DataTexture(new Uint8Array([r, g, b, a]), 1, 1); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true; return t; };
+async function loadBake25() {
+  const tL = performance.now(), steps = {}, mark = (k) => { steps[k] = Math.round(performance.now() - tL); };
+  let main = 0, m0 = performance.now();
+  const key = bakeKey25(TREE_FORMS, TV25_POOLS, 'a' + ATLAS.VERSION + '|t' + T25.ALPHA);
+  main += performance.now() - m0;
+  // started at page load by furnitureKit.js (TV25_BAKE); a late fallback fetch only if that is missing
+  const J = TV25_BAKE ? await TV25_BAKE.json : await (await fetch(BAKE25 + 'trees25.json', { priority: 'high' })).json();
+  if (!J) throw new Error('trees25.json unavailable');
+  mark('json');
+  if (J.key !== key) throw new Error(`stale bake (key ${J.key}, forms/generator ${key})`);
+  if (J.version !== 4) throw new Error('bake format v' + J.version);
+  // ONE bundle: geometry, the atlas mip chain (gzip raw RGBA) and the bark JPGs
+  const bin = TV25_BAKE ? await TV25_BAKE.bin : await fetch(BAKE25 + 'trees25.bin', { priority: 'high' }).then((r) => { if (!r.ok) throw new Error('trees25.bin HTTP ' + r.status); return r.arrayBuffer(); });
+  if (!bin) throw new Error('trees25.bin unavailable');
+  mark('bin');
+  // ---- the atlas: no image decoder (they are queued behind the whole boot's textures: 62 s measured) — inflate the raw
+  // chain in a worker and upload it as a DataTexture, the path furnitureKit's alphaMipTexture takes at runtime
+  const [go, gn] = J.atlas.gz;
+  const rawBuf = await gunzip25(() => bin.slice(go, go + gn));
+  mark('atlasInflated');
+  m0 = performance.now();
+  const atlas = alphaMipDataTexture(J.atlas.raw.map(([o, w, h]) => ({ data: new Uint8Array(rawBuf, o, w * h * 4), width: w, height: h })), { anisotropy: 8 });
+  // ---- bark: JPGs, decoded whenever the image decoders get to them. The materials start on 1x1 placeholders (a mean
+  // bark colour and a flat normal — same defines, so the swap is not a recompile) and take the real maps when ready.
+  const raw = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' };
+  const blob = ([o, n, type]) => new Blob([new Uint8Array(bin, o, n)], { type });
+  const barkTex = {};
+  for (const [k, [, , ns]] of Object.entries(J.bark)) barkTex[k] = { map: px25(104, 96, 86), normal: px25(128, 128, 255), ns };
+  for (const B of Object.values(barkTex)) B.map.colorSpace = THREE.SRGBColorSpace;
+  const barkReady = Promise.all(Object.entries(J.bark).map(async ([k, [c, n, ns]]) => {
+    const [bc, bn] = await Promise.all([createImageBitmap(blob(c), { imageOrientation: 'flipY' }), createImageBitmap(blob(n), { ...raw, imageOrientation: 'flipY' })]);
+    return [k, { map: texFromBitmap25(bc, true), normal: texFromBitmap25(bn, false), ns }];
+  })).then((b) => { mark('bark'); return Object.fromEntries(b); });
+  const geos = new Map();
+  let trisT = 0, tris0 = 0, tris1 = 0;
+  for (const [base, P] of Object.entries(J.pools)) {
+    geos.set(base, { trunk0: geoFromBake25(bin, P.trunk0), leaves0: geoFromBake25(bin, P.leaves0), leaves1: geoFromBake25(bin, P.leaves1), bark: P.bark, stats: P.stats });
+    trisT += P.stats.trunkTris; tris0 += P.stats.leafTris0; tris1 += P.stats.leafTris1;
+  }
+  main += performance.now() - m0;
+  mark('geometry');
+  return { geos, atlas, barkTex, barkReady, stats: { trisT, tris0, tris1, bytes: bin.byteLength }, main, steps };
+}
+async function generate25() {
+  let main = 0;
+  const { Tree } = await import('@dgreenheck/ez-tree');
+  let m0 = performance.now();
+  // ez-tree keeps its textures in a module registry; a throwaway trunk per type hands them over
+  const ezTex = (barkType, leafType) => {
+    const t = new Tree();
+    t.options.bark.type = barkType; t.options.leaves.type = leafType; t.options.branch.levels = 0; t.options.leaves.count = 0;
+    t.generate();
+    const out = { color: t.branchesMesh.material.map, normal: t.branchesMesh.material.normalMap, leaf: t.leavesMesh.material.map };
+    t.branchesMesh.geometry.dispose(); t.leavesMesh.geometry.dispose();
+    return out;
+  };
+  const ez = { oak: ezTex('oak', 'oak'), willow: ezTex('willow', 'ash'), birch: ezTex('birch', 'aspen') };
+  main += performance.now() - m0;
+  const [oakLeaf, ashLeaf, aspenLeaf, oakC, oakN, wilC, wilN, birC, birN] = await Promise.all([
+    ez.oak.leaf, ez.willow.leaf, ez.birch.leaf, ez.oak.color, ez.oak.normal, ez.willow.color, ez.willow.normal, ez.birch.color, ez.birch.normal,
+  ].map(texImage25));
+  m0 = performance.now();
+  const atlasCanvas = paintLeafAtlas25({ oak: oakLeaf, ash: ashLeaf, aspen: aspenLeaf });
+  // (debug handle for the tree lab's per-cell coverage census only: the 16 MB canvas is not kept otherwise)
+  if (typeof window !== 'undefined' && /(^|[?&])tv25dbg=1/.test(location.search)) window.__TREE25_ATLAS = atlasCanvas;
+  const atlas = alphaMipTexture(atlasCanvas, T25.ALPHA, { name: 'leafAtlas25', cells: T25.NC, anisotropy: 8 });
+  const barkTex = {
+    oak: { map: wrapTex25(oakC, true), normal: wrapTex25(oakN, false), ns: 1.0 },
+    willow: { map: wrapTex25(wilC, true), normal: wrapTex25(wilN, false), ns: 1.0 },
+    birch: { map: wrapTex25(birC, true), normal: wrapTex25(birN, false), ns: 0.8 },
+    plane: { map: canvasTex25(planeCamoCanvas25()), normal: wrapTex25(birN, false), ns: 0.35 },
+  };
+  main += performance.now() - m0;
+  const geos = new Map();
+  let trisT = 0, tris0 = 0, tris1 = 0;
+  for (const base of TV25_POOLS) {
+    const S = tv25Spec(base);
+    if (!S) continue;
+    m0 = performance.now();
+    try {
+      const r = buildTree(S.F, S.H, S.W, S.seed, { cellUV: cellUV25, barkCell: LEAF_CELLS.bark });
+      geos.set(base, { trunk0: r.trunk0, leaves0: r.leaves0, leaves1: r.leaves1, bark: S.F.bark || 'oak', stats: r.stats });
+      trisT += r.stats.trunkTris; tris0 += r.stats.leafTris0; tris1 += r.stats.leafTris1;
+    } catch (e) { console.warn('[trees25] failed', base, e); }
+    main += performance.now() - m0;
+    await sleep(0);   // one form per task: no long main-thread stall while the city streams
+  }
+  return { geos, atlas, barkTex, stats: { trisT, tris0, tris1 }, main };
+}
+
+async function upgradeTreesTV25(instancer) {
+  const t0 = performance.now();
+  let T = null, from = 'bake';
+  if (!/(^|[?&])tv25gen=1/.test(location.search)) {
+    try { T = await loadBake25(); }
+    catch (e) { console.warn(`[trees25] no usable bake (${e.message}): generating at runtime — run \`node tools/bake_trees.mjs\``); }
+  }
+  if (!T) { from = 'runtime'; T = await generate25(); }
+  const m0 = performance.now();
+  // ---- bark: the prop light trim (STREET_CAL) like every other thing standing on the pavement. Four materials, one
+  // program (identical defines and hooks; only the textures differ).
+  const STREET_CAL = [1.94, 1.70, 1.47];
+  const mkBark = (B) => {
+    const m = new THREE.MeshStandardMaterial({ map: B.map, normalMap: B.normal, roughness: 0.93, metalness: 0, vertexColors: true });
+    if (B.normal) m.normalScale.set(B.ns, B.ns);
+    return applyLightTrim(applyCityAO(applySnowCap(m)), STREET_CAL);
+  };
+  const bark = {};
+  for (const [k, B] of Object.entries(T.barkTex)) bark[k] = mkBark(B);
+  // baked set: the bark JPGs decode after the trees are up; swap the real maps in when they land (no recompile)
+  if (T.barkReady) T.barkReady.then((D) => { for (const [k, B] of Object.entries(D)) if (bark[k]) { bark[k].map = B.map; bark[k].normalMap = B.normal; } }).catch((e) => console.warn('[trees25] bark maps', e));
+  const NOTHING = new THREE.BufferGeometry();
+  NOTHING.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0], 3));
+  NOTHING.setIndex([0, 1, 2]);
+  let nBuilt = 0;
+  for (const [base, G] of T.geos) {
+    const pT = instancer.pools.get(base + 'Trunk'), pC = instancer.pools.get(base + 'Crown');
+    if (!pT || !pC) continue;
+    pT.mesh.geometry = G.trunk0; pT.mesh.material = bark[G.bark] || bark.oak;
+    pC.mesh.geometry = G.leaves0;
+    instancer.setLOD(base + 'Crown', G.leaves1, T25.LOD);
+    // far trees draw their trunk inside the crown LOD (the bark-cell proxy): the trunk pool draws near only
+    instancer.setLOD(base + 'Trunk', NOTHING, T25.LOD);
+    if (pT.mesh2) pT.mesh2.visible = false;
+    if (pT.shadow2) pT.shadow2.castShadow = false;
+    // …and no far-cascade proxy for the bark: it is a BOX fitted to the whole branch mesh (limbs span the crown),
+    // i.e. a crown-sized box shadow under every distant tree; the crown's own blob proxy already covers it
+    if (pT.far) pT.far.castShadow = false;
+    nBuilt++;
+  }
+  applyEdgeFade(instancer);
+  applyCrownShading25(instancer.crownMat);
+  instancer.crownMat.map = T.atlas;
+  instancer.crownMat.alphaTest = T25.ALPHA;
+  instancer.crownMat.needsUpdate = true;
+  const main = T.main + performance.now() - m0;
+  const s = T.stats;
+  console.log(`[trees25] ${nBuilt} forms from the ${from} in ${(performance.now() - t0).toFixed(0)} ms wall, ${main.toFixed(0)} ms main thread`
+    + ` (ready ${(performance.now() / 1000).toFixed(1)} s after navigation): bark ${s.trisT} tris, leaves ${s.tris0} (LOD0) / ${s.tris1} (LOD1, ${T25.LOD} m)`);
+  if (typeof window !== 'undefined') window.__TREE25_BOOT = { from, wallMs: performance.now() - t0, mainMs: main, readyS: performance.now() / 1000, startS: t0 / 1000, fetchStartS: TV25_BAKE ? TV25_BAKE.t0 / 1000 : null, steps: T.steps || null };
 }

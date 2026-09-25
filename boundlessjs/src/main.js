@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+// PF25 boot timeline (loading-time work, 2026-09-25): window.__BOOT = [[s since navigation start, stage], ...]
+const BOOT = []; const bootMark = (stage) => { BOOT.push([+(performance.now() / 1000).toFixed(2), stage]); };
+if (typeof window !== 'undefined') window.__BOOT = BOOT;
+let bootLoopUp = false;   // PC26: the real frame loop is installed (the precompile pump may release the picture)
+bootMark('main.js evaluated');
 import { spawnGuard } from './sim/spawnGuard.js';
 import { Engine } from './core/engine.js';
 import { Sky } from './world/sky.js';
@@ -9,6 +14,10 @@ import { Instancer } from './city/instancer.js';
 import { COLLIDERS } from './city/colliders.js';
 import { initAudio } from './world/audio.js';
 import { project } from './shared/geo.js';
+// CL24: must load before the first shader compiles (it patches three's light chunks and ShaderLib uniforms)
+import { CityLamps } from './world/cityLamps.js';
+const cityLamps = new CityLamps();
+if (typeof window !== 'undefined') window.__LAMPS = cityLamps;
 
 const Q = new URLSearchParams(location.search);
 const engine = new Engine(document.getElementById('app'));
@@ -352,7 +361,56 @@ if (isShot) { hud.loading.style.display = 'none'; document.getElementById('help'
 if (isRecord || Q.get('hud') === '0') document.getElementById('hud').style.display = 'none';
 
 async function boot() {
+  bootMark('boot start');
+  // PC26 SHADER PRECOMPILE (owner 2026-09-25: loading time). A boot CPU profile put 243 of 300 s of main-thread time in
+  // three's WebGLProgram onFirstUse: every new program is linked on the frame that first draws it and its uniforms read
+  // at once, which waits for THAT program's compile, so ~280 ANGLE/D3D11 compiles ran one after another. With
+  // KHR_parallel_shader_compile, renderer.compileAsync() submits every program in the scene first and polls them without
+  // blocking, so the driver compiles them side by side (about 5x faster measured on this machine). The picture is held
+  // (nothing is drawn under the loading screen anyway) while passes repeat as the city, fleet and crowd arrive; it is
+  // released once the frame loop runs, the near ring is in, and two passes in a row find nothing new. `?pc26=0` off.
+  if (Q.get('pc26') !== '0' && engine.renderer.extensions.has('KHR_parallel_shader_compile')) {
+    const R = engine.renderer, t0 = performance.now();
+    engine.holdDraw = true;
+    (async () => {
+      let passes = 0, loopAt = 0;
+      try {
+        // release: the frame loop runs, the near ring is in and a pass found nothing new, or 30 s after the frame loop
+        // started, or 3 minutes after boot. A program first seen later compiles on first use, as it always did.
+        while (performance.now() - t0 < 180000) {
+          const n0 = R.info.programs.length;
+          await R.compileAsync(engine.scene, engine.camera);
+          passes++;
+          const made = R.info.programs.length - n0;
+          if (bootLoopUp && !loopAt) loopAt = performance.now();
+          if (bootLoopUp && ((made <= 0 && streamer.tiles.size > 4 && streamer.outstanding === 0) || performance.now() - loopAt > 30000)) break;
+          await new Promise((r) => setTimeout(r, 1000));   // a pass walks every material: leave the main thread to the city
+        }
+      } catch (e) { console.warn('[pc26] precompile stopped', e); }
+      engine.holdDraw = false;
+      engine.resetTemporal?.();   // the camera moved while nothing was drawn: no motion blur or TAA from the old view
+      bootMark(`precompiled: ${R.info.programs.length} programs, ${passes} passes`);
+    })();
+  }
+  // PF25 LOADING (owner 2026-09-25: "improve the loading time"). Boot used to be one serial chain: bridges, elevated rail,
+  // campus, the landmarks module, the vehicle fleet (tens of MB), the pedestrian bank (~80 MB) and the weather module, and
+  // only THEN the frame loop that streams tiles. Now the two big asset banks start downloading at once, in parallel with
+  // everything else, and tiles start fetching the moment the manifest is in (assembled once the landmarks module has
+  // landed, so no tile is built without its landmark). `?pf25=0` restores the serial boot.
+  const PF25 = Q.get('pf25') !== '0';
+  const wantSims = !Q.has('nosim');
+  const fleetP = PF25 && wantSims && Q.get('fleet24') !== '0'
+    ? import('./sim/fleet24.js').then((m) => m.loadFleet24(engine.renderer)).catch((e) => { console.warn('fleet24 unavailable, legacy fleet', e); return null; }) : null;
+  const crowdP = PF25 && wantSims && !Q.has('nopeds') && Q.get('crowd') !== '0'
+    ? import('./sim/crowd.js').then((m) => m.createCrowd(engine.scene, engine, 700)).catch((e) => { console.warn('crowd unavailable, mannequins', e); return null; }) : null;
+  const lmWaitMs0 = Math.max(1, parseInt(Q.get('lmwait') || '30', 10) || 30) * 1000;
   await streamer.init('tiles');
+  bootMark('tile manifest');
+  if (PF25) {
+    streamer.holdAssembly = true;
+    Promise.race([landmarksReady, new Promise((r) => setTimeout(r, lmWaitMs0))]).then(() => { streamer.holdAssembly = false; bootMark('tile assembly open'); });
+    engine.onFrame = () => streamer.update(px, pz);   // provisional pump; the real frame loop replaces it below
+  }
   if (Q.get('time')) sky.apply(Q.get('time'));
   // bridges
   if (Q.get('bridges') !== '0') try {   // ?bridges=0: diagnostic (2026-09-22, the wbEarthBroadway void half)
@@ -370,6 +428,7 @@ async function boot() {
     const { buildCampus } = await import('./city/campus.js');
     buildCampus(engine.scene);
   } catch (e) { console.warn('campus unavailable', e); }
+  bootMark('bridges, elevated, campus');
   // never let the (dynamic, optional) landmarks module hold boot hostage:
   // under load Vite took 25 min to serve it and the sims, peds and streamer pump
   // behind this await never started (critic round 2). 30 s cap, then proceed —
@@ -381,6 +440,7 @@ async function boot() {
   let lmIn = false; landmarksReady.then(() => { lmIn = true; });
   await Promise.race([landmarksReady, new Promise((r) => setTimeout(() => { if (!lmIn) console.warn(`[boot] landmarks module still loading after ${lmWaitMs / 1000} s — continuing without it`); r(); }, lmWaitMs))]);
 
+  bootMark('landmarks module');
   // sims
   let traffic = null, peds = null, signals = null;
   if (!Q.has('nosim')) {
@@ -391,8 +451,9 @@ async function boot() {
       // ?fleet24=0 restores the 0.9.15 fleet below.
       if (Q.get('fleet24') !== '0') {
         try {
-          const { loadFleet24 } = await import('./sim/fleet24.js');
-          fleet24 = await loadFleet24(engine.renderer);
+          if (fleetP) fleet24 = await fleetP;
+          else { const { loadFleet24 } = await import('./sim/fleet24.js'); fleet24 = await loadFleet24(engine.renderer); }
+          bootMark('fleet24 loaded');
           if (fleet24) fleet = fleet24.trafficFleet;
         } catch (e) { console.warn('fleet24 unavailable, legacy fleet', e); fleet24 = null; }
       }
@@ -407,7 +468,8 @@ async function boot() {
       window.__STREAMER = streamer; // harness access (surfaceInfoAt audits: is every car on asphalt?)
       traffic.camera = engine.camera;
       // culled draw sets for every vehicle pool (view frustum + near shadow box)
-      if (fleet24) { try { fleet24.install(traffic, engine); } catch (e) { console.warn('fleet24 renderer failed', e); } }
+      // CL24: the fleet24 lamp lenses are emissive (HDR 7 head, 1.6/6 tail), so carlights draws no near sprites for them
+      if (fleet24) { try { fleet24.install(traffic, engine); if (traffic.lights) traffic.lights.emissiveLamps = true; } catch (e) { console.warn('fleet24 renderer failed', e); } }
       else { try { const { installVehicleCulling } = await import('./sim/vehicleCull.js'); installVehicleCulling(traffic, engine); } catch (e) { console.warn('vehicle culling unavailable', e); } }
       if (fleet && Q.has('fleet')) import('./sim/fleetShowroom.js').then((m) => m.installFleetShowroom(traffic, fleet, streamer, Q)).catch((e) => console.warn('fleet showroom unavailable', e));
       if (fleet && Q.has('fleettest')) {
@@ -438,7 +500,11 @@ async function boot() {
         // PV2: photoreal crowd (CARLA 0.10 walkers, GPU-skinned); ?crowd=0 keeps the procedural mannequins
         let rig = null;
         if (Q.get('crowd') !== '0') {
-          try { const { createCrowd } = await import('./sim/crowd.js'); rig = await createCrowd(engine.scene, engine, 700); }
+          try {
+            if (crowdP) rig = await crowdP;
+            else { const { createCrowd } = await import('./sim/crowd.js'); rig = await createCrowd(engine.scene, engine, 700); }
+            bootMark('crowd loaded');
+          }
           catch (e) { console.warn('crowd unavailable, mannequins', e); rig = null; }
         }
         const { Peds } = await import('./sim/peds.js');
@@ -449,6 +515,7 @@ async function boot() {
     } catch (e) { console.warn('sims unavailable', e); }
   }
 
+  bootMark('sims');
   if (isApi) {
     controller = new ApiCam();           // src/api/bridge.js sets its pose and streaming centre
   } else if (isRecord) {
@@ -652,7 +719,11 @@ async function boot() {
   };
   engine.prof = PROF;
   let apiHooks = null;   // ?api=1: src/api/bridge.js (preStep: API-driven actors + camera, postStep: sensors' poses)
+  bootMark('frame loop');
+  bootLoopUp = true;
+  let bootNear = false;
   engine.onFrame = (dt) => {
+    if (!bootNear && streamer.tiles.size > 4 && streamer.outstanding === 0) { bootNear = true; bootMark('near ring ready'); }
     tick('sky', () => sky.update(dt));
     tick('weather', () => weather.update(dt));
     tick('life', () => life?.update(dt));
@@ -661,6 +732,7 @@ async function boot() {
     const p = tick('controller', () => controller ? controller.update(dt) : { x: px, z: pz });
     spawnGuard.update(engine.camera);   // film takes: traffic / walkers never spawn in view (window.__SPAWNGUARD)
     tick('sun', () => engine.updateSun(sky.sunDir, p.x, p.y ?? 50, p.z));
+    tick('lamps', () => cityLamps.update(engine.camera, ENV.night.value, dt, engine));
     tick('streamer', () => streamer.update(p.x, p.z));
     if (traffic) tick('traffic', () => traffic.update(dt, p.x, p.z));
     if (peds) tick('peds', () => peds.update(dt, p.x, p.z));
@@ -676,11 +748,12 @@ async function boot() {
       hud.stats.textContent = `${engine.fps.toFixed(0)} fps · tiles ${streamer.stats.near} · lod ${streamer.stats.macro}${dresser ? ` · dressed ${dresser.active.size}` : ''} · ${controller?.speedText?.() ?? ''}`;
       const total = Object.keys(streamer.manifest.macros).length;
       hud.bar.style.width = `${(streamer.stats.macro / total) * 100}%`;
-      if (hud.loading.style.opacity !== '0' && streamer.stats.near > 4 && frames > 90) {
+      if (hud.loading.style.opacity !== '0' && streamer.stats.near > 4 && frames > 90 && !engine.holdDraw) {
+        bootMark('loading hidden');
         hud.loading.style.opacity = '0';
         setTimeout(() => (hud.loading.style.display = 'none'), 800);
       }
-      if (isShot && frames > 60 && streamer.idle()) window.__READY = true;
+      if (isShot && frames > 60 && streamer.idle() && !engine.holdDraw && !window.__READY) { window.__READY = true; bootMark("READY"); }
     }
   };
 
@@ -746,7 +819,8 @@ async function boot() {
       // the recorder uses it as a liveness check before every screenshot
       frames: engine.frames,
       threw,
-      idle: streamer.idle(),
+      idle: streamer.idle() && !engine.holdDraw,   // PC26: not settled while the boot precompile holds the picture
+      precompiling: !!engine.holdDraw,
       near: streamer.stats.near,
       macro: streamer.stats.macro,
       outstanding: streamer.outstanding,

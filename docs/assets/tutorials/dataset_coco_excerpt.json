@@ -1,0 +1,64 @@
+{
+  "images": [
+    {
+      "id": 1,
+      "file_name": "rgb/001282.png",
+      "width": 1280,
+      "height": 720,
+      "frame": 1282
+    },
+    "..."
+  ],
+  "annotations": [
+    {
+      "id": 1,
+      "image_id": 1,
+      "category_id": 19,
+      "bbox": [
+        387,
+        321,
+        118,
+        41
+      ],
+      "area": 3327,
+      "iscrowd": 0,
+      "instance_id": 331434,
+      "truncated": false,
+      "amodal_bbox": [
+        387,
+        321,
+        118,
+        41
+      ],
+      "occlusion": 0
+    },
+    "..."
+  ],
+  "categories": [
+    {
+      "id": 19,
+      "name": "car",
+      "supercategory": "thing"
+    },
+    {
+      "id": 20,
+      "name": "bus",
+      "supercategory": "thing"
+    },
+    {
+      "id": 21,
+      "name": "truck",
+      "supercategory": "thing"
+    },
+    {
+      "id": 22,
+      "name": "bicycle",
+      "supercategory": "thing"
+    },
+    {
+      "id": 23,
+      "name": "pedestrian",
+      "supercategory": "thing"
+    }
+  ]
+}

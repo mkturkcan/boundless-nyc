@@ -119,8 +119,8 @@ export class Streamer {
       if (this.fetching >= FETCH_CONC) break;
       this._fetchTile(w.key);
     }
-    // assembly budget: one tile per frame
-    if (this.queue.length) {
+    // assembly budget: one tile per frame (PF25: held while boot waits for the landmarks module)
+    if (this.queue.length && !this.holdAssembly) {
       const { key, buf } = this.queue.shift();
       this._assemble(key, buf);
     }

@@ -1,0 +1,32 @@
+{
+  "id": 64079,
+  "class_id": 19,
+  "class_name": "car",
+  "actor_id": 0,
+  "bbox": [
+    452,
+    283,
+    27,
+    27
+  ],
+  "amodal_bbox": [
+    377,
+    272,
+    102,
+    40
+  ],
+  "occlusion": 0.8034,
+  "truncated": false,
+  "area": 563,
+  "yaw": -28.121,
+  "location": {
+    "x": 989.03,
+    "y": 2919.66,
+    "z": 3.39
+  },
+  "extent": {
+    "x": 2.115,
+    "y": 1.05,
+    "z": 0.825
+  }
+}

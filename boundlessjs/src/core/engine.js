@@ -310,6 +310,10 @@ class HazePass extends Pass {
       // a soft floor (a lerp, not a clamp), so near-field haze stays physical
       // and the far field keeps a stated fraction of its own value.
       uTmin: { value: 0.0 },
+      // FS26 sky ring (world/materials.js FOG_SKY; weather.js binds the shared arrays): the veil's base colour is the sky's
+      // own horizon colour along the ray. Zeros = off.
+      fogSkyRing: { value: new Float32Array(48) },
+      fogSkyP: { value: new Float32Array(4) },
     };
     this._quad = new FullScreenQuad(new THREE.ShaderMaterial({
       uniforms: this.uniforms,
@@ -320,7 +324,18 @@ class HazePass extends Pass {
         uniform mat4 uInvProj, uCamMat;
         uniform vec3 uCamPos, uSunDir, uSunCol, uFogCol;
         uniform float uDensity, uFalloff, uG, uSunBoost, uBaseY, uSkyAmt, uGlowMax, uBlue, uTmin;
+        uniform vec3 fogSkyRing[ 16 ];
+        uniform vec4 fogSkyP;
         varying vec2 vUv;
+        vec3 fogSkyColor( vec3 fd, vec3 base ) {
+          if ( fogSkyP.x < 0.5 ) return base;
+          float fa = ( atan( fd.z, fd.x + 1e-6 ) + 3.14159265 ) * 1.27323954;
+          float fi = floor( fa ); float ff = fa - fi;
+          int i0 = int( mod( fi, 8.0 ) ); int i1 = int( mod( fi + 1.0, 8.0 ) );
+          vec3 lo = mix( fogSkyRing[ i0 ], fogSkyRing[ i1 ], ff );
+          vec3 hi = mix( fogSkyRing[ i0 + 8 ], fogSkyRing[ i1 + 8 ], ff );
+          return mix( base, mix( lo, hi, smoothstep( 0.02, 0.22, fd.y ) ), fogSkyP.y );
+        }
         void main() {
           vec4 base = texture2D(tDiffuse, vUv);
           gl_FragColor = base;
@@ -353,8 +368,12 @@ class HazePass extends Pass {
           // the sky it stands against.
           float away = 0.5 - 0.5 * mu;                       // 0 at the sun, 1 opposite
           float up = smoothstep(-0.25, 0.35, rd.y);
-          vec3 fogC = mix(uFogCol, uFogCol * vec3(0.70, 0.87, 1.26), uBlue * mix(0.45, 1.0, max(away, up)));
-          vec3 scat = fogC + uSunCol * min(ph * uSunBoost, uGlowMax) * sunUp;
+          // FS26: with the sky ring the base already IS the sky's spectrum along the ray (no extra Rayleigh push), and the
+          // sun side of it already carries the sky's own glow, so the HG term keeps only the part above the horizon ring
+          float ring = fogSkyP.x * fogSkyP.y;
+          vec3 fogB = fogSkyColor(rd, uFogCol);
+          vec3 fogC = mix(fogB, fogB * vec3(0.70, 0.87, 1.26), uBlue * mix(0.45, 1.0, max(away, up)) * (1.0 - ring));
+          vec3 scat = fogC + uSunCol * min(ph * uSunBoost, uGlowMax) * sunUp * (1.0 - 0.6 * ring);
           // IGN dither on transmittance kills residual banding on long ramps
           float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
           T = clamp(T + (ign - 0.5) * 0.012, 0.0, 1.0);
@@ -529,6 +548,10 @@ class MotionBlurPass extends Pass {
   }
   render(renderer, writeBuffer, readBuffer) {
     this._curVP.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    // a camera that jumped (a teleport, a cut, a sensor pose) did not move through the frame: no streak from the old view
+    this._camP = this._camP || new THREE.Vector3(1e9, 0, 0);
+    if (this._camP.distanceToSquared(this.camera.position) > 900) this._first = true;
+    this._camP.copy(this.camera.position);
     if (this._first) { this.prevVP.copy(this._curVP); this._first = false; }
     this.uniforms.tDiffuse.value = readBuffer.texture;
     this.uniforms.uInvProj.value.copy(this.camera.projectionMatrixInverse);
@@ -1066,7 +1089,11 @@ export class Engine {
       if (this.onFrame) this.onFrame(dt);
       // one frame of simulation without a picture (src/api/bridge.js: a label camera's switch needs the per-camera
       // culls that run in the sim update, not a render)
+      // ...and none at all while main.js's boot precompile (PC26) holds the picture for the parallel shader compile
+      if (this.holdDraw) { this._drawGap = true; this.skipDraw = false; return; }
       if (this.skipDraw) { this.skipDraw = false; return; }
+      // the first picture after a hold: motion blur and TAA must not reproject from the view before it
+      if (this._drawGap) { this._drawGap = false; this.resetTemporal(); }
       // N11: WARM-UP CADENCE. Re-capturing every 150 FRAMES is right for tracking a
       // moving camera and wrong for converging on a new sky: a fresh probe starts from
       // whatever the FIRST capture saw (at boot that is the Sky constructor's own
@@ -1290,6 +1317,11 @@ export class Engine {
   // shadow frustum follows the player, snapped to the texel grid IN LIGHT SPACE —
   // world-space snapping leaves subpixel drift, which makes acne crawl during movement
   addShadowListener(fn) { this._shadowListeners.push(fn); }
+  // every temporal pass (motion blur's previous view-projection, the TAA history) starts over on its next frame: after
+  // a stretch without drawing (main.js PC26 precompile) the camera has moved and the history belongs to another view
+  resetTemporal() {
+    for (const p of this.composer?.passes || []) if (p && '_first' in p) p._first = true;
+  }
   updateSun(sunDir, tx, ty, tz) {
     const s = this.sun;
     // near cascade extent + key split follow camera height (nearExtent /

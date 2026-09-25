@@ -1,0 +1,8 @@
+server 0.1.0, 1280x720, ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Laptop GPU (0x00002520) Direct3D11 vs_5_0 ps_5_0, D3D11)
+loaded: {'loaded': True, 'seconds': 57.8, 'tiles': 26, 'macro': 84}
+Junction(2160_-2741, Location(x=2167.500, y=2740.000, z=3.385), signalized=True, arms=8) arm headings: [-120, -119, -29, 62, 151]
+day     frame 60, sim time   3.00 s -> _out/first_steps/day.png
+golden  frame 120, sim time   6.00 s -> _out/first_steps/golden.png
+dusk    frame 180, sim time   9.00 s -> _out/first_steps/dusk.png
+night   frame 240, sim time  12.00 s -> _out/first_steps/night.png
+rain    frame 300, sim time  15.00 s -> _out/first_steps/rain.png

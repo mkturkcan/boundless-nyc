@@ -1,0 +1,26 @@
+20 vehicles, 40 pedestrians
+frame 1282: 69 road users, 41 of them spawned here
+frame 1302: 74 road users, 41 of them spawned here
+frame 1322: 75 road users, 41 of them spawned here
+frame 1342: 77 road users, 40 of them spawned here
+frame 1362: 75 road users, 40 of them spawned here
+frame 1382: 72 road users, 35 of them spawned here
+frame 1402: 76 road users, 37 of them spawned here
+frame 1422: 77 road users, 36 of them spawned here
+frame 1442: 71 road users, 36 of them spawned here
+frame 1462: 76 road users, 35 of them spawned here
+frame 1482: 70 road users, 33 of them spawned here
+frame 1502: 75 road users, 33 of them spawned here
+frame 1522: 78 road users, 38 of them spawned here
+frame 1542: 80 road users, 38 of them spawned here
+frame 1562: 85 road users, 39 of them spawned here
+frame 1582: 79 road users, 36 of them spawned here
+frame 1602: 83 road users, 42 of them spawned here
+frame 1622: 75 road users, 37 of them spawned here
+frame 1642: 76 road users, 39 of them spawned here
+frame 1662: 74 road users, 36 of them spawned here
+frame 1682: 78 road users, 34 of them spawned here
+frame 1702: 70 road users, 30 of them spawned here
+frame 1722: 79 road users, 34 of them spawned here
+frame 1742: 82 road users, 37 of them spawned here
+24 frames, 1826 boxes {'car': 378, 'bus': 0, 'truck': 74, 'bicycle': 0, 'pedestrian': 1374} -> _out/record_dataset

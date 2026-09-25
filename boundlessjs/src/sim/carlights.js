@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 // HL24: the low-beam pattern every SpotLight evaluates (patches three's spot chunk at import, before any compile)
 import { HL24, AIM_RAD } from './headlamps.js';
+// CL24: street lamps are real lights now (world/cityLamps.js); the pools, halos and point lights below are ?cl24=0 only
+import { CL24 } from '../world/cityLamps.js';
 import { ENV } from '../world/materials.js';
 import { lampSpots } from '../world/life.js';
 // N11 — night ambient (docs/notes/night-r11.md 1.4): colour temperature per
@@ -89,7 +91,7 @@ export class CarLights {
     // shadowless PointLights covers the nearest lamps and cars — true falloff
     // and normal response on walls, asphalt and vehicles. Sprites remain for
     // the glow sources (bloom) and for everything beyond the pool.
-    this.DYN_LAMPS = 24;
+    this.DYN_LAMPS = CL24 ? 0 : 24;
     this.DYN_CARS = 12;
     this.dynLamps = [];
     for (let i = 0; i < this.DYN_LAMPS; i++) {
@@ -119,6 +121,7 @@ export class CarLights {
     this._lampAcc = 9;
   }
   _updateLamps(camera, night, dt) {
+    if (CL24) { this.lampMesh.count = 0; this.glowMesh.count = 0; return; }
     this._lampAcc += dt;
     if (this._lampAcc < 2) return;
     this._lampAcc = 0;
@@ -205,6 +208,15 @@ export class CarLights {
   }
   update(cars, camera, dt = 0.016) {
     const night = ENV.night.value ?? 0;
+    // PF25: an invisible light is left out of every shader's light loop; one at zero intensity is not, and by day that
+    // was 12 headlamp beams (two atans each) evaluated for every lit fragment of the frame. The set is switched as a
+    // whole at the day/night threshold, so the light count is constant within each and three reuses both programs.
+    const lightsOn = night >= 0.06;
+    if (lightsOn !== this._lightsOn) {
+      this._lightsOn = lightsOn;
+      for (const L of this.dynLamps || []) L.visible = lightsOn;
+      for (const L of this.dynCars || []) L.visible = lightsOn;
+    }
     if (night < 0.06) {
       if (this.mesh.count) this.mesh.count = 0;
       if (this.lampMesh.count) this.lampMesh.count = 0;
@@ -318,6 +330,12 @@ export class CarLights {
       // on a decelerating car — only on a stopped one.
       const A = this.lamps[car.kind] || FALLBACK_LAMPS;
       const F = A.front || FALLBACK_LAMPS.front, R = A.rear || FALLBACK_LAMPS.rear;
+      // CL24: a fleet24 car's own lenses glow (emissive HDR) and bloom makes their halo, so near cars take no sprite at
+      // all; past 40 m the lens is a pixel or two, and a small directional core keeps the stream of lights readable.
+      // No glare billboard in either case: that soft disc was one of the "transparent ellipse" effects.
+      const eml = CL24 && this.emissiveLamps;
+      const dcx = x - cpx, dcz = z - cpz;
+      if (eml && dcx * dcx + dcz * dcz < 1600) { car._dyn = false; continue; }
       const braking = (car._brakeT ?? 0) > 0 || car.v < 0.3;
       const tail = braking ? 2.3 : 0.85;
       for (const L of F) {
@@ -330,7 +348,7 @@ export class CarLights {
           const lens = c > 0 ? 0.22 + 0.78 * Math.pow(c, 0.7) : Math.max(0, 0.22 + c * 0.6);
           const glare = c > 0.25 ? Math.pow((c - 0.25) / 0.75, 2.2) : 0;
           if (lens > 0.01) put(hx, hy, hz, w, h, 3.2 * lens, 3.05 * lens, 2.75 * lens, true);
-          if (glare > 0.01) put(hx, hy, hz, w * 3.0, h * 2.2, 0.22 * glare, 0.215 * glare, 0.19 * glare, true);
+          if (glare > 0.01 && !eml) put(hx, hy, hz, w * 3.0, h * 2.2, 0.22 * glare, 0.215 * glare, 0.19 * glare, true);
         } else {
           put(hx, hy, hz, w, h, 3.2, 3.0, 2.6, true);
           put(hx, hy, hz, w * 3.1, h * 3.1, 0.34, 0.32, 0.27, true);

@@ -31,7 +31,7 @@
 // full silhouette, occluders gone, self-occlusion still correct.
 import * as THREE from 'three';
 import { CROWD_SEG_PARS, CROWD_SEG_APPLY } from '../sim/crowd.js';
-import { ENV, FAR_UNIFORMS } from '../world/materials.js';
+import { ENV, FAR_UNIFORMS, NEARMASK_GLSL } from '../world/materials.js';
 import { unproject } from '../shared/geo.js';
 
 // ---------------------------------------------------------------- constants
@@ -122,6 +122,7 @@ const MATID_CLASS = [
   CID.bus_lane,             // 12 red bus lane
   CID.detectable_warning,   // 13 red composite dome plate
   CID.detectable_warning,   // 14 cast-iron dome plate
+  CID.grass,                // 15 campus lawn underlay (TL26: its own section so it loses every depth tie)
 ];
 const CROSSWALK_KEY = 40;   // LUT slot for "matId 3 inside a crossing zone"
 // matId 8 (the far ground carpet) gets its OWN key even though it shares the
@@ -204,6 +205,11 @@ const VERT = /* glsl */ `
   varying float vViewZ;
   void main() {
     vec3 tp = position;
+    #ifdef SEG_FARXF
+      // the macro city stores positions in 1/8 m int16 units; the same decode as makeFarMaterial (materials.js).
+      // Without it every label and depth pass drew the far city 8x too large over the sky.
+      tp *= 0.125; tp.xz *= 0.996; tp.y -= 0.6;
+    #endif
     #ifdef SEG_CROWD
     ${CROWD_SEG_APPLY}
     #endif
@@ -279,7 +285,7 @@ const FRAG = /* glsl */ `
   #endif
   #ifdef SEG_FARCLIP
     varying vec3 vWPos;
-    uniform vec2 uPlayerXZ; uniform float uNearR;
+    uniform vec2 playerXZ; uniform float nearR;${NEARMASK_GLSL}
   #endif
   #ifdef SEG_CUTOUT
     uniform sampler2D uSegMap; uniform float uSegAlpha;
@@ -325,10 +331,11 @@ const FRAG = /* glsl */ `
       // (materials.js:1308 and :2322). Without this the macro blocks paint
       // the building class over the sky at 30-45 m — which is exactly what the
       // first signal-mast validation frame showed: 0 sky px, 59 % building.
+      // farHidden() is the beauty shaders' own test (NM24 near-tile mask), so labels and colour agree tile by tile.
       #ifdef SEG_KEY
-        if (floor(vKey + 0.5) == 41.0 && distance(vWPos.xz, uPlayerXZ) < uNearR) discard;
+        if (floor(vKey + 0.5) == 41.0 && farHidden(vWPos.xz)) discard;
       #else
-        if (distance(vWPos.xz, uPlayerXZ) < uNearR) discard;
+        if (farHidden(vWPos.xz)) discard;
       #endif
     #endif
     vec3 c;
@@ -424,7 +431,8 @@ export function initPerception(engine, refs) {
     uWindT: ENV.windT, uWindA: ENV.windAmp,
     // shared uniform OBJECTS, so the near-ring radius the far shaders clip
     // against tracks the streamer without any per-frame bookkeeping here
-    uPlayerXZ: FAR_UNIFORMS.playerXZ, uNearR: FAR_UNIFORMS.nearR,
+    playerXZ: FAR_UNIFORMS.playerXZ, nearR: FAR_UNIFORMS.nearR,
+    nearMask: FAR_UNIFORMS.nearMask, nearMaskO: FAR_UNIFORMS.nearMaskO, nearMaskOn: FAR_UNIFORMS.nearMaskOn,
   };
   // PV2 crowd draw sets: segRender's own class / id / depth material + the crowd's GPU skinning (sim/crowd.js
   // CROWD_SEG_*), one per (kind, code, skeleton, hair). A plain override drew T-posed bind meshes at the walkers' feet.
@@ -453,7 +461,7 @@ export function initPerception(engine, refs) {
   const mats = new Map();
   function mkMat(kind, opts = {}) {
     const key = [kind, opts.code | 0, opts.lut ? opts.lut.id : 0, opts.map ? opts.map.id : 0,
-      opts.alpha || 0, opts.side ?? 0, opts.sway ? 1 : 0, opts.farclip ? 1 : 0,
+      opts.alpha || 0, opts.side ?? 0, opts.sway ? 1 : 0, opts.farclip ? 1 : 0, opts.farxf ? 1 : 0,
       opts.hide ? opts.hide.id : 0].join('|');
     let m = mats.get(key);
     if (m) return m;
@@ -464,6 +472,7 @@ export function initPerception(engine, refs) {
     if (opts.map) defines.SEG_CUTOUT = '';
     if (opts.sway) defines.SEG_SWAY = '';
     if (opts.farclip) defines.SEG_FARCLIP = '';
+    if (opts.farxf) defines.SEG_FARXF = '';
     if (opts.hide) defines.SEG_HIDE = '';
     const lut = opts.lut || clsLut;
     m = new THREE.ShaderMaterial({
@@ -1021,7 +1030,7 @@ export function initPerception(engine, refs) {
     // ---- far LOD city (macro tiles): stuff, no instances beyond 1 km.
     // farclip is NOT optional here — the macro blocks sit on top of the near
     // ring and their own shader is what keeps them out of it.
-    if (farMat && m === farMat) return mkMat('UNI', { code: inst ? 0 : rgbCode(CID.building), farclip: true });
+    if (farMat && m === farMat) return mkMat('UNI', { code: inst ? 0 : rgbCode(CID.building), farclip: true, farxf: true });
     // ---- water: the single 46 km, 4-vertex plane
     const pa = o.geometry && o.geometry.attributes && o.geometry.attributes.position;
     if (pa && pa.count === 4 && m.type === 'ShaderMaterial') {

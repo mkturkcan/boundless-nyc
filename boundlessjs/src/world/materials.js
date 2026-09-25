@@ -2,6 +2,30 @@ import * as THREE from 'three';
 import { TILE } from '../shared/geo.js';
 import { fasciaTexture } from '../city/fasciaAtlas.js';  // 2 x 16 slots of 512x64 (inlined in the GLSL below)
 
+// FS26 SKY-MATCHED FOG (owner 2026-09-25: golden hour "flat and low quality"). The far field faded into ONE colour per
+// preset (golden: a warm beige, warmed again by the horizon tint below) while the analytic sky at the horizon is a
+// neutral white away from the sun and a bright warm white toward it, so every aerial showed a tan band ending in a
+// hard seam where fogged geometry met the sky. sky.js renders the sky dome into a 16-texel float strip after every sky
+// change (8 azimuths just above the horizon, 8 at ~11 deg) and the fog fades toward THAT colour along each fragment's
+// view direction: distance converges on the sky it stands against. The haze pass (engine.js) and the water use the
+// same ring. A shader that includes the fog chunks without binding the ring reads fogSkyP = 0 and keeps the old colour.
+// `?fs26=0` off.
+export const FS26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('fs26') === '0');
+export const FOG_SKY = { ring: new Float32Array(16 * 3), p: new Float32Array(4) };   // p: x on, y weight
+export const FOG_SKY_GLSL = `
+  uniform vec3 fogSkyRing[ 16 ];
+  uniform vec4 fogSkyP;
+  vec3 fogSkyColor( vec3 d, vec3 base ) {
+    if ( fogSkyP.x < 0.5 ) return base;
+    vec3 fd = normalize( d );
+    float fa = ( atan( fd.z, fd.x + 1e-6 ) + 3.14159265 ) * 1.27323954;   // 0..8 round the horizon
+    float fi = floor( fa ); float ff = fa - fi;
+    int i0 = int( mod( fi, 8.0 ) ); int i1 = int( mod( fi + 1.0, 8.0 ) );
+    vec3 lo = mix( fogSkyRing[ i0 ], fogSkyRing[ i1 ], ff );
+    vec3 hi = mix( fogSkyRing[ i0 + 8 ], fogSkyRing[ i1 + 8 ], ff );
+    return mix( base, mix( lo, hi, smoothstep( 0.02, 0.22, fd.y ) ), fogSkyP.y );
+  }`;
+
 // GLOBAL height fog (aerial perspective): override three's fog chunks BEFORE
 // any material compiles — haze thickens toward street level and warms slightly
 // at the horizon, hitting every fogged material (buildings, ground, trees,
@@ -9,25 +33,30 @@ import { fasciaTexture } from '../city/fasciaAtlas.js';  // 2 x 16 slots of 512x
 THREE.ShaderChunk.fog_pars_vertex = `#ifdef USE_FOG
   varying float vFogDepth;
   varying float vFogWorldY;
+  varying vec3 vFogDir;
 #endif`;
 THREE.ShaderChunk.fog_vertex = `#ifdef USE_FOG
   vFogDepth = - mvPosition.z;
   #ifdef USE_INSTANCING
-    vFogWorldY = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).y;
+    vec3 fogWP = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
   #else
-    vFogWorldY = (modelMatrix * vec4(transformed, 1.0)).y;
+    vec3 fogWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
   #endif
+  vFogWorldY = fogWP.y;
+  vFogDir = fogWP - cameraPosition;
 #endif`;
 THREE.ShaderChunk.fog_pars_fragment = `#ifdef USE_FOG
   uniform vec3 fogColor;
   varying float vFogDepth;
   varying float vFogWorldY;
+  varying vec3 vFogDir;
   #ifdef FOG_EXP2
     uniform float fogDensity;
   #else
     uniform float fogNear;
     uniform float fogFar;
   #endif
+  ${FOG_SKY_GLSL}
 #endif`;
 THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
   #ifdef FOG_EXP2
@@ -37,9 +66,17 @@ THREE.ShaderChunk.fog_fragment = `#ifdef USE_FOG
   #else
     float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
   #endif
-  vec3 fogCol3 = fogColor * mix(vec3(1.0), vec3(1.07, 1.02, 0.94), fogFactor); // warm horizon
+  // FS26: the sky's own horizon colour along this view direction; without the ring, the preset colour warmed at the horizon
+  vec3 fogCol3 = fogSkyP.x > 0.5 ? fogSkyColor(vFogDir, fogColor) : fogColor * mix(vec3(1.0), vec3(1.07, 1.02, 0.94), fogFactor);
   gl_FragColor.rgb = mix(gl_FragColor.rgb, fogCol3, fogFactor);
 #endif`;
+// every built-in fogged shader binds the ring, by reference (three's cloneUniforms shares typed arrays), and so does
+// any ShaderMaterial that merges UniformsLib.fog
+if (FS26) {
+  const fsU = () => ({ fogSkyRing: { value: FOG_SKY.ring }, fogSkyP: { value: FOG_SKY.p } });
+  Object.assign(THREE.UniformsLib.fog, fsU());
+  for (const sh of Object.values(THREE.ShaderLib)) if (sh && sh.uniforms && sh.uniforms.fogColor) Object.assign(sh.uniforms, fsU());
+}
 
 // Shared uniforms mutated by sky.js / streamer.
 export const ENV = {
@@ -100,6 +137,9 @@ export const ENV = {
   lb14Gao: { value: 0.0 },
   lb14Roof: { value: 0.0 },   // per-roof membrane value spread (0 = r13's single tone)
   lb14Road: { value: 0.0 },   // extra amplitude on the road's aperiodic repair mosaic (0 = r13)
+  // FS26: the sky ring, for the shaders that take ENV as their uniforms (the water)
+  fogSkyRing: { value: FOG_SKY.ring },
+  fogSkyP: { value: FOG_SKY.p },
 };
 // LB14 — the DAY row of the four knobs above. sky.apply() writes these on `day` and the r13 row
 // (LB14_R13) on golden/dusk/night, so every non-day preset stays bit-identical by construction and
@@ -172,7 +212,8 @@ export const FAR_UNIFORMS = {
   nearMask: { value: nearMaskTex }, nearMaskO: { value: new THREE.Vector2(-1e5, -1e5) }, nearMaskOn: { value: NM24 ? 1 : 0 },
 };
 // declared after `playerXZ` and `nearR` in both far shaders (the macro buildings and the ground's far terrain, matId 8)
-const NEARMASK_GLSL = `
+// and in the label passes' far clip (perception/segRender.js)
+export const NEARMASK_GLSL = `
         uniform sampler2D nearMask; uniform vec2 nearMaskO; uniform float nearMaskOn;
         bool farHidden(vec2 xz) {
           if (nearMaskOn < 0.5) return distance(xz, playerXZ) < nearR;
@@ -565,11 +606,143 @@ if (typeof document !== 'undefined') {
     GTEX[k] = t;
   }
 }
+
+// ------------------------------------------------------------------ CT25 STONE DETAIL
+// (owner 2026-09-25: the trailer's first shot, Columbia's College Walk, "feels really flat and low quality".) The campus
+// kit and the campus landmarks were plain single-colour MeshStandardMaterials, so a 60 m granite stair, the Low Plaza
+// panels and Low Library's limestone were each one flat value. This gives such a material a real stone surface: colour
+// variation, micro-relief normals and roughness from a photographed CC0 set (Poly Haven; tools/assets/encode_stone.mjs),
+// projected TRIPLANAR in the campus frame (the Manhattan grid, 29 deg off true north), so it needs no UVs and the
+// texture runs square to the steps and walks. The colour term is the texture divided by its own linear mean: a material
+// keeps its calibrated value on average (applyLightTrim, the critic-round palette) and takes only the variation.
+// `?ct25=0` leaves the materials flat.
+export const CT25 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ct25') === '0');
+export const CT26 = CT25 && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ct26') === '0');
+const STONE_SETS = {
+  cgranite:   { mean: [0.3769, 0.2992, 0.1664], size: 2.17 },   // stone_wall_03: speckled, jointless (steps, walls, rims)
+  climestone: { mean: [0.3772, 0.2890, 0.1764], size: 3.00 },   // sandstone_blocks_08: ashlar coursing (Low Library)
+  cpave:      { mean: [0.0928, 0.0947, 0.0888], size: 3.00 },   // concrete_floor_worn_001: worn slab (plaza panels)
+};
+const STONE_AXIS = new THREE.Vector2(0.885, 0.465);   // campus east in world xz (x east, z south); north = (0.465, -0.885)
+const _stone = {};      // set -> { col, nrm, rgh } uniform objects, filled when the textures land
+let _stoneLoader = null;
+function stoneUniforms(name) {
+  if (_stone[name]) return _stone[name];
+  const px = (r, g, b) => { const t = new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1); t.needsUpdate = true; return t; };
+  const S = STONE_SETS[name];
+  const u = _stone[name] = {
+    col: { value: px(255, 255, 255) }, nrm: { value: px(128, 128, 255) }, rgh: { value: px(200, 200, 200) },
+    mean: { value: new THREE.Vector3(1, 1, 1) }, ready: false,
+  };
+  u._S = S;
+  if (_stoneLoader) _stoneLoader(name, u);
+  return u;
+}
+// called from initGTEX once the KTX2 loader exists
+function stoneLoaderReady(loader, tl) {
+  _stoneLoader = (name, u) => {
+    for (const [k, suf, srgb] of [['col', 'col', true], ['nrm', 'nrm', false], ['rgh', 'rgh', false]]) {
+      const install = (t) => {
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = srgb ? 16 : 8;
+        u[k].value = t;
+        if (k === 'col') u.mean.value.set(...u._S.mean);   // the ratio uses the mean only once the real texture is in
+      };
+      loader.load(`textures/${name}_${suf}.ktx2`, install, undefined, () => {
+        const t = tl.load(`textures/${name}_${suf}.jpg`); if (srgb) t.colorSpace = THREE.SRGBColorSpace; install(t);
+      });
+    }
+  };
+  for (const [name, u] of Object.entries(_stone)) _stoneLoader(name, u);
+}
+// o: { amt (colour variation 0..1), nrm (normal strength 0..1), rgh (roughness blend 0..1), scale (x the set size) }
+export function applyStoneDetail(mat, name, o = {}) {
+  if (!CT25 || !STONE_SETS[name] || !mat || mat.userData.stoneDetail) return mat;
+  const S = STONE_SETS[name], U = stoneUniforms(name);
+  const amt = o.amt ?? 0.85, nAmt = o.nrm ?? 0.8, rAmt = o.rgh ?? 0.5, size = S.size * (o.scale ?? 1);
+  // CT26 (`?ct26=0` off): ashlar block tone + weathering for dressed stone walls (o.ashlar = strength, 1 = full)
+  const ashlarK = CT26 ? +(o.ashlar || 0) : 0, ashlar = ashlarK > 0;
+  const prev = mat.onBeforeCompile;
+  mat.userData.stoneDetail = name;
+  mat.onBeforeCompile = (sh, r) => {
+    prev?.call(mat, sh, r);
+    sh.uniforms.stCol = U.col; sh.uniforms.stNrm = U.nrm; sh.uniforms.stRgh = U.rgh; sh.uniforms.stMean = U.mean;
+    sh.uniforms.stAxis = { value: STONE_AXIS };
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vStW; varying vec3 vStN;')
+      .replace('#include <project_vertex>', `#include <project_vertex>
+        {
+          vec4 stP = vec4( transformed, 1.0 );
+          vec3 stN = objectNormal;
+          #ifdef USE_INSTANCING
+            stP = instanceMatrix * stP; stN = mat3( instanceMatrix ) * stN;
+          #endif
+          vStW = ( modelMatrix * stP ).xyz;
+          vStN = mat3( modelMatrix ) * stN;
+        }`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform sampler2D stCol; uniform sampler2D stNrm; uniform sampler2D stRgh; uniform vec3 stMean; uniform vec2 stAxis;
+        varying vec3 vStW; varying vec3 vStN;
+        vec3 stF( vec3 w ) { return vec3( dot( w.xz, stAxis ), w.y, dot( w.xz, vec2( -stAxis.y, stAxis.x ) ) ); }
+        vec3 stFi( vec3 f ) { vec2 e = stAxis, n = vec2( -stAxis.y, stAxis.x ); return vec3( e.x * f.x + n.x * f.z, f.y, e.y * f.x + n.y * f.z ); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        vec3 stP3 = stF( vStW ) / ${size.toFixed(3)};
+        vec3 stN3 = normalize( stF( normalize( vStN ) ) );
+        vec3 stWt = pow( abs( stN3 ), vec3( 4.0 ) ); stWt /= max( stWt.x + stWt.y + stWt.z, 1e-4 );
+        vec2 stUx = stP3.zy, stUy = stP3.xz, stUz = stP3.xy;
+        {
+          vec3 c = texture2D( stCol, stUx ).rgb * stWt.x + texture2D( stCol, stUy ).rgb * stWt.y + texture2D( stCol, stUz ).rgb * stWt.z;
+          diffuseColor.rgb *= mix( vec3( 1.0 ), clamp( c / max( stMean, vec3( 1e-3 ) ), vec3( 0.35 ), vec3( 1.9 ) ), ${amt.toFixed(3)} );
+        }${ashlar ? `
+        {
+          // CT26 ashlar: what survives distance once the detail maps have mipped to their mean. Each block its own shade
+          // (0.62 m courses of 1.24 m blocks, staggered), darker joints, broad weathering, and on walls rain streaks
+          // that darken downward from every course
+          vec3 f = stF( vStW ); vec3 an = abs( stN3 );
+          vec2 bq = an.y > max( an.x, an.z ) ? f.xz : ( an.x > an.z ? f.zy : f.xy );
+          float crs = floor( bq.y / 0.62 );
+          float bx = floor( ( bq.x + mod( crs, 2.0 ) * 0.62 ) / 1.24 );
+          float bh = fract( sin( dot( vec2( bx, crs ), vec2( 127.1, 311.7 ) ) ) * 43758.5453 );
+          vec2 inb = vec2( fract( ( bq.x + mod( crs, 2.0 ) * 0.62 ) / 1.24 ) * 1.24, fract( bq.y / 0.62 ) * 0.62 );
+          float jn = 1.0 - smoothstep( 0.0, 0.012, min( min( inb.x, 1.24 - inb.x ), min( inb.y, 0.62 - inb.y ) ) );
+          float pw = sin( f.x * 0.23 + f.y * 0.11 ) * sin( f.z * 0.19 - f.y * 0.07 + 1.7 ) * 0.5 + 0.5;       // broad patches
+          float wall = smoothstep( 0.6, 0.9, 1.0 - an.y );
+          float stk = fract( sin( floor( bq.x * 2.3 ) * 91.7 ) * 4375.85 );                                  // streak columns
+          float streak = wall * smoothstep( 0.55, 0.95, stk ) * ( 1.0 - fract( bq.y / 0.62 ) ) * 0.6;
+          float tone = 1.0 + ( bh - 0.5 ) * ${(0.11 * ashlarK).toFixed(3)} - ( pw - 0.5 ) * ${(0.12 * ashlarK).toFixed(3)} - streak * ${(0.10 * ashlarK).toFixed(3)} - jn * ${(0.16 * ashlarK).toFixed(3)};
+          diffuseColor.rgb *= tone;
+          diffuseColor.rgb *= mix( vec3( 1.0 ), vec3( 1.02, 1.0, 0.965 ), ( bh - 0.5 ) * 2.0 * ${(0.5 * ashlarK).toFixed(3)} );   // warm / cool stones
+        }` : ''}`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        {
+          float rt = texture2D( stRgh, stUx ).g * stWt.x + texture2D( stRgh, stUy ).g * stWt.y + texture2D( stRgh, stUz ).g * stWt.z;
+          roughnessFactor = clamp( mix( roughnessFactor, rt, ${rAmt.toFixed(3)} ), 0.08, 1.0 );
+        }`)
+      .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          // whiteout-blended triplanar normal map in the campus frame, back to world, then to view space
+          vec3 tx = texture2D( stNrm, stUx ).xyz * 2.0 - 1.0, ty = texture2D( stNrm, stUy ).xyz * 2.0 - 1.0, tz = texture2D( stNrm, stUz ).xyz * 2.0 - 1.0;
+          vec3 n3 = stN3;
+          tx = vec3( tx.xy + n3.zy, abs( tx.z ) * n3.x );
+          ty = vec3( ty.xy + n3.xz, abs( ty.z ) * n3.y );
+          tz = vec3( tz.xy + n3.xy, abs( tz.z ) * n3.z );
+          vec3 pn = normalize( tx.zyx * stWt.x + ty.xzy * stWt.y + tz.xyz * stWt.z );
+          vec3 vn = normalize( ( viewMatrix * vec4( stFi( pn ), 0.0 ) ).xyz );
+          normal = normalize( mix( normal, vn * sign( dot( vn, normal ) + 1e-4 ), ${nAmt.toFixed(3)} ) );
+        }`);
+  };
+  const key = mat.customProgramCacheKey?.bind(mat);
+  mat.customProgramCacheKey = () => (key ? key() : '') + `|ct25${name}${amt}${nAmt}${rAmt}${size}${ashlar ? '|a' + ashlarK : ''}`;
+  mat.needsUpdate = true;
+  return mat;
+}
+
 export function initGTEX(renderer) {
   (async () => {
     const { KTX2Loader } = await import('three/addons/loaders/KTX2Loader.js');
     const loader = new KTX2Loader().setTranscoderPath('basis/').detectSupport(renderer);
     const tl = new THREE.TextureLoader();
+    stoneLoaderReady(loader, tl);   // CT25
     const install = (k, t, srgb) => {
       t.wrapS = t.wrapT = THREE.RepeatWrapping;
       // r8 (?aa=0 -> 8 on everything). A street plane at a 3 m eye is the most
@@ -3213,7 +3386,13 @@ export function makeGroundMaterial() {
         {
           float zb = (matId == 3.0 || matId == 4.0 || matId == 13.0 || matId == 14.0) ? 10.0
                    : matId == 9.0 ? 8.0                       // green bike box under its white edge line (zfight.md)
-                   : (matId == 11.0 || matId == 12.0) ? 4.0 : 0.0;
+                   : (matId == 11.0 || matId == 12.0) ? 4.0
+                   // TL26: the two layers that lie UNDER the others by design lose every tie: the campus lawn underlay
+                   // (15) under paths, brick and beds, the terrain grid (7) under everything
+                   : matId == 15.0 ? -4.0 : matId == 7.0 ? -8.0
+                   // ...and campus brick (10) yields its ties: the College Walk brick ribbons run under the grey walk
+                   // and the lawn beds either side of it (refs/earth/col_earth_top.png)
+                   : matId == 10.0 ? -2.0 : 0.0;
           gl_Position.z -= (zb / 8388608.0) * gl_Position.w;
         }`);
     sh.fragmentShader = sh.fragmentShader
@@ -3245,6 +3424,7 @@ export function makeGroundMaterial() {
         int m = int(vMat + 0.5);
         int mRaw = m;                       // 11 gutter / 12 red bus lane are asphalt variants
         if (m == 11 || m == 12) m = 0;
+        if (m == 15) m = 5;                 // TL26: the campus lawn underlay is lawn (its own id only for the depth order)
         GND_patch = 0.0; GND_manhole = 0.0; GND_oil = 0.0; GND_tn = vec3(0.0, 0.0, 1.0); GND_tnW = 0.0;
         GND_paint = 0.0; GND_rock = 0.0; GND_spec = 1.0;
         GND_age = 0.5; GND_wheel = 0.0; GND_cast = 0.0;
@@ -4585,6 +4765,7 @@ export function makeWaterMaterial() {
       uniform float time; uniform float night;
       uniform vec3 fogColor; uniform float fogDensity;
       uniform vec3 sunDir; uniform vec3 sunColor; uniform vec3 skyAmbient;
+      ${FOG_SKY_GLSL}
       ${HASH_GLSL}
       // three-octave animated height field; taps widen with distance so the
       // derivative normals self-antialias instead of shimmering at range
@@ -4610,6 +4791,9 @@ export function makeWaterMaterial() {
         // sky reflection graded to the view: zenith color overhead, brighter
         // horizon color at grazing angles (sells reflection without a cubemap)
         vec3 horizonC = mix(fogColor * 1.18, sunColor * 0.35 + fogColor * 0.75, 0.35);
+        // FS26: the reflected ray's own sky at the horizon (the sun side of a river glows, the far side stays cool)
+        vec3 Rw = reflect(-V, N);
+        horizonC = fogSkyP.x > 0.5 ? fogSkyColor(vec3(Rw.x, max(Rw.y, 0.0), Rw.z), horizonC) : horizonC;
         vec3 skyRef = mix(skyAmbient * 1.05, horizonC, pow(1.0 - max(V.y, 0.0), 2.0));
         skyRef *= (1.0 - night * 0.82);
         float fres = 0.05 + 0.95 * pow(1.0 - max(dot(N, V), 0.0), 3.2);
@@ -4624,7 +4808,7 @@ export function makeWaterMaterial() {
         // city light streaks at night ride the ripples
         col += vec3(0.9, 0.6, 0.3) * night * fres * (hC * 0.7 + 0.3) * 0.1;
         float f = 1.0 - exp(-fogDensity * fogDensity * vDist * vDist);
-        col = mix(col, fogColor, clamp(f, 0.0, 1.0));
+        col = mix(col, fogSkyColor(vWorld - cameraPosition, fogColor), clamp(f, 0.0, 1.0));
         gl_FragColor = vec4(col, 1.0);
       }
     `,

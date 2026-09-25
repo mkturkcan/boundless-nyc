@@ -31,3 +31,11 @@
 [data-md-color-scheme="slate"] .md-typeset .md-button { color: #eef3f8; border-color: rgba(255, 255, 255, 0.28); }
 [data-md-color-scheme="slate"] .md-typeset .md-button--primary { background-color: #f7c325; border-color: #f7c325; color: #0b1119; }
 .md-typeset .md-button:focus, .md-typeset .md-button:hover { background-color: #f7c325; border-color: #f7c325; color: #0b1119; }
+/* a wider page on large screens: the scripts and reference tables run to 120 columns */
+.md-grid { max-width: 80rem; }
+/* tutorials: images side by side, one column on narrow screens */
+.md-typeset .tgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin: 1.4em 0 2em; }
+.md-typeset .tgrid figure { margin: 0; width: 100%; }
+@media (max-width: 44.9375em) { .md-typeset .tgrid { grid-template-columns: 1fr; } }
+.md-typeset .swatch { display: inline-block; width: 1.6em; height: 0.9em; border-radius: 2px; vertical-align: -0.1em;
+  margin-right: 0.4em; box-shadow: 0 0 0 1px rgba(128, 128, 128, 0.45); }

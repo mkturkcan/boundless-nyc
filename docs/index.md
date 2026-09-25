@@ -14,6 +14,7 @@ renders Manhattan, the Bronx, Brooklyn and Queens in real time, simulates traffi
 street network, and returns pixel-exact ground truth through a Python API modelled on CARLA.</p>
 
 [Get started](api/getting_started.md){ .md-button .md-button--primary }
+[Tutorials](tutorials/index.md){ .md-button }
 [Python API](api/python_api.md){ .md-button }
 [Download for Windows](https://github.com/mkturkcan/boundless-nyc/releases){ .md-button }
 [Demo in the browser](https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc){ .md-button }
@@ -27,11 +28,10 @@ street network, and returns pixel-exact ground truth through a Python API modell
 
 Every element of the city traces back to a record. Building footprints come from NYC Building Footprints and are
 joined to the tax-lot database (PLUTO) for floors, use and year of construction, and to the facade inspection filings
-for the wall material, so a brick tenement is brick and a limestone apartment house is stone. Each building is
-classified into one of 16 facade typologies and dressed procedurally: windows on the recorded floor count, cornices,
-storefronts, fire escapes, stoops and rooftop equipment. Streets come from the city's centreline database with their
-recorded widths, lane counts, directions and speed limits. They become carriageways, kerbs, crosswalks, lane paint,
-bus lanes, and the lane and sidewalk graphs that traffic and pedestrians move on.
+for the wall material. Each building is classified into a facade typology and dressed procedurally: windows on the
+recorded floor count, cornices, storefronts, fire escapes, stoops and rooftop equipment. Streets come from the city's
+centreline database with their recorded widths, lane counts, directions and speed limits. They become carriageways,
+kerbs, crosswalks, lane paint, bus lanes, and the lane and sidewalk graphs that traffic and pedestrians move on.
 
 The compiler is a Node.js pipeline and the renderer is three.js on WebGL2, so nothing needs an engine build. Changing
 how the city looks or behaves is an edit to a JavaScript module and a page reload, and the whole city can be
@@ -43,10 +43,10 @@ recompiled from the public records ([Building from source](building.md)).
   ![RGB, semantic segmentation, instance segmentation with visible and amodal boxes, and depth for one step at W 120th St and Amsterdam Ave](assets/figures/sensors.jpg)
 </figure>
 
-Each synchronous step can return RGB, semantic segmentation in 36 classes, instance segmentation with visible and
-amodal boxes, occlusion ratios and 3D poses, and metric depth. The labels come from the renderer itself, so they need
-no annotation and never drift from the image. The Python package writes COCO detection files directly
-([Python API](api/python_api.md)).
+Each synchronous step can return RGB, semantic segmentation in Cityscapes-compatible classes, instance segmentation
+with visible and amodal boxes, occlusion ratios and 3D poses, and metric depth. The labels are rendered from the same
+scene state as the image, so they need no annotation. The Python package writes COCO detection files directly, and the
+[tutorials](tutorials/index.md) go from a first connection to a recorded dataset.
 
 ## The whole city, streamed
 
@@ -54,19 +54,20 @@ no annotation and never drift from the image. The Python package writes COCO det
   ![Every building of the four boroughs shaded by height, with the tile grid and the streaming radii around a camera in Harlem](assets/figures/coverage.jpg)
 </figure>
 
-The compiled city holds 937,965 buildings in 2,884 tiles of 512 m and 210 far-field tiles of 2,048 m, 2.4 GB in all.
-The client keeps full detail within 1 km of the camera and draws far-field tiles out to 13 km, which keeps any street
-of the four boroughs within reach of a laptop GPU.
+The compiled city holds every building of the four boroughs. The client keeps full detail around the camera and draws
+coarser far-field tiles beyond it, so any street of the four boroughs can be rendered on a laptop GPU.
 
 ## Architecture
 
 <figure markdown="span">
-  ![The compiler, the compiled city, the interactive client, the simulation server and the Python API](assets/figures/architecture.png)
+  ![Public records are compiled into binary tiles; the client streams, simulates and renders them inside the simulation server, which the Python API drives over TCP](assets/figures/architecture.png)
 </figure>
 
-The same client runs in two hosts. In a browser, as on the Hugging Face Space, it is an interactive explorer. Inside
-the simulation server, an Electron application, it advances one fixed step per request and sends sensor frames over
-TCP to the Python API ([wire protocol](api/protocol.md)).
+The compiler turns the public records into binary tiles. The client streams the tiles around the camera, dresses the
+facades, simulates traffic and pedestrians, and renders each frame with its ground truth. The same client runs in two
+hosts. In a browser, as on the Hugging Face Space, it is an interactive explorer. Inside the simulation server, an
+Electron application, it advances one fixed step per request and sends sensor data over TCP to the Python API
+([wire protocol](api/protocol.md)).
 
 ## Gallery
 

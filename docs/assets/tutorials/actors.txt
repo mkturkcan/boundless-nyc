@@ -1,0 +1,17 @@
+sidewalk route 9 points; AI route 14 points, state walking
+t =  0.00 s: taxi  0.2 m/s, light red, AI walker walking
+t =  2.00 s: taxi  5.7 m/s, light red, AI walker walking
+t =  4.00 s: taxi  7.0 m/s, light red, AI walker walking
+t =  6.00 s: taxi  6.0 m/s, light red, AI walker walking
+t =  8.00 s: taxi  2.0 m/s, light red, AI walker walking
+t = 10.00 s: taxi  0.0 m/s, light red, AI walker walking
+t = 12.00 s: taxi  0.0 m/s, light red, AI walker walking
+t = 14.00 s: taxi  0.0 m/s, light red, AI walker walking
+t = 16.00 s: taxi  0.0 m/s, light red, AI walker walking
+t = 18.00 s: taxi  0.0 m/s, light red, AI walker walking
+t = 20.00 s: taxi  0.2 m/s, light green, AI walker walking
+t = 22.00 s: taxi  5.7 m/s, light green, AI walker walking
+t = 24.00 s: taxi  7.0 m/s, light green, AI walker walking
+t = 26.00 s: taxi  6.8 m/s, light green, AI walker walking
+t = 28.00 s: taxi  6.9 m/s, light green, AI walker walking
+travelled: {'manual': 102.9, 'autopilot': 158.1, 'walker': 42.0, 'ai_walker': 42.4}

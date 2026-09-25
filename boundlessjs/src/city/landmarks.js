@@ -815,11 +815,12 @@ export const BUILDERS = {
       dm.add(sphere(0.55, 0, { y: APEX + 1.05 }));                              // finial
     }
 
-    lime.into(r, CU_LIME, { rough: 0.88 });
-    gran.into(r, CU_GRAN, { rough: 0.93 });
-    trim.into(r, CU_TRIM, { rough: 0.82 });
-    log.into(r, CU_LOGGIA, { rough: 0.92 });
-    dm.into(r, CU_DOME, { rough: 0.78, flat: true });
+    // CT25: Low Library in photographed stone (ashlar limestone, granite podium and stair, the dome's granite)
+    lime.into(r, CU_LIME, { rough: 0.88, stone: { set: 'climestone', amt: 0.8, nrm: 0.8, rgh: 0.4, ashlar: 1 } });
+    gran.into(r, CU_GRAN, { rough: 0.93, stone: { set: 'cgranite', amt: 0.8, nrm: 0.75, rgh: 0.45 } });
+    trim.into(r, CU_TRIM, { rough: 0.82, stone: { set: 'cgranite', amt: 0.5, nrm: 0.5, rgh: 0.3, scale: 0.6 } });
+    log.into(r, CU_LOGGIA, { rough: 0.92, stone: { set: 'climestone', amt: 0.7, nrm: 0.7, rgh: 0.3, ashlar: 0.7 } });
+    dm.into(r, CU_DOME, { rough: 0.78, flat: true, stone: { set: 'cgranite', amt: 0.6, nrm: 0.4, rgh: 0.3, scale: 1.6 } });
     gls.into(r, 0x24292f, { rough: 0.32, metal: 0.12, flat: false });
     brz.into(r, 0x413a2e, { rough: 0.5, metal: 0.5 });
     vrd.into(r, 0x4c5742, { rough: 0.52, metal: 0.42 });
@@ -1000,9 +1001,9 @@ export const BUILDERS = {
     for (const [px, pz] of [[-0.33, -0.27], [0.33, -0.27], [-0.37, 0.31], [0.37, 0.31]])
       plant.add(box(3.2, 1.9, 2.4, 0, { x: px * cW, y: ATT + 0.43, z: zC + pz * Dp }));
 
-    lime.into(r, CU_LIME, { rough: 0.88 });
-    trim.into(r, CU_TRIM, { rough: 0.82 });
-    gran.into(r, CU_GRAN, { rough: 0.93 });
+    lime.into(r, CU_LIME, { rough: 0.88, stone: { set: 'climestone', amt: 0.8, nrm: 0.8, rgh: 0.4, ashlar: 1 } });   // CT25: Butler
+    trim.into(r, CU_TRIM, { rough: 0.82, stone: { set: 'cgranite', amt: 0.5, nrm: 0.5, rgh: 0.3, scale: 0.6 } });
+    gran.into(r, CU_GRAN, { rough: 0.93, stone: { set: 'cgranite', amt: 0.8, nrm: 0.75, rgh: 0.45 } });
     brk.into(r, 0x8e5138, { rough: 0.94 });
     gls.into(r, 0x1c2228, { rough: 0.30, metal: 0.16, flat: false });
     cop.into(r, 0x6e9c86, { rough: 0.74, metal: 0.05 });   // CR24: verdigris, a matte mineral crust

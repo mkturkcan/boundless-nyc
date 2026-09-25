@@ -38,19 +38,26 @@ the `world.tick` response.
 |---|---|
 | `rgba8` | RGBA, 8 bit, rows top to bottom |
 | `class_u8` | one byte per pixel: the semantic class id (`map.get_semantic_classes`) |
-| `instance_rgba8` | RGBA instance ids (`code = r + g*256 + b*65536`), plus `labels` in the JSON header |
-| `depth_f32` | float32 metres per pixel (little-endian), `depth_max` in the header |
+| `instance_rgba8` | RGBA, 8 bit; `code = r + g*256 + b*65536` and the instance id is `code * 5029001 mod 2^24` (0 for background and stuff classes); plus `labels` in the JSON header |
+| `depth_f32` | float32 per pixel (little-endian): metres along the camera's view axis; `depth_max` in the header marks pixels with no geometry (sky) |
 | `labels` | no blob: boxes only, in `labels` |
 
-`labels` = `{camera: {fx, fy, cx, cy, ...}, sensor_transform, instances: [...], classes: [...]}`. Each instance:
+`labels` = `{camera, sensor_transform, instances: [...], classes: [...]}`. `sensor_transform` is the camera's pose in
+the API frame. `camera` describes the same camera for the renderer: the intrinsics `K` (3 × 3, pixels), `fov_y_deg`,
+`aspect`, `near`, `far`, `lonlat`, and its pose in the client's internal frame (`pos`, `quat`, `yaw`, `pitch`, `roll`;
+x east, y up, z south). Each instance:
 `id, class_id, class, actor_id (0 = background), bbox [x, y, w, h], area, truncated, location, yaw, extent`, and with
-`amodal > 0` also `amodal_bbox, occlusion`.
+`amodal > 0` also `amodal_bbox, occlusion`. `bbox` covers the visible pixels and `area` counts them. `location` is the
+world point on the ground below the object's centre, `extent` holds the half sizes (x along the object's heading, y
+across it, z up) and `yaw` the heading in degrees; vehicles carry all three, pedestrians `location` and `extent`, trees
+and street furniture `location` only, and buildings none of them.
 
 ## Frames and units
 
 - World: ENU metres from 40.7831 N, 73.9712 W. **x east, y north, z up.**
 - `rotation` `{pitch, yaw, roll}` in degrees: yaw counter-clockwise from east, pitch nose-up, roll right-side-down.
-- Attached actors: `transform` is relative to the parent's body frame (x forward, y left, z up).
+- Attached actors: `transform` is relative to the parent. The offset (x forward, y left, z up) turns with the parent's
+  yaw, the yaw adds to the parent's, and pitch and roll are the attachment's own.
 - A transform is `{"location": {"x", "y", "z"}, "rotation": {"pitch", "yaw", "roll"}}`.
 
 ## Methods
@@ -69,7 +76,7 @@ Answered by the simulation:
 | `server.info` | | `api_version, resolution, gpu, fps, frame, timestamp, synchronous_mode, fixed_delta_seconds, geo_origin` |
 | `world.get_settings` | | `{synchronous_mode, fixed_delta_seconds, idle_nap_ms}` |
 | `world.apply_settings` | `synchronous_mode?, fixed_delta_seconds?, idle_nap_ms?` | settings + `frame` |
-| `world.tick` | `dt?` | `{frame, timestamp, timing}`; synchronous mode only |
+| `world.tick` | `dt?` (default `fixed_delta_seconds`) | `{frame, timestamp, timing}`; synchronous mode only |
 | `world.wait_until_loaded` | `timeout?` | `{loaded, seconds, tiles, macro}` |
 | `world.get_snapshot` | | `{frame, timestamp, actors: [{id, type_id, transform, velocity}]}` |
 | `world.get_blueprints` | | `[{id, tags, attributes}]` |
@@ -88,11 +95,11 @@ Answered by the simulation:
 | `vehicle.apply_control` | `id, throttle, steer, brake, hand_brake, reverse` | |
 | `vehicle.get_control` | `id` | |
 | `vehicle.get_obstacle_ahead` | `id, max_distance?, width?` | `{distance, kind, actor_id, speed}` or `null` |
-| `vehicle.set_autopilot` | `id, enabled, route?` (`["left", "straight", ...]`) | |
+| `vehicle.set_autopilot` | `id, enabled, route?` (`["left", "straight", ...]`) | `{autopilot, route}` |
 | `walker.apply_control` | `id, direction, speed, jump` | |
 | `walker_ai.start` / `walker_ai.stop` | `id` | |
 | `walker_ai.set_max_speed` | `id, speed` | |
-| `walker_ai.go_to_location` | `id, location, direct?` | `{path}` |
+| `walker_ai.go_to_location` | `id, location, direct?` | `{state, length, path}` |
 | `walker_ai.get_state` | `id` | `{state}`: `stopped`, `idle`, `walking`, `arrived` |
 | `sensor.listen` / `sensor.stop` | `id` | |
 | `map.info` | | `{name, geo_origin}` |

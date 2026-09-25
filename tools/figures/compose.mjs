@@ -4,6 +4,8 @@
 //
 // Every figure is an HTML page (Inter, dark theme) rendered by headless Chromium; overlays that must register with a
 // render (bands, boxes, tile grids) are SVG in the render's own pixel or world coordinates, cropped by viewBox.
+// The architecture diagram is not composed here: its source is docs/assets/figures/src/architecture.drawio, rendered by
+// tools/figures/drawio.mjs.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -22,7 +24,6 @@ fs.mkdirSync(OUT, { recursive: true });
 const f = (dir, name) => pathToFileURL(path.join(dir, name)).href;
 const json = (dir, name) => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
 const FONTS = pathToFileURL(path.join(repo, 'boundlessjs', 'public', 'fonts')).href;
-const fmt = (n) => n.toLocaleString('en-US');
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 const CSS = `
@@ -83,8 +84,7 @@ function boxes(labels, classes, [cx, cy, cw, ch], { minArea = 700, labelMinH = 7
     }
     rects += `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="${c}" stroke-width="${stroke}"/>`;
     if (h >= labelMinH) {
-      const occ = (o.occlusion ?? 0) > 0.06 ? `, ${Math.round(o.occlusion * 100)}% occluded` : '';
-      const text = o.class_name + occ, tw = text.length * font * 0.55 + 20;
+      const text = o.class_name, tw = text.length * font * 0.55 + 20;
       const r = [x - 2, y - font - 14, tw, font + 12];
       if (hit(r)) continue;
       placed.push(r);
@@ -142,7 +142,6 @@ FIGS.pipeline = () => {
   const bx = boxes(inst, classes, [0, 0, IMG_W, IMG_H], { minArea: 140, labelMinH: 9999, stroke: 3.4 });
   const lu = (L.records?.landuse || []).filter((x) => USE[x.use]);
   const ty = (L.compiled?.typology || []).slice(0, 5);
-  const rc = L.records?.counts || {};
   const leg = (items) => `<div class="leg">${items.map(([c, t]) => `<span><i style="background:${c}"></i>${esc(t)}</span>`).join('')}</div>`;
   const card = (img, title, text, legend = '') => `<div class="card">
       <div class="panel" style="height:388px">${img}${legend}</div>
@@ -150,17 +149,17 @@ FIGS.pipeline = () => {
       <div style="font-size:20px;line-height:1.55;color:var(--muted);margin-top:14px">${text}</div></div>`;
   const arrow = `<div class="arrow"><svg width="44" height="44" viewBox="0 0 44 44"><path d="M12 6 L30 22 L12 38" fill="none" stroke="#f7c325" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>`;
   const c1 = card(`<img src="${f(MAPS, 'records.svg')}">`, 'Public records',
-    `Building footprints joined to tax lots, street centrelines, street trees, hydrants and subway entrances. This block holds ${fmt(rc.footprints || 0)} footprints and ${fmt(rc.trees || 0)} trees.`,
+    'Building footprints joined to tax lots, street centrelines, street trees, hydrants and subway entrances.',
     leg(lu.map((x) => [x.color, USE[x.use]])));
   const c2 = card(`<img src="${f(MAPS, 'compiled.svg')}">`, 'Compiled city',
-    'Footprints become buildings in one of 16 facade typologies. Centrelines become carriageways, kerbs, crosswalks, lane paint and the lane graph, packed into 512 m tiles.',
+    'Footprints become buildings, each with a facade typology. Centrelines become carriageways, kerbs, crosswalks, lane paint and the lane graph, packed into binary tiles.',
     leg(ty.map((x) => [x.color, NM[x.style] || x.style])));
   const c3 = card(crop(f(RAW, 'lenox_oblique_rgb.png'), [0, 0, IMG_W, IMG_H]), 'Real-time rendering',
     'The WebGL2 client streams the tiles, dresses every facade and moves vehicles and pedestrians on the lane and sidewalk graphs.');
   const c4 = card(crop(f(RAW, 'lenox_oblique_semantic.png'), [0, 0, IMG_W, IMG_H], bx.svg), 'Ground truth',
-    `Every frame comes with semantic and instance masks, metric depth and object boxes. This one labels ${bx.n} vehicles and pedestrians.`);
+    'Every frame comes with semantic and instance masks, metric depth and object boxes.');
   return doc(W, H, `${head('From public records to pixel-exact ground truth',
-      'One block of Harlem through the pipeline, at W 125th St and Lenox Ave. The plans are rotated 29° to the Manhattan grid, and the render looks north along Lenox Ave.')}
+      'One block of Harlem, at W 125th St and Lenox Ave, at each stage of the pipeline.')}
     <div style="position:absolute;left:96px;right:96px;top:330px;display:flex;align-items:flex-start;justify-content:space-between">${c1}${arrow}${c2}${arrow}${c3}${arrow}${c4}</div>`,
   `.card{width:505px}.arrow{height:388px;display:grid;place-items:center;width:44px;opacity:0.95}
    .leg{position:absolute;left:12px;right:12px;bottom:12px;display:flex;flex-wrap:wrap;gap:6px 14px;font-size:14px;font-weight:500;color:#e8eef4;
@@ -175,24 +174,23 @@ FIGS.sensors = () => {
   const cls = Object.fromEntries(classes.map((c) => [c.name, c.rgb]));
   const legend = ['road', 'sidewalk', 'crosswalk', 'road_marking', 'lane_marking_yellow', 'building', 'vegetation', 'car', 'truck', 'pedestrian', 'bicycle',
     'traffic_signal', 'street_light', 'bus_shelter', 'scaffold', 'street_furniture', 'sky'].filter((n) => cls[n]);
-  const ticks = [6, 10, 20, 40, 90], lx = (d) => ((Math.log(d) - Math.log(6)) / (Math.log(90) - Math.log(6))) * 100;
   const turbo = 'linear-gradient(90deg,#7a0403,#c42503,#f26d11,#fdb838,#d0f735,#79fe59,#1ae4b6,#26bce1,#4686fb,#4454c4,#30123b)';
   const panel = (label, inner, extra = '') => `<div class="panel" style="height:614px">${inner}<div class="label">${label}</div>${extra}</div>`;
   const cbar = `<div style="position:absolute;right:18px;bottom:18px;width:420px;background:rgba(6,9,14,0.76);border:1px solid rgba(255,255,255,0.14);border-radius:10px;padding:12px 16px 10px">
       <div style="height:12px;border-radius:3px;background:${turbo}"></div>
-      <div style="position:relative;height:22px;margin-top:6px;font-size:14px;color:#dfe7ef;white-space:nowrap">${ticks.map((t, k, a) => `<span style="position:absolute;left:${lx(t)}%;transform:translateX(${k === 0 ? '0' : k === a.length - 1 ? '-100%' : '-50%'})">${t} m</span>`).join('')}</div></div>`;
+      <div style="display:flex;justify-content:space-between;margin-top:6px;font-size:14px;color:#dfe7ef"><span>near</span><span>far</span></div></div>`;
   return doc(W, H, `${head('Pixel-exact ground truth, every frame',
-      'Four cameras share one pose at W 120th St and Amsterdam Ave during a single synchronous step. The labels come from the renderer itself, so they need no annotation and never drift from the image.')}
+      'One synchronous step at W 120th St and Amsterdam Ave. The labels are rendered from the same scene state as the image, so they need no annotation.')}
     <div style="position:absolute;left:96px;right:96px;top:330px;display:grid;grid-template-columns:1fr 1fr;gap:24px">
       ${panel('RGB', crop(f(RAW, 'sensors_rgb.png'), C))}
       ${panel('Semantic segmentation', crop(f(RAW, 'sensors_semantic.png'), C))}
       ${panel('Instance segmentation and boxes', crop(f(RAW, 'sensors_rgb.png'), C,
         `<image href="${f(RAW, 'sensors_instance.png')}" x="0" y="0" width="${IMG_W}" height="${IMG_H}" style="mix-blend-mode:screen" opacity="0.78"/>${bx.svg}`, 'style="filter:brightness(0.42) saturate(0.6)"'))}
-      ${panel('Depth in metres, log scale', crop(f(RAW, 'sensors_depth_vis.png'), C), cbar)}
+      ${panel('Depth', crop(f(RAW, 'sensors_depth_vis.png'), C), cbar)}
     </div>
     <div style="position:absolute;left:96px;right:96px;bottom:50px">
       <div class="legend">${legend.map((n) => `<span><i style="background:rgb(${cls[n].join(',')})"></i>${n.replace(/_/g, ' ')}</span>`).join('')}</div>
-      <div class="note" style="margin-top:16px">Solid boxes mark the visible extent of each object; dashed boxes mark the amodal extent, including the occluded part. Semantic colours follow Cityscapes where the classes overlap.</div></div>`);
+      <div class="note" style="margin-top:16px">Solid boxes mark the visible extent of each object; dashed boxes mark the amodal extent, including the occluded part.</div></div>`);
 };
 
 FIGS.gallery = () => {
@@ -254,54 +252,18 @@ FIGS.coverage = () => {
       <img src="${f(MAPS, 'citymap.png')}" style="position:absolute;inset:0;width:100%;height:100%">${overlay}</div>
     <div style="position:absolute;left:${84 + mapW + 100}px;right:96px;top:84px">
       <h1>The whole city, streamed</h1>
-      <div class="sub" style="max-width:none;font-size:22px">Every building of Manhattan, the Bronx, Brooklyn and Queens, shaded by height on its street network: ${fmt(M.buildings)} buildings in ${fmt(M.tiles)} tiles of 512 m and ${fmt(M.macros)} far-field tiles of 2,048 m, 2.4 GB in all. The client keeps full detail within 1 km of the camera (yellow) and far-field tiles out to 13 km (blue).</div>
+      <div class="sub" style="max-width:none;font-size:22px">Every building of Manhattan, the Bronx, Brooklyn and Queens, shaded by height on its street network. The client streams full-detail tiles around the camera (yellow) and coarser far-field tiles beyond them (blue).</div>
       <div style="display:flex;gap:44px;align-items:flex-end;margin-top:40px">
         <div style="flex:1">
           <div style="font-size:17px;font-weight:600;color:var(--soft)">Building height</div>
           <div style="height:14px;border-radius:4px;margin-top:14px;background:${ramp}"></div>
-          <div style="position:relative;height:24px;margin-top:8px;font-size:15px;color:var(--muted);white-space:nowrap">${[5, 15, 50, 150, 400].map((h, k, a) => `<span style="position:absolute;left:${hx(h)}%;transform:translateX(${k === a.length - 1 ? '-100%' : '-50%'})">${h} m</span>`).join('')}</div></div>
+          <div style="position:relative;height:24px;margin-top:8px;font-size:15px;color:var(--muted);white-space:nowrap">${[5, 50, 400].map((h, k, a) => `<span style="position:absolute;left:${hx(h)}%;transform:translateX(${k === a.length - 1 ? '-100%' : '-50%'})">${h} m</span>`).join('')}</div></div>
         <div style="display:flex;flex-direction:column;gap:10px;font-size:16px;color:var(--soft);padding-bottom:26px">
-          <span style="display:inline-flex;gap:10px;align-items:center"><i style="width:20px;height:20px;border:4px solid #f7c325;border-radius:50%;display:inline-block"></i>Full detail, 1 km</span>
-          <span style="display:inline-flex;gap:10px;align-items:center"><i style="width:20px;height:20px;border:3px dashed #5cc8f5;border-radius:50%;display:inline-block"></i>Far field, 13 km</span></div></div>
+          <span style="display:inline-flex;gap:10px;align-items:center"><i style="width:20px;height:20px;border:4px solid #f7c325;border-radius:50%;display:inline-block"></i>Full detail</span>
+          <span style="display:inline-flex;gap:10px;align-items:center"><i style="width:20px;height:20px;border:3px dashed #5cc8f5;border-radius:50%;display:inline-block"></i>Far field</span></div></div>
       ${inset}
-      <div class="note" style="margin-top:22px;font-size:15.5px">Buildings from NYC Building Footprints, with 7,178 OpenStreetMap footprints where the city file has none; heights from the roof-height field. North is up; the overview has 10 m pixels and the inset 2.5 m.</div>
+      <div class="note" style="margin-top:22px;font-size:15.5px">Building footprints from NYC Open Data and OpenStreetMap. North is up.</div>
     </div>`);
-};
-
-FIGS.architecture = () => {
-  const W = 2400, H = 1110;
-  const box = (x, y, w, h, title, body, extra = '') => `<div class="abox" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px">
-      <div class="at">${title}</div><div class="ab">${body}</div>${extra}</div>`;
-  const arrows = `<svg style="position:absolute;inset:0" width="${W}" height="${H}" xmlns="http://www.w3.org/2000/svg">
-    <defs><marker id="ah" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto"><path d="M1 1 L12 7 L1 13 z" fill="#f7c325"/></marker>
-          <marker id="ahc" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto"><path d="M1 1 L12 7 L1 13 z" fill="#5cc8f5"/></marker></defs>
-    <path d="M 366 508 L 366 572" stroke="#f7c325" stroke-width="4" fill="none" marker-end="url(#ah)"/>
-    <path d="M 640 720 L 716 720" stroke="#f7c325" stroke-width="4" fill="none" marker-end="url(#ah)"/>
-    <path d="M 1216 660 C 1290 660 1270 395 1340 395" stroke="#f7c325" stroke-width="4" fill="none" marker-end="url(#ah)"/>
-    <path d="M 1216 780 C 1290 780 1270 655 1340 655" stroke="#f7c325" stroke-width="4" fill="none" marker-end="url(#ah)"/>
-    <path d="M 1790 850 L 1790 778" stroke="#5cc8f5" stroke-width="4" fill="none" marker-end="url(#ahc)"/>
-    <path d="M 1870 776 L 1870 848" stroke="#5cc8f5" stroke-width="4" fill="none" marker-end="url(#ahc)"/></svg>`;
-  const code = `<div class="code mono">client = boundless.Client("127.0.0.1", 2000)
-world = client.get_world()
-cam = world.spawn_actor(camera_bp, pose)
-cam.listen(save)
-world.tick()</div>`;
-  return doc(W, H, `${head('How the pieces fit together',
-      'The compiled city is data. One client renders and simulates it, either in a browser for exploration or inside the simulation server for experiments driven from Python.')}
-    ${arrows}
-    ${box(96, 300, 540, 208, 'Public records', 'NYC Open Data, New York State open data and OpenStreetMap: footprints, tax lots, centrelines, trees and street furniture.')}
-    ${box(96, 580, 540, 290, 'City compiler', 'A Node.js pipeline that joins the records, classifies every building into a facade typology and builds the streets, the lane and sidewalk graphs and the furniture. It writes 512 m binary tiles.')}
-    ${box(726, 580, 490, 290, 'Compiled city', 'The tiles, vehicle and pedestrian models and textures: 3.1 GB, published as a versioned Hugging Face dataset.')}
-    ${box(1350, 300, 954, 190, 'Interactive client', 'The WebGL2 renderer in a browser, as on the Hugging Face Space. It streams tiles around the camera, simulates traffic and pedestrians, and offers time of day and weather.')}
-    ${box(1350, 540, 954, 230, 'Simulation server', 'The same client inside an Electron host that advances it one fixed step per request and returns sensor frames: RGB, semantic and instance masks, depth and per-object labels.',
-      '<div class="port mono">TCP port 2000</div>')}
-    <div class="abox" style="left:1350px;top:858px;width:954px;height:196px;padding:24px 28px;display:flex;gap:34px;align-items:center">
-      <div style="flex:none"><div class="at" style="margin-top:0">Your code</div><div class="ab" style="margin-top:6px">Python API</div></div>${code}</div>`,
-  `.abox{position:absolute;border-radius:18px;border:1px solid rgba(255,255,255,0.1);background:linear-gradient(180deg,rgba(255,255,255,0.055),rgba(255,255,255,0.02));
-     box-shadow:0 30px 60px rgba(0,0,0,0.45);padding:28px 32px}
-   .at{font-size:31px;font-weight:700;letter-spacing:-0.01em}.ab{font-size:20px;line-height:1.55;color:var(--muted);margin-top:12px}
-   .port{position:absolute;right:26px;top:28px;font-size:15px;color:#0b0f14;background:#5cc8f5;border-radius:8px;padding:6px 11px;font-weight:600}
-   .code{font-size:16.5px;line-height:1.45;color:#e6edf3;white-space:pre;background:#070b10;border:1px solid rgba(255,255,255,0.08);border-radius:12px;padding:12px 18px;flex:1}`);
 };
 
 FIGS.social = () => {
@@ -314,7 +276,7 @@ FIGS.social = () => {
 };
 
 // ---------------------------------------------------------------- render
-const OUTS = { hero: 'hero.jpg', pipeline: 'pipeline.jpg', sensors: 'sensors.jpg', gallery: 'gallery.jpg', coverage: 'coverage.jpg', architecture: 'architecture.png', social: 'social.jpg' };
+const OUTS = { hero: 'hero.jpg', pipeline: 'pipeline.jpg', sensors: 'sensors.jpg', gallery: 'gallery.jpg', coverage: 'coverage.jpg', social: 'social.jpg' };
 const browser = await chromium.launch();
 for (const [name, build] of Object.entries(FIGS)) {
   if (ONLY && !ONLY.includes(name)) continue;

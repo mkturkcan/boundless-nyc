@@ -51,5 +51,6 @@ print(world.get_map().get_junctions(center=here, radius=60)[0])
 | `examples/intersection_120_amsterdam.py` | a scripted scenario at W 120th St & Amsterdam Ave: a taxi under direct control that stops for the light, autopilot cars with planned turns, pedestrians crossing with AI routes, a pole-mounted camera writing RGB, semantic, instance and COCO boxes, and a dashcam |
 | `examples/generate_traffic.py` | fill an area with autopilot vehicles and wandering pedestrians |
 | `examples/benchmark.py` | seconds per tick for common sensor setups on your machine |
+| `examples/tutorials/` | the scripts of the [tutorials](https://mkturkcan.github.io/boundless-nyc/tutorials/): first steps, cameras, segmentation, depth, bounding boxes, recording a dataset, controlling actors |
 
 The full reference is `Docs/python_api.md`, and the wire protocol is `Docs/protocol.md`.

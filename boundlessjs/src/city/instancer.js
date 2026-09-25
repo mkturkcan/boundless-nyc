@@ -18,7 +18,7 @@
 // carrier (props.js and trees.js swap geometry/material on it); flush()
 // mirrors such swaps to the shadow/proxy meshes and refreshes bounds.
 import * as THREE from 'three';
-import { buildFurnitureGeos, TREE_SPECIES, LEAF_TEX } from './furnitureKit.js';
+import { buildFurnitureGeos, TREE_SPECIES, LEAF_TEX, TV25, TV25_POOLS } from './furnitureKit.js';
 import { panelTexture } from './panelArt.js';
 import { ENV, applySnowCap, applyCityAO, applyLightTrim } from '../world/materials.js';
 // CS11 contact shadows (docs/notes/contact-r11.md, ?cs11=0): every claimed prop that
@@ -73,6 +73,10 @@ const CAPS = {
   curbRamp: 16000,
   scaffoldGlow: 2500, // one glow set per shed (scaffold cap)
 };
+// TV25 (trees agent): the species-form pools (furnitureKit TREE_FORMS). The census + yard trees of the loaded tiles
+// split over ~21 pools instead of 7; the maple pool alone carries ~a fifth of them (yard trees are mostly maple), so the
+// ceiling stays at the old A-pool 12000. A cap is a ceiling, not a count: the store grows on demand.
+if (TV25) for (const n of TV25_POOLS) CAPS[n + 'Trunk'] = CAPS[n + 'Crown'] = 12000;
 
 // Low rooftop clutter (≤ ~1.6 m: vents, goosenecks, pipe runs, AC units, fans,
 // hatches, trays, deck furniture, dishes) sits behind parapets: from a camera
@@ -571,6 +575,15 @@ export class Instancer {
       tX = (h1 - Math.floor(h1) - 0.5) * 0.11;
       tZ = (h2 - Math.floor(h2) - 0.5) * 0.11;
     }
+    // TV25 (trees agent): the census hands every tree the ROAD's direction as its yaw, so two trees of one variant in
+    // a row were the same crown turned the same way — a clone. A tree has no preferred azimuth: turn each one by its
+    // own position hash, and stretch its crown +-11 % along a random horizontal axis. Trunk and crown share (x, z),
+    // so they turn together; the pit fence is not a tree pool and keeps the kerb's alignment.
+    if (TV25 && p.isTree) {
+      rotY += hpos(x, z, 9.13) * 6.283185;
+      const an = 1 + (hpos(x, z, 4.77) - 0.5) * 0.22;
+      sx *= an; sz /= an;
+    }
     this._e.set(tX, rotY, tZ);
     this._q.setFromEuler(this._e);
     this._m.compose(this._v.set(x, y, z), this._q, this._s.set(sx, sy, sz));
@@ -593,9 +606,26 @@ export class Instancer {
     // saturated, and a stressed one yellows. This multiplies the caller's colour
     // rather than replacing it, so the species palette is untouched.
     if (U10 && p.isTree && name.charCodeAt(name.length - 1) === 110 /* 'n' of Crown */) {
-      const f = 0.80 + hpos(x, z, 3.91) * 0.40;          // density -> value
-      const y = hpos(x, z, 5.17);                        // stress -> yellow
-      this._c.setRGB(this._c.r * f * (1 + y * 0.16), this._c.g * f * (1 + y * 0.06), this._c.b * f * (1 - y * 0.18));
+      if (TV25) {
+        // TV25: the caller's colour is white (the species colour lives in the leaf atlas). Value spread of a street's
+        // canopy, a graded stress term — most trees a little tired, ~12 % visibly yellowing and thin-looking (paler,
+        // warmer, less blue) the way a drought-stressed or salt-burned street tree is — and a warm/cool green drift.
+        const f = 0.84 + hpos(x, z, 3.91) * 0.30;
+        const st = hpos(x, z, 5.17);
+        const y = st > 0.88 ? 0.55 + ((st - 0.88) / 0.12) * 0.45 : st * 0.25;
+        const hd = (hpos(x, z, 6.37) - 0.5) * 0.12;
+        this._c.setRGB(this._c.r * f * (1 + y * 0.30 + hd), this._c.g * f * (1 + y * 0.08), this._c.b * f * (1 - y * 0.35 - hd));
+      } else {
+        const f = 0.80 + hpos(x, z, 3.91) * 0.40;          // density -> value
+        const y = hpos(x, z, 5.17);                        // stress -> yellow
+        this._c.setRGB(this._c.r * f * (1 + y * 0.16), this._c.g * f * (1 + y * 0.06), this._c.b * f * (1 - y * 0.18));
+      }
+    }
+    // TV25: the bark of one species is not one colour either — weathering, moss on the shaded side, a wet or a dusty
+    // trunk. The trunk pools are claimed without a colour (white), so give each its own value and warm/cool swing.
+    if (TV25 && U10 && p.isTree && name.charCodeAt(name.length - 1) === 107 /* 'k' of Trunk */) {
+      const f = 0.82 + hpos(x, z, 8.21) * 0.32, w = (hpos(x, z, 2.33) - 0.5) * 0.14;
+      this._c.setRGB(this._c.r * f * (1 + w), this._c.g * f, this._c.b * f * (1 - w));
     }
     p.cols[slot * 3] = this._c.r; p.cols[slot * 3 + 1] = this._c.g; p.cols[slot * 3 + 2] = this._c.b;
     p.alive[slot] = 1;

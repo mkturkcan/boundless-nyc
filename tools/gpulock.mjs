@@ -26,6 +26,10 @@ export async function acquireGpu(label = 'render', maxWaitMs = 40 * 60 * 1000) {
     return true;
   };
   process.on('exit', dequeue);
+  // 2026-09-25: take the ticket BEFORE the first try. A newcomer used to try the lock at once and only queue after a miss,
+  // so one arriving just after a release (inside the oldest waiter's 3 s poll) jumped the whole queue — a chained second
+  // job of the same caller always did. With an empty queue the ticket is the oldest and the first try goes ahead.
+  enqueue();
   for (;;) {
     if (ticket && !myTurn()) { if (Date.now() - t0 > maxWaitMs) { dequeue(); throw new Error('gpu lock wait timed out'); } await new Promise((r) => setTimeout(r, 3000)); continue; }
     try {
@@ -48,9 +52,14 @@ export async function acquireGpu(label = 'render', maxWaitMs = 40 * 60 * 1000) {
       // 08:46-08:53, fps 1.2, the dresser stuck at 16 of 48 builds.
       // Fix: release once, and only if the lock file is still OURS.
       let released = false;
+      // heartbeat: a holder keeps the lock file fresh, so the 20-min stale rule below only ever frees a lock whose holder
+      // stopped updating it (a long legitimate render was being taken over mid-run)
+      const beat = setInterval(() => { try { if (fs.readFileSync(LOCK, 'utf8').startsWith(`${process.pid} `)) fs.utimesSync(LOCK, new Date(), new Date()); } catch {} }, 60000);
+      beat.unref?.();
       const release = () => {
         if (released) return;
         released = true;
+        clearInterval(beat);
         try {
           const own = fs.readFileSync(LOCK, 'utf8').startsWith(`${process.pid} `);
           if (own) fs.unlinkSync(LOCK);

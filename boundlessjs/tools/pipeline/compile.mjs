@@ -1723,7 +1723,7 @@ function tileFor(x, z) {
       bldgXZ: new F32(4096), bldg: [], bholes: [], names: [], nameIdx: new Map(),   // CY12: bholes = courtyard inner-ring records
       roadVerts: new F32(2048), roadRecs: [],
       asphalt: new F32(8192), sidewalk: new F32(8192), curb: new F32(2048),
-      paintW: new F32(2048), paintY: new F32(1024), paintG: new F32(512), grass: new F32(1024), pathTris: new F32(1024), brick: new F32(512),
+      paintW: new F32(2048), paintY: new F32(1024), paintG: new F32(512), grass: new F32(1024), grassU: new F32(256), pathTris: new F32(1024), brick: new F32(512),
       gutter: new F32(1024), busred: new F32(512), // matId 11 gutter strip against every curb, 12 red bus lane
       warn: new F32(256), warnIron: new F32(256), // matId 13/14 detectable-warning plates (red composite / cast iron) at crosswalk ends
       furn: [], nodesJson: [],
@@ -1759,7 +1759,7 @@ function subdivTri(A, B, C, lift, emit, depth = 0, maxE = 24) {
 // (along = uptown N29E, across = toward the east-south-east), metres from the spec centre
 const GRID_ALONG = [Math.sin((29 * Math.PI) / 180), -Math.cos((29 * Math.PI) / 180)], GRID_ACROSS = [Math.cos((29 * Math.PI) / 180), Math.sin((29 * Math.PI) / 180)];
 const NO_LAWN = LM.filter((l) => l.noLawn > 0 || l.noLawnBox).map((l) => ({ x: l.p[0], z: l.p[1], r2: l.noLawn > 0 ? l.noLawn * l.noLawn : 0, box: l.noLawnBox || null }));
-const emitGrass = (A, B, C) => {
+const emitGrassIn = (SEC) => (A, B, C) => {
   if (allPulled(A, B, C) || triTooBig(A, B, C)) return; // chords over water
   {
     // never lay lawn over a carriageway: park polygons that overrun the street
@@ -1790,8 +1790,12 @@ const emitGrass = (A, B, C) => {
   // index explicitly — drapeVert verts carry a 4th flag element, and spreading
   // a 4-vector into pushTri's 9 scalar slots shifts every later coordinate
   // (the corrupted stream put world X values in Y slots: 3500m grass slabs)
-  pushTri(t.grass, A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+  pushTri(t[SEC], A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
 };
+const emitGrass = emitGrassIn('grass');
+// TL26: the campus lawn underlay lies under every campus path, brick field and bed by design; its own section lets the
+// runtime push it back in depth (materials.js ground zb) so it never wins a tie against what is laid over it
+const emitGrassU = emitGrassIn('grassU');
 function pushQuad(buf, a, b, c, d) { // 4 pts [x,y,z] ccw
   pushTri(buf, a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
   pushTri(buf, a[0], a[1], a[2], c[0], c[1], c[2], d[0], d[1], d[2]);
@@ -4509,7 +4513,7 @@ if (HAVE_CAMPUS && BOROS.includes(1)) { // campus is Manhattan data: a partial n
   const IN = (x, z) => x > 540 && x < 1125 && z > -3070 && z < -2510; // campus + immediate frontages
   // ---- lawns (real shapes: South Field, Butler commons, Van Am quad...)
   let nLawn = 0;
-  const lawnPoly = (pts, lift) => {
+  const lawnPoly = (pts, lift, emit = emitGrass) => {
     const ring = pts.map((p) => [p[0], p[1]]);
     if (ring.length < 3 || !IN(ring[0][0], ring[0][1])) return;
     const flat = ring.flat();
@@ -4521,7 +4525,7 @@ if (HAVE_CAMPUS && BOROS.includes(1)) { // campus is Manhattan data: a partial n
       });
       // fine subdivision (9m < terrain cell) — a 24m leaf spans grid diagonals
       // and lets the drawn terrain triangles poke through the lawn
-      subdivTri(p3[0], p3[1], p3[2], lift, emitGrass, 0, 9);
+      subdivTri(p3[0], p3[1], p3[2], lift, emit, 0, 9);
     }
     nLawn++;
   };
@@ -4552,11 +4556,12 @@ if (HAVE_CAMPUS && BOROS.includes(1)) { // campus is Manhattan data: a partial n
   // raised beds: lawn surface sits PROUD of the paving inside its stone edging,
   // and the curb line is generated from the SAME ring as the grass, so the
   // white edging always coincides exactly with the grass/paving switch
-  for (const g of keptGrass) lawnPoly(g.pts, 0.16);
+  for (const g of keptGrass) lawnPoly(g.pts, 0.20);   // TL26: 4 cm over the brick ways they overlap
   for (const ring of PANELS) lawnPoly(ring, 0.18);
   for (const g of C.flowerbeds || []) lawnPoly(g.pts, 0.18);
   let nCurb = 0;
-  for (const g of [...keptGrass.map((k) => ({ pts: k.pts, lift: 0.18 })), ...PANELS.map((pts) => ({ pts, lift: 0.2 }))]) {
+  const kitKerbed = (pts) => { const c0 = centroidOf(pts); const [a2, c2] = axisC(c0[0], c0[1]); return a2 >= -70 && a2 <= 60 && Math.abs(c2) <= 100; };
+  for (const g of [...keptGrass.filter((k) => !kitKerbed(k.pts)).map((k) => ({ pts: k.pts, lift: 0.25 })), ...PANELS.map((pts) => ({ pts, lift: 0.23 }))]) {
     const pts = g.pts;
     if (!pts || pts.length < 3 || !IN(pts[0][0], pts[0][1])) continue;
     for (let i = 0; i < pts.length - 1; i++) {
@@ -4592,7 +4597,7 @@ if (HAVE_CAMPUS && BOROS.includes(1)) { // campus is Manhattan data: a partial n
   // UNDER every paving lift (paths 0.12 / plaza 0.13 / brick 0.14): at 0.16 the
   // underlay won the depth test over Low Plaza's pavers and the whole plaza
   // rendered as lawn (gnddebug 2026-09-03). 0.10 keeps it 10 cm off the terrain.
-  lawnPoly([relW(-204, -131.4), relW(-209.6, 112.7), relW(247.4, 122.1), relW(252.6, -121.9)], 0.10);
+  lawnPoly([relW(-204, -131.4), relW(-209.6, 112.7), relW(247.4, 122.1), relW(252.6, -121.9)], 0.10, emitGrassU);
   log(' campus lawns:', nLawn);
   // College Walk centerline (longest pedestrian way) — used to align brick and
   // suppress redundant gray paths inside the mall
@@ -4683,7 +4688,11 @@ if (HAVE_CAMPUS && BOROS.includes(1)) { // campus is Manhattan data: a partial n
     const grey = /^(asphalt|concrete|gravel|fine_gravel|compacted)$/.test(p.surface || '');
     const brick = p.ped === 1 || p.surface === 'paving_stones' || p.surface === 'bricks' || !grey;
     const w = p.ped === 1 ? 16.5 : p.width || (brick ? 3.4 : 2.7);
-    ribbon(p.pts, w, brick ? 'brick' : 'pathTris', brick ? 0.16 : 0.12, !brick);   // brick 2 cm over the road datum: the College Walk apron tied with Amsterdam's asphalt at 1 mm (zfight.md L10)
+    // TL26: brick ways stay at 0.16, 2 cm over the road datum (the College Walk apron meets Amsterdam's asphalt, zfight.md L10).
+    // Their ribbons run wider than the walks and over the lawn beds beside them (College Walk: two rows of lawn panels
+    // either side of a grey walk, red brick only at the edges, refs/earth/col_earth_top.png), so the beds sit 4 cm above
+    // them (lawnPoly 0.20 below) and the grey footway layer wins its ties with the brick at runtime (materials.js zb).
+    ribbon(p.pts, w, brick ? 'brick' : 'pathTris', brick ? 0.16 : 0.12, !brick);
     brick ? nBrick++ : nPath++;
   }
   log(' campus paths:', nPath, '+ brick ways:', nBrick);
@@ -4723,25 +4732,43 @@ if (HAVE_CAMPUS && BOROS.includes(1)) { // campus is Manhattan data: a partial n
     };
     const paveRect = (fwd0, fwd1, halfW, yPad, kind, useOsmLawns) => {
       const relP = (fwd, right) => [764.23 + PAD_AX * fwd - PAD_AZ * right, -2747.81 + PAD_AZ * fwd + PAD_AX * right];
-      const step = 4; // fine enough to hug the panel outlines
-      for (let f = fwd0; f < fwd1; f += step) {
-        for (let r = -halfW; r < halfW; r += step) {
-          const fm = f + step / 2, rm = r + step / 2;
-          // the authored lawn panels punch through the plaza court paving
-          if (inPanel(fm, rm)) continue;
-          const cc = relP(fm, rm);
-          const c1 = relP(f + 1, r + 1), c2 = relP(f + step - 1, r + step - 1);
-          if (useOsmLawns && (inLawn(cc[0], cc[1]) || inLawn(c1[0], c1[1]) || inLawn(c2[0], c2[1]))) continue;
-          const q = [relP(f, r), relP(Math.min(f + step, fwd1), r), relP(Math.min(f + step, fwd1), Math.min(r + step, halfW)), relP(f, Math.min(r + step, halfW))]
-            .map(([x, z]) => [x, sampleTerrain(x, z) + 0.13, z]);
-          const t = tileFor((q[0][0] + q[2][0]) / 2, (q[0][2] + q[2][2]) / 2);
-          const triUp = (A, B, C) => {
-            if ((B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]) < 0) { const T = B; B = C; C = T; }
-            pushTri(t[kind], ...A, ...B, ...C);
-          };
-          triUp(q[0], q[1], q[2]);
-          triUp(q[0], q[2], q[3]);
+      // TL26: the court paving stops AT the authored lawn panels. A 4 m cell used to be kept or dropped whole by its
+      // centre, so brick ran up to 2 m under every panel lawn (5 cm below it: the two fought beyond ~80 m) and the dropped
+      // cells left holes of bare underlay beside it. Cells that cross a panel outline are split down to 0.25 m, inside
+      // the 0.32 m granite edging that covers the seam.
+      const emitCell = (f, r, sf, sr) => {
+        const q = [relP(f, r), relP(f + sf, r), relP(f + sf, r + sr), relP(f, r + sr)].map(([x, z]) => [x, sampleTerrain(x, z) + 0.13, z]);
+        const t = tileFor((q[0][0] + q[2][0]) / 2, (q[0][2] + q[2][2]) / 2);
+        const triUp = (A, B, C) => {
+          if ((B[2] - A[2]) * (C[0] - A[0]) - (B[0] - A[0]) * (C[2] - A[2]) < 0) { const T = B; B = C; C = T; }
+          pushTri(t[kind], ...A, ...B, ...C);
+        };
+        triUp(q[0], q[1], q[2]);
+        triUp(q[0], q[2], q[3]);
+      };
+      const panelShare = (f, r, sf, sr) => {   // 0 none of the cell in a panel, 1 all of it, else mixed
+        let hit = 0, n = 0;
+        for (let i = 0; i <= 4; i++) for (let j = 0; j <= 4; j++) { n++; if (inPanel(f + (sf * i) / 4, r + (sr * j) / 4)) hit++; }
+        return hit / n;
+      };
+      const cell = (f, r, sf, sr) => {
+        const share = panelShare(f, r, sf, sr);
+        if (share >= 1) return;
+        if (share > 0 && Math.max(sf, sr) > 0.26) {
+          const hf = sf / 2, hr = sr / 2;
+          cell(f, r, hf, hr); cell(f + hf, r, hf, hr); cell(f, r + hr, hf, hr); cell(f + hf, r + hr, hf, hr);
+          return;
         }
+        if (share > 0 && inPanel(f + sf / 2, r + sr / 2)) return;
+        if (useOsmLawns) {
+          const cc = relP(f + sf / 2, r + sr / 2), c1 = relP(f + Math.min(1, sf / 4), r + Math.min(1, sr / 4)), c2 = relP(f + sf - Math.min(1, sf / 4), r + sr - Math.min(1, sr / 4));
+          if (inLawn(cc[0], cc[1]) || inLawn(c1[0], c1[1]) || inLawn(c2[0], c2[1])) return;
+        }
+        emitCell(f, r, sf, sr);
+      };
+      const step = 4;
+      for (let f = fwd0; f < fwd1; f += step) {
+        for (let r = -halfW; r < halfW; r += step) cell(f, r, Math.min(step, fwd1 - f), Math.min(step, halfW - r));
       }
     };
     paveRect(-45, -6.2, 54, 41.4, 'brick', false); // Low Plaza — tan court + red motifs, out to the Kent/Dodge building line
@@ -4760,7 +4787,8 @@ if (HAVE_CAMPUS && BOROS.includes(1)) { // campus is Manhattan data: a partial n
     }
     return false;
   };
-  const GENUS_P0 = { Platanus: 1, Gleditsia: 2, Pyrus: 3, Quercus: 5, Ulmus: 1, Tilia: 7, Ginkgo: 6, Acer: 2, Prunus: 3 };
+  // TREE_SPECIES order (furnitureKit.js): 0 other, 1 plane, 2 honeylocust, 3 pear, 4 ginkgo, 5 oak, 6 linden, 7 maple, 8 cherry
+  const GENUS_P0 = { Platanus: 1, Gleditsia: 2, Pyrus: 3, Quercus: 5, Ulmus: 1, Tilia: 6, Ginkgo: 4, Acer: 7, Prunus: 8 };
   let nTree = 0, rndT = mulberry(1234567);
   for (const tr of C.trees) {
     const [x, z] = tr.p;
@@ -5062,6 +5090,7 @@ for (const [key, t] of tiles) {
     { name: 'paintY', array: localize(t.paintY) },
     { name: 'paintG', array: localize(t.paintG) },
     { name: 'grass', array: localize(t.grass) },
+    { name: 'grassU', array: localize(t.grassU) },   // TL26
     { name: 'path', array: localize(t.pathTris) },
     { name: 'brick', array: localize(t.brick) },
     { name: 'gutter', array: localize(t.gutter) },

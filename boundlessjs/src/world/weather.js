@@ -8,7 +8,7 @@
 // Refs: Threejs-Awesome-Graphics-Agent-Skills precipitation-surfaces contract,
 // BuildingGeneratorThreeJS rain.ts/wet.ts/snow.ts.
 import * as THREE from 'three';
-import { ENV } from './materials.js';
+import { ENV, FOG_SKY } from './materials.js';
 import { N11 } from './night11.js';   // N11 — night ambient (docs/notes/night-r11.md)
 
 export const GFX = {
@@ -208,6 +208,10 @@ export function createWeather(scene, camera, engine) {
     set(t) { GFX.rain = THREE.MathUtils.clamp(t, 0, 1); },
     get wet() { return ENV.wet.value; },
     update(dt) {
+      // GH25: a sky preset may carry its own grade (sky.js `grade` row -> engine.presetGrade), composed over the saved
+      // settings for the keys it names only; every preset without one reads GFX exactly as before
+      const PG = engine.presetGrade || null;
+      const G = PG ? Object.assign(this._pg || (this._pg = {}), GFX, PG) : GFX;   // one reused object, no per-frame garbage
       ENV.windT.value += dt;
       const w = ENV.wet.value = THREE.MathUtils.damp(ENV.wet.value, GFX.rain, 0.6, dt);
       const s = ENV.snow.value = THREE.MathUtils.damp(ENV.snow.value, GFX.snow, 0.35, dt);
@@ -280,7 +284,9 @@ export function createWeather(scene, camera, engine) {
       // gated like the shader terms: golden carries night 0.05 and must not move.
       const nB = N11 ? THREE.MathUtils.smoothstep(ENV.night.value, 0.15, 0.60) : 0;
       const bncDim = Math.max(0.08, dim) * (1 - nB) + (1 + 0.22 * cl) * nB;
-      if (engine.bounce) engine.bounce.intensity = (engine.bounceBase ?? 0) * GFX.bounce * bncDim * (1 - 0.35 * pOn);
+      // CL24: with real street lamps near the camera, the night street bounce keeps only the share they do not light
+      // (world/cityLamps.js sets engine.lampBounceK from camera altitude; 1 when CL24 is off)
+      if (engine.bounce) engine.bounce.intensity = (engine.bounceBase ?? 0) * GFX.bounce * bncDim * (1 - 0.35 * pOn) * (1 + ((engine.lampBounceK ?? 1) - 1) * nB);
       // CLEAN capture: PBR Neutral by DAY only (it matched the NYC street photos: deep sky, dark asphalt, true hue); golden,
       // dusk and night keep AgX, whose log curve lifts the shade those presets were exposed for — under Neutral the
       // golden College Walk plate fell to a third of its luma (film 7 probes, 2026-09-23). ENV.night: day 0, golden 0.05.
@@ -292,19 +298,19 @@ export function createWeather(scene, camera, engine) {
       engine.renderer.toneMappingExposure = (engine.expoBase ?? 0.74) * (GFX.exposure / 0.74) * tm[1] * autoE;
       engine.bloom.strength = (0.05 + ENV.night.value * 0.25) * GFX.bloomMul + flash * 0.9;
       ENV.fogDensity.value = baseFog * (GFX.fogDensity / 0.00011) * (1 + w * 2.2 + s * 3.0 + cl * 1.2);
-      engine.grade.uniforms.uVig.value = GFX.vignette;
+      engine.grade.uniforms.uVig.value = G.vignette;
       // LB14: a day-only FLOOR, like conFloor. AgX's outset matrix desaturates by construction — it is
       // why our L>160 band reads a dead-neutral 177,177,177 where the Earth crops read 196,192,183 —
       // and `clean=1` removes graphics.json's 1.3 compensation. Floor, so the un-cleaned day preset and
       // every non-day preset are untouched.
-      engine.grade.uniforms.uSat.value = Math.max(GFX.saturation, engine.satFloor ?? 0) * (1 - 0.18 * cl - 0.12 * s);
+      engine.grade.uniforms.uSat.value = Math.max(G.saturation, engine.satFloor ?? 0) * (1 - 0.18 * cl - 0.12 * s);
       // LB14 (docs/notes/lb14.md): a DAY-ONLY floor under the grade's contrast. The live rig tone-maps
       // with AgX (graphics.json overrides the ACES default here), whose base look is deliberately flat;
       // `clean=1` drops contrast 0.5 -> 0.10 along with the stylising passes, and AgX's own flatness is
       // what the r14 critic measured as "nothing in any twin frame exceeds L 200". A floor, not a
       // multiplier, so the UNCLEANED day preset keeps graphics.json's 0.5 exactly and every non-day
       // preset (conFloor undefined -> 0) is bit-identical.
-      engine.grade.uniforms.uCon.value = Math.max(GFX.contrast, engine.conFloor ?? 0);
+      engine.grade.uniforms.uCon.value = Math.max(G.contrast, engine.conFloor ?? 0);
       // LB13: day-only warmK. LB14 adds a day-only ADDITIVE on the same term, and it is NEGATIVE:
       // the grade's split-tone already targets exactly the band this round has to fix (shW =
       // 1 - smoothstep(0.10, 0.72, luma), i.e. shadows and lower mids, highlights untouched), and the
@@ -315,10 +321,10 @@ export function createWeather(scene, camera, engine) {
       // day the ambient is carried by the auto light probe + SSGI + the env bake. `coolSh` is the
       // measured remainder after probeK/giK have taken out as much of the neutral fill as the frame
       // can afford. 0 on golden/dusk/night and under ?lb14=0.
-      engine.grade.uniforms.uWarm.value = GFX.warmth * (engine.warmK ?? 1) + (engine.coolSh ?? 0);
+      engine.grade.uniforms.uWarm.value = G.warmth * (engine.warmK ?? 1) + (engine.coolSh ?? 0);
       engine.grade.uniforms.uTintG.value = GFX.tint;
-      engine.grade.uniforms.uSharp.value = GFX.sharpness;
-      engine.grade.uniforms.uDef.value = GFX.definition ?? 0.25;
+      engine.grade.uniforms.uSharp.value = G.sharpness;
+      engine.grade.uniforms.uDef.value = G.definition ?? 0.25;
       if (engine.taa) {
         engine.taa.amount = GFX.taa ?? 0.85;
         // SMAA stays on: it covers motion frames where TAA history is shallow
@@ -327,7 +333,8 @@ export function createWeather(scene, camera, engine) {
       engine.grade.uniforms.uGrain.value = GFX.grain;
       engine.grade.uniforms.uCA.value = GFX.chromAb;
       engine.grade.uniforms.uTimeG.value = ENV.time.value;
-      if (engine.moblur) engine.moblur.uniforms.uAmt.value = GFX.motionBlur;
+      // PF25: a pass at zero strength still costs a full-screen read and write; skip it outright instead
+      if (engine.moblur) { engine.moblur.uniforms.uAmt.value = GFX.motionBlur; engine.moblur.enabled = GFX.motionBlur > 0.004; }
       // SSR: always a whisper on streets, full mirror as they wet down
       // dry asphalt is matte: the old 12 % floor put a wet sheen on every dry street
       // SSR / WETNESS (docs/notes/lighting-r6.md 3).
@@ -344,6 +351,7 @@ export function createWeather(scene, camera, engine) {
         const wetEff = Math.max(w, nt * 0.40);
         const U = engine.ssr.uniforms;
         U.uStrength.value = GFX.ssr * wetEff;
+        engine.ssr.enabled = U.uStrength.value > 0.004;   // PF25: a dry day road reflects nothing; skip the pass
         // what a wet surface reflects where the march escapes the frame: the
         // sky by day, near-black at night (so the night road shows the marched
         // window/signal hits against a dark ground instead of a grey veil)
@@ -354,8 +362,8 @@ export function createWeather(scene, camera, engine) {
         U.uWetDark.value = 0.34 * w + 0.10 * nt * (1 - w);
       }
       ENV.cityAOAmt.value = GFX.cityAO;
-      if (engine._lutName !== GFX.lut) { engine._lutName = GFX.lut; engine.setLUT(GFX.lut); }
-      if (engine.lut) engine.lut.intensity = GFX.lutAmt;
+      if (engine._lutName !== G.lut) { engine._lutName = G.lut; engine.setLUT(G.lut); }
+      if (engine.lut) engine.lut.intensity = G.lutAmt;
       if (engine.ssgi) {
         // LB14: day-only trim on the screen-space bounce. SSGI is inter-reflection off whatever is on
         // screen, i.e. warm brick, and sweep 1 showed it (with the light probe) is what actually
@@ -380,13 +388,14 @@ export function createWeather(scene, camera, engine) {
         // and the veil arrives at roughly twice the fog colour's own radiance right at the vanishing
         // point. Trimming the sun boost kills the blowout without touching the sky's colour, the
         // aerial perspective on the skyline, or any non-day preset.
-        H.uDensity.value = GFX.hazeDensity * (engine.hazeDK ?? 1) * (1 + w * 2.5 + s * 3.0 + cl * 1.6);
+        H.uDensity.value = G.hazeDensity * (engine.hazeDK ?? 1) * (1 + w * 2.5 + s * 3.0 + cl * 1.6);
         H.uFalloff.value = GFX.hazeFalloff;
         H.uG.value = GFX.hazeG;
-        H.uSunBoost.value = GFX.hazeSun * (engine.hazeSunK ?? 1) * (1 - 0.85 * cl) * Math.max(0.15, dim);
+        H.uSunBoost.value = G.hazeSun * (engine.hazeSunK ?? 1) * (1 - 0.85 * cl) * Math.max(0.15, dim);
         H.uSunDir.value.copy(ENV.sunDir.value);
         H.uSunCol.value.copy(ENV.sunColor.value);
         H.uFogCol.value.copy(ENV.fogColor.value);
+        H.fogSkyRing.value = FOG_SKY.ring; H.fogSkyP.value = FOG_SKY.p;   // FS26: the shared sky ring (sky.js bakes it)
         // fog "sea level": the city now compiles on a flat base plane (y ~3.5 everywhere),
         // so at 0 the whole city sat in the densest layer and every frame read veiled
         // (critic rounds 2-3). -25 restores the density a 25 m plateau used to get.
@@ -402,7 +411,7 @@ export function createWeather(scene, camera, engine) {
       }
       if (engine.godrays) {
         const sunUp = Math.max(0, Math.min(1, (ENV.sunDir.value.y + 0.04) * 8));
-        engine.godrays.setSun(ENV.sunDir.value, GFX.godrays * sunUp * (1 - 0.8 * cl) * Math.max(0.1, dim), ENV.sunColor.value);
+        engine.godrays.setSun(ENV.sunDir.value, G.godrays * sunUp * (1 - 0.8 * cl) * Math.max(0.1, dim), ENV.sunColor.value);
       }
       if (engine.bokeh) engine.bokeh.enabled = !!GFX.dof;
     },

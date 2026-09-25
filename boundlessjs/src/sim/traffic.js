@@ -101,6 +101,9 @@ const vlen = (c) => VLEN[c.kind] || 4.6;
 const followGap = (a, b) => (vlen(a) + vlen(b)) / 2 + 0.4;   // centre-to-centre distance at which bumpers touch (+0.4 m)
 
 const nk = (x, z) => `${Math.round(x)}_${Math.round(z)}`;
+// PY25 pedestrian yield (see _pedGap); `?py25=0` restores the straight-ahead box and the unbucketed walker check
+const PY25 = typeof location === 'undefined' || new URLSearchParams(location.search).get('py25') !== '0';
+const CG = 10;   // car grid cell (m)
 
 export class Traffic {
   constructor(scene, streamer, fleet = null) {
@@ -535,6 +538,12 @@ export class Traffic {
       if (filling && Math.random() > 1 / (1 + (dist / 150) ** 2)) continue;
       // recording (spawnGuard): a car may not appear inside the frame, however far (a 4.5 m car is ~50 px at 240 m in 1440p)
       if (spawnGuard.on && spawnGuard.inView(s.x, s.y + 1, s.z, 3)) continue;
+      // PY25: nor on top of a walker on the carriageway (the crossers peds.js publishes)
+      if (PY25 && this._crossers && this._crossers.length) {
+        let near = false;
+        for (let k = 0; k + 1 < this._crossers.length && !near; k += 2) near = (this._crossers[k] - s.x) ** 2 + (this._crossers[k + 1] - s.z) ** 2 < 64;
+        if (near) continue;
+      }
       const dir = e.oneway !== 0 ? e.oneway : Math.random() < 0.5 ? 1 : -1;
       const r = Math.random();
       const kind = this.kindBag
@@ -550,7 +559,8 @@ export class Traffic {
       // yellow Cybertrucks and Harleys were in the film (fleet-qa.md open item 3)
       let color = fleetColor(Math.random);
       if (color === 0xf7b500 && !/^(crown|prius|tesla|sedan)$/.test(kind)) color = fleetColor(() => 0.17 + Math.random() * 0.83);
-      const car = { e, d, dir, lane: (Math.random() * lanesDir) | 0, v: 4, kind, color, idx: pool.n++ };
+      const car = { e, d, dir, lane: (Math.random() * lanesDir) | 0, v: 4, kind, color, idx: pool.n++,
+        laneF: undefined, _cp: undefined, _cpF: undefined, _hsx: undefined, _hcz: undefined, _pg: undefined, _pgS: undefined, _pk: undefined, _pkF: undefined, _pyHold: undefined };
       car.laneF = car.lane;
       // lane 0 is the LEFT lane of travel (next to the centreline on a two-way street); the curb
       // lane is lanesDir - 1 — double-parked vans used to sit in the middle of two-way streets
@@ -602,6 +612,9 @@ export class Traffic {
       const want = car.routePlan[0];
       const hit = opts.filter((q) => q.turn === want).sort((a, b) => b.w - a.w)[0];
       if (hit) { car.routePlan.shift(); return hit; }
+      // the planned turn is not offered here: straight on (the plan waits for the next junction), else the random choice
+      const st = opts.filter((q) => q.turn === 'straight').sort((a, b) => b.w - a.w)[0];
+      if (st) return st;
     }
     let sum = 0;
     for (const o of opts) sum += o.w;
@@ -609,10 +622,20 @@ export class Traffic {
     for (const o of opts) { r -= o.w; if (r <= 0) return o; }
     return opts[opts.length - 1];
   }
-  // distance a car may still travel before it must stop for a pedestrian crossing in front of it (peds.js publishes the
-  // walkers on a crossing as this._crossers = [x, z, ...]). Turning cars sweep the crosswalks of the street they turn
-  // into while those walkers have the WALK; without this a car drove straight through a person on camera.
+  // ---- PEDESTRIAN YIELD (PY25, owner 2026-09-25: "pedestrians should never clip into vehicles"). The walkers on the
+  // carriageway are published by peds.js as this._crossers = [x, z, ...] with their velocities in this._crossV (the API
+  // bridge appends its own walkers to _crossers, without velocities). A car yields to a walker who is in, or will step
+  // into, the corridor its body sweeps along its REAL path ahead (lane, turn connector, next edge), not a box straight
+  // ahead of its current heading: a turning car used to see the walker on the crosswalk of the street it turned into only
+  // once its nose pointed at them, too late to stop, and drove through them. Both sides are bucketed (no walker x car
+  // loop): cars in 10 m cells (this._carGrid, also what peds.js asks "which cars could reach me here?"), and each
+  // walker tests only the cars near it. `?py25=0` restores the straight-ahead box.
+  // distance a car may still travel before it must stop for a pedestrian (1e9: none in its way)
   _pedGap(car) {
+    if (!PY25) return this._pedGapBox(car);
+    return car._pgS === this._pgStamp ? car._pg : 1e9;
+  }
+  _pedGapBox(car) {
     const X = this._crossers;
     if (!X || !X.length || !car._pose) return 1e9;
     const cx = car._pose[0], cz = car._pose[2], yaw = car._pose[3];
@@ -627,9 +650,288 @@ export class Traffic {
     }
     return best;
   }
+  // cars by position, rebuilt at the end of every update (so the walkers, who update after the cars, see this frame's)
+  _buildCarGrid() {
+    const G = this._carGrid || (this._carGrid = new Map());
+    if (((this._cgN = (this._cgN || 0) + 1) & 511) === 0) G.clear();   // drop the cells no car drives any more
+    else for (const L of G.values()) L.length = 0;
+    for (const c of this.cars) {
+      const q = c._pose;
+      if (!q) continue;
+      const k = (Math.floor(q[0] / CG) + 32768) * 65536 + (Math.floor(q[2] / CG) + 32768);
+      let L = G.get(k);
+      if (!L) G.set(k, (L = []));
+      L.push(c);
+      c._hsx = Math.sin(q[3]); c._hcz = Math.cos(q[3]);   // heading, for the next update's _pedPass (the pose holds till then)
+    }
+  }
+  // every car whose position is within the square of half-size r around (x, z)
+  carsNear(x, z, r, fn) {
+    const G = this._carGrid;
+    if (!G) return;
+    const a = Math.floor((x - r) / CG), b = Math.floor((x + r) / CG), c0 = Math.floor((z - r) / CG), c1 = Math.floor((z + r) / CG);
+    for (let gx = a; gx <= b; gx++) for (let gz = c0; gz <= c1; gz++) {
+      const L = G.get((gx + 32768) * 65536 + (gz + 32768));
+      if (L) for (let i = 0; i < L.length; i++) fn(L[i]);
+    }
+  }
+  // half width (x) and half length (z) of a car's body: the model's plan bounds, mirrors and all (fleet24 LOD0), never
+  // less than the nominal dims (a box truck's mirrors stand 0.14 m outside its vehDims box: walkers stopped short of the
+  // box stood in the mirror)
+  carHalf(car) {
+    const cache = this._halfK || (this._halfK = {});
+    let h = cache[car.kind];
+    if (!h) {
+      const K = this.fleet24 && this.fleet24.kinds && this.fleet24.kinds[car.kind];
+      let x = 0, z = 0;
+      if (K && K.lods && K.lods[0]) for (const part of K.lods[0]) {
+        const g = part.geometry;
+        if (!g || !g.attributes || !g.attributes.position) continue;
+        if (!g.boundingBox) g.computeBoundingBox();
+        const b = g.boundingBox;
+        x = Math.max(x, -b.min.x, b.max.x); z = Math.max(z, -b.min.z, b.max.z);
+      }
+      const dm = this.vehDims && this.vehDims[car.kind];
+      h = [Math.max(x, dm ? dm[0] / 2 : 0.97), Math.max(z, dm ? dm[2] / 2 : vlen(car) / 2)];
+      if (this.fleet24 || !dm) cache[car.kind] = h;   // before fleet24 is installed, do not cache the fallback
+    }
+    return h;
+  }
+  // THE PATH A CAR WILL DRIVE: points from its centre forward (s = distance along the path) over the braking horizon,
+  // through its lane, the turn connector it is on or will take (car.next is chosen 34 m out), and the next edge.
+  // Cached per frame; the connector of a turn not yet begun is the same k = 0.36 cubic update() builds.
+  carPath(car) {
+    if (car._cpF === this._frame && car._cp) return car._cp;
+    const P = car._cp || (car._cp = { n: 0, x: new Float32Array(64), z: new Float32Array(64), s: new Float32Array(64) });
+    car._cpF = this._frame;
+    P.n = 0;
+    const q = car._pose;
+    if (!q || !car.e) return P;
+    const v = car.v || 0, half = this.carHalf(car)[1];
+    const Lmax = half + Math.min(44, 8 + v * 1.1 + (v * v) / (2 * 2.4));
+    const push = (x, z) => {
+      if (P.n >= 64) return false;
+      if (P.n) {
+        const dx = x - P.x[P.n - 1], dz = z - P.z[P.n - 1], d = Math.hypot(dx, dz);
+        if (d < 0.5) return P.s[P.n - 1] < Lmax;
+        P.s[P.n] = P.s[P.n - 1] + d;
+      } else P.s[0] = 0;
+      P.x[P.n] = x; P.z[P.n] = z; P.n++;
+      return P.s[P.n - 1] < Lmax;
+    };
+    const bez = (T, s) => {
+      const t = Math.max(0, Math.min(1, s / T.len)), u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
+      return push(a0 * T.p0[0] + a1 * T.c1[0] + a2 * T.c2[0] + a3 * T.p2[0], a0 * T.p0[2] + a1 * T.c1[2] + a2 * T.c2[2] + a3 * T.p2[2]);
+    };
+    // along edge e from d in direction dir (lane of `car`, travelling `dir`), up to dStop (the exit mouth) or Lmax
+    const edge = (e, d, dir, dStop) => {
+      if (dir > 0 ? d > dStop : d < dStop) return true;   // already past this stretch (at the mouth)
+      const lp = { dir, lane: car.lane };
+      const off = this._laneOffsetAt(e, lp, Math.min(car.lane, Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1)));
+      for (let dd = d; dir > 0 ? dd <= dStop : dd >= dStop; dd += dir * 3) {   // lanes: a point every 3 m (connectors: 1.5 m)
+        const s = this.sampleEdge(e, dd), hx = s.dirx * dir, hz = s.dirz * dir;
+        if (!push(s.x - hz * off, s.z + hx * off)) return false;
+      }
+      const s = this.sampleEdge(e, dStop), hx = s.dirx * dir, hz = s.dirz * dir;
+      return push(s.x - hz * off, s.z + hx * off);
+    };
+    push(q[0], q[2]);
+    if (car.turn) {
+      const T = car.turn;
+      let ok = true;
+      for (let s = T.s + 1.5; s < T.len && ok; s += 1.5) ok = bez(T, s);
+      if (ok && bez(T, T.len)) edge(car.e, car.d + car.dir * 1.5, car.dir, car.dir > 0 ? car.e.len - (car.e.mouthB || 0) : (car.e.mouthA || 0));
+      return P;
+    }
+    const e = car.e, dir = car.dir, mEnd = dir > 0 ? e.mouthB : e.mouthA;
+    const exitD = Math.max(0.2, Math.min(e.len - 0.2, dir > 0 ? e.len - (mEnd || 0) : (mEnd || 0)));
+    if (!edge(e, car.d + dir * 3, dir, exitD)) return P;
+    const nx = car.next;
+    if (!nx || !this.edges.has(nx.ne.id)) return P;
+    // the connector this car will build at the mouth (update(): mk(0.36 chord)), then the next edge
+    const ne = nx.ne, nd = nx.o.dir, mN = nd > 0 ? ne.mouthA : ne.mouthB;
+    const entryD = nd > 0 ? Math.min(mN + 1.0, ne.len * 0.5) : Math.max(ne.len - mN - 1.0, ne.len * 0.5);
+    const ex = this.sampleEdge(e, exitD), en = this.sampleEdge(ne, entryD);
+    const lanesN = ne.oneway !== 0 ? ne.lanes : Math.max(1, Math.floor(ne.lanes / 2));
+    const offA = this._laneOffsetAt(e, { dir, lane: car.lane }, car.lane), offB = this._laneOffsetAt(ne, { dir: nd }, Math.min(car.lane, lanesN - 1));
+    const hA = [ex.dirx * dir, ex.dirz * dir], hB = [en.dirx * nd, en.dirz * nd];
+    const p0 = [ex.x - hA[1] * offA, 0, ex.z + hA[0] * offA], p2 = [en.x - hB[1] * offB, 0, en.z + hB[0] * offB];
+    const chord = Math.hypot(p2[0] - p0[0], p2[2] - p0[2]);
+    if (chord > 60) return P;
+    const k = 0.36 * chord;
+    const T = { p0, c1: [p0[0] + hA[0] * k, 0, p0[2] + hA[1] * k], c2: [p2[0] - hB[0] * k, 0, p2[2] - hB[1] * k], p2, len: Math.max(1, chord * 1.1) };
+    let ok = true;
+    for (let s = 1.5; s < T.len && ok; s += 1.5) ok = bez(T, s);
+    if (ok && bez(T, T.len)) edge(ne, entryD + nd * 1.5, nd, nd > 0 ? ne.len - (ne.mouthB || 0) : (ne.mouthA || 0));
+    return P;
+  }
+  // Where must `car` stop for the walker at (wx, wz) moving at (vx, vz)? Returns the gap from its front bumper to that
+  // stop point, 1e9 if the walker is not and will not be in its way. The walker's lateral offset from the car's path and
+  // its speed across it give the time window it spends inside the corridor (car half width + 0.25 m body + 0.35 m); the
+  // car's front and back give the window the car spends at that point. Overlapping windows = yield, stopping 1.25 m short
+  // of the walker (IDM keeps its own 2.2 m on top). A walker beside or behind the front bumper is not in front of the
+  // car: stepping into a car's flank is the walker's to avoid (peds.js), a stop there would not help.
+  _walkerGap(car, wx, wz, vx, vz, margin = 0.35) {
+    const P = this.carPath(car);
+    if (P.n < 2) return 1e9;
+    const [hw, half] = this.carHalf(car);
+    // quick out: nowhere near the path's box (grown by the corridor and 7 m of walking)
+    if (P.bbF !== car._cpF) {
+      let a = 1e9, b = 1e9, e = -1e9, f = -1e9;
+      for (let i = 0; i < P.n; i++) { if (P.x[i] < a) a = P.x[i]; if (P.x[i] > e) e = P.x[i]; if (P.z[i] < b) b = P.z[i]; if (P.z[i] > f) f = P.z[i]; }
+      P.bx0 = a; P.bz0 = b; P.bx1 = e; P.bz1 = f; P.bbF = car._cpF;
+    }
+    const grow = hw + 0.25 + margin + 7;
+    if (wx < P.bx0 - grow || wx > P.bx1 + grow || wz < P.bz0 - grow || wz > P.bz1 + grow) return 1e9;
+    let bd = 1e18, bs = 0, bl = 0, bnx = 0, bnz = 0;
+    for (let i = 1; i < P.n; i++) {
+      const ax = P.x[i - 1], az = P.z[i - 1], ex = P.x[i] - ax, ez = P.z[i] - az, L2 = ex * ex + ez * ez || 1e-9;
+      const t = Math.max(0, Math.min(1, ((wx - ax) * ex + (wz - az) * ez) / L2));
+      const dx = wx - ax - ex * t, dz = wz - az - ez * t, d2 = dx * dx + dz * dz;
+      if (d2 < bd) { bd = d2; bs = P.s[i - 1] + (P.s[i] - P.s[i - 1]) * t; const L = Math.sqrt(L2); bnx = -ez / L; bnz = ex / L; bl = dx * bnx + dz * bnz; }
+    }
+    if (bs < half - 0.4 || bs >= P.s[P.n - 1] - 0.05 && Math.sqrt(bd) > hw + 0.25 + margin) return 1e9;
+    const W = hw + 0.25 + margin, lat = Math.abs(bl);
+    if (lat > W + 7) return 1e9;
+    const uLat = -(vx * bnx + vz * bnz) * Math.sign(bl || 1);   // > 0: walking toward the car's path
+    const v = Math.max(car.v || 0, 0.8);
+    const tF = Math.max(0, bs - half) / v, tB = tF + (2 * half + 0.6) / v;
+    let hit;
+    if (lat < W) {
+      // in the corridor now: yield, unless walking out of it well before the car gets there
+      hit = !(uLat < -0.15 && (W - lat) / -uLat + 0.7 < tF);
+    } else if (uLat > 0.15) {
+      const tIn = (lat - W) / uLat, tOut = (lat + W) / uLat;
+      hit = tIn < 6 && tIn < tB + 0.6 && tOut > tF - 0.7;
+    } else hit = false;
+    return hit ? Math.max(0, bs - half - 1.25) : 1e9;
+  }
+  // once per update, BEFORE the cars move: every published walker marks the cars that must stop for it (car._pg)
+  _pedPass(dt = 1 / 60) {
+    this._pgStamp = (this._pgStamp || 0) + 1;
+    const stamp = this._pgStamp;
+    // Every car also looks for ANY walker along its path in peds.js's 2 m walker hash, not only the crossers: a turning
+    // car's body sweeps the corner pavement on a tight curb return (W 122nd audit: turning cars through people walking and
+    // waiting on the corner), and where a lane lies over the paving a car drove down the sidewalk into walkers (5th Ave
+    // audit). Body margin 0.1 m for people on the pavement: they are not stepping into the lane. A 16 m occupancy grid of
+    // the walkers skips every car with nobody near its path (most of the fleet: walkers live within 330 m of the camera).
+    const H = this._walkerHash;
+    if (H && this._carGrid) {
+      // walkers in 8 m cells (from peds.js's 2 m hash) and a 64 m occupancy for the per-car cut
+      const W8 = this._pgW8 || (this._pgW8 = new Map()), occ = this._pgOcc || (this._pgOcc = new Set());
+      if (((this._pgN = (this._pgN || 0) + 1) & 255) === 0) W8.clear(); else for (const L of W8.values()) L.length = 0;
+      occ.clear();
+      for (const A of H.values()) for (const w of A) {
+        if (w._x === undefined || w.cross) continue;   // crossers come from _crossers below
+        if (this._walkerKerb && !w._kerb) continue;    // (peds.js LN25) well in from the kerb: never in a car's corridor
+        const k = (Math.floor(w._x / 8) + 32768) * 65536 + (Math.floor(w._z / 8) + 32768);
+        let L = W8.get(k);
+        if (!L) W8.set(k, (L = []));
+        L.push(w);
+        occ.add((Math.floor(w._x / 64) + 4096) * 8192 + (Math.floor(w._z / 64) + 4096));
+      }
+      const par = this._frame & 1;
+      for (let ci = 0; ci < this.cars.length; ci++) {
+        const c = this.cars[ci];
+        if (c.manual || !c._pose || !occ.size) continue;
+        // half the fleet per frame: the other half carries last frame's gap, less what it drove since
+        if ((ci & 1) !== par) {
+          if (c._pkF === this._frame - 1 && c._pk < 1e8) { const g = c._pk - (c.v || 0) * dt; c._pk = g; c._pkF = this._frame; c._pgS = stamp; c._pg = Math.min(1e9, g); }
+          continue;
+        }
+        c._pkF = this._frame; c._pk = 1e9;
+        const q = c._pose, gx0 = Math.floor(q[0] / 64), gz0 = Math.floor(q[2] / 64);
+        let any = false;
+        for (let gx = gx0 - 1; gx <= gx0 + 1 && !any; gx++) for (let gz = gz0 - 1; gz <= gz0 + 1 && !any; gz++) any = occ.has((gx + 4096) * 8192 + (gz + 4096));
+        if (!any) continue;
+        const [hw, hl] = this.carHalf(c), rr = hw + (c.turn ? 0.35 : 0.1) + 0.25 + 1.8;   // corridor + 1.8 m of walking
+        // a car going straight, not near its junction: its path is its lane ahead, so a walker nowhere near the ray ahead
+        // of it (within rr + 1.5 of that ray) cannot be in its corridor: skip building the path at all
+        const e = c.e, endD = e ? (c.dir > 0 ? e.len - c.d : c.d) : 0;
+        if (!c.turn && endD > 40) {
+          const fx = Math.sin(q[3]), fz = Math.cos(q[3]), v = c.v || 0, H = hl + Math.min(44, 8 + v * 1.1 + (v * v) / 4.8);
+          const R = rr + 1.5, r2 = R * R, ax = q[0] + fx * (hl - 1), az = q[2] + fz * (hl - 1), L = H - hl + 1;
+          const bx = ax + fx * L, bz = az + fz * L;
+          let near = false;
+          for (let gx = Math.floor((Math.min(ax, bx) - R) / 8); gx <= Math.floor((Math.max(ax, bx) + R) / 8) && !near; gx++)
+            for (let gz = Math.floor((Math.min(az, bz) - R) / 8); gz <= Math.floor((Math.max(az, bz) + R) / 8) && !near; gz++) {
+              const A = W8.get((gx + 32768) * 65536 + (gz + 32768));
+              if (A) for (const w of A) {
+                const t = Math.max(0, Math.min(L, (w._x - ax) * fx + (w._z - az) * fz));
+                const ex = w._x - ax - fx * t, ez = w._z - az - fz * t;
+                if (ex * ex + ez * ez < r2) { near = true; break; }
+              }
+            }
+          if (!near) continue;
+        }
+        const P = this.carPath(c);
+        if (P.n < 2) continue;
+        const ctag = (this._pgTag = (this._pgTag || 0) + 1);   // one tag per car per frame: each walker is tested once per car
+        // every other path point (3 m) and the last; each with the 8 m cells within rr of it
+        const SX = this._psx || (this._psx = new Float64Array(72)), SZ = this._psz || (this._psz = new Float64Array(72)), SG = this._psg || (this._psg = new Int32Array(288));
+        let ns = 0, gxA = 1e9, gxB = -1e9, gzA = 1e9, gzB = -1e9;
+        for (let i = 0; i < P.n; i = i + 2 < P.n || i === P.n - 1 ? i + 2 : P.n - 1) {
+          const x = P.x[i], z = P.z[i], a = Math.floor((x - rr) / 8), b = Math.floor((x + rr) / 8), c0 = Math.floor((z - rr) / 8), c1 = Math.floor((z + rr) / 8);
+          SX[ns] = x; SZ[ns] = z; SG[ns * 4] = a; SG[ns * 4 + 1] = b; SG[ns * 4 + 2] = c0; SG[ns * 4 + 3] = c1; ns++;
+          if (a < gxA) gxA = a; if (b > gxB) gxB = b; if (c0 < gzA) gzA = c0; if (c1 > gzB) gzB = c1;
+        }
+        const r15 = (rr + 1.5) * (rr + 1.5);
+        for (let gx = gxA; gx <= gxB; gx++)
+          for (let gz = gzA; gz <= gzB; gz++) {
+              const A = W8.get((gx + 32768) * 65536 + (gz + 32768));
+              if (!A) continue;
+              for (const w of A) {
+                if (w._pgT === ctag) continue;
+                // within the corridor + 1.8 m of walking of a scanned point whose cells hold this one (3 m apart, +1.5)
+                let near = false;
+                for (let j = 0; j < ns && !near; j++) {
+                  if (gx < SG[j * 4] || gx > SG[j * 4 + 1] || gz < SG[j * 4 + 2] || gz > SG[j * 4 + 3]) continue;
+                  const x = SX[j], z = SZ[j];
+                  near = (w._x - x) * (w._x - x) + (w._z - z) * (w._z - z) <= r15;
+                }
+                if (!near) continue;
+                w._pgT = ctag;
+                // 0.1 m for a car going straight; a TURNING car's inner rear corner tracks up to ~0.4 m inside the path of its centre
+                const g = this._walkerGap(c, w._x, w._z, w._vx || 0, w._vz || 0, c.turn ? 0.35 : 0.1);
+                if (c._pgS !== stamp) { c._pgS = stamp; c._pg = 1e9; }
+                if (g < c._pg) c._pg = g;
+                if (g < c._pk) c._pk = g;
+              }
+            }
+      }
+    }
+    const X = this._crossers, V = this._crossV;
+    if (!X || !X.length || !this._carGrid) return;
+    const G = this._carGrid;
+    for (let k = 0; k + 1 < X.length; k += 2) {
+      const wx = X[k], wz = X[k + 1];
+      const vx = V && k + 1 < V.length ? V[k] : 0, vz = V && k + 1 < V.length ? V[k + 1] : 0;
+      // the cars within 46 m (the car grid's cells, as carsNear)
+      const ga = Math.floor((wx - 46) / CG), gb = Math.floor((wx + 46) / CG), gc = Math.floor((wz - 46) / CG), gd = Math.floor((wz + 46) / CG);
+      for (let gx = ga; gx <= gb; gx++) for (let gz = gc; gz <= gd; gz++) {
+        const L = G.get((gx + 32768) * 65536 + (gz + 32768));
+        if (!L) continue;
+        for (let i = 0; i < L.length; i++) {
+          const c = L[i];
+          if (c.manual || !c._pose) continue;
+          // only cars heading this way can reach the walker: a quick cut before the path test
+          const q = c._pose, dx = wx - q[0], dz = wz - q[2];
+          if (dx * c._hsx + dz * c._hcz < -3 && !c.turn) continue;
+          // beyond all the path the car could have (arc <= Lmax + 6) plus its corridor and 10.5 m: no yield (see above)
+          const hh = this.carHalf(c), v = c.v || 0, R = hh[1] + Math.min(44, 8 + v * 1.1 + (v * v) / (2 * 2.4)) + 6 + hh[0] + 0.6 + 10.5;
+          if (dx * dx + dz * dz > R * R) continue;
+          const g = this._walkerGap(c, wx, wz, vx, vz, 0.35);
+          if (c._pgS !== stamp) { c._pgS = stamp; c._pg = 1e9; }
+          if (g < c._pg) c._pg = g;
+        }
+      }
+    }
+  }
   update(dt, px, pz) {
     this.time += dt;
     dt = Math.min(dt, 0.05);
+    this._frame = (this._frame || 0) + 1;
+    if (PY25) this._pedPass(dt);
     if (this._compDirty) this._relabelComponents();
     { // parked LOD: rebucket when tiles changed or the camera moved 24m
       const mx = px - this._pbX, mz = pz - this._pbZ;
@@ -657,9 +959,12 @@ export class Traffic {
         }
         // with a leader: comfortable stop within the gap (no speed floor — the old 3.5 m/s floor
         // drove followers into the car ahead on 10 m connectors); without: the old behaviour
-        gapT = Math.min(gapT, this._pedGap(car));
+        const pgT = this._pedGap(car);
+        if (pgT < gapT) { gapT = pgT; car._pyHold = true; }
         if (gapT < 1e8) car.v = gapT < 0.6 ? 0 : Math.min(car.v + IDM.a * dt, T.vCap, Math.sqrt(Math.max(0, gapT - 0.6) * IDM.b));
-        else car.v = Math.max(3.5, Math.min(car.v, T.vCap));
+        // PY25: a car that slowed in the box for a walker pulls away (IDM a), it does not jump back to 3.5 m/s in one frame
+        else if (car._pyHold && car.v < 3.5) car.v = Math.min(T.vCap, car.v + IDM.a * dt);
+        else { car._pyHold = false; car.v = Math.max(3.5, Math.min(car.v, T.vCap)); }
         T.s = Math.min(T.len, T.s + car.v * dt);
         const t = T.s / T.len;
         const omt = 1 - t;
@@ -706,6 +1011,9 @@ export class Traffic {
           if (cr > 0.4) car.turnLaneWant = lanesHere - 1; else if (cr < -0.4) car.turnLaneWant = 0;
         }
       }
+      // PY25: the wish is bounded by THIS edge's lanes (it was computed on the previous one, which may have had four)
+      if (PY25 && car.turnLaneWant >= 0) car.turnLaneWant = Math.min(car.turnLaneWant, Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1));
+      if (PY25 && car.lane > Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1)) car.lane = Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1);
       if (car.turnLaneWant >= 0 && car.lane !== car.turnLaneWant && !car._lcT && endD > 6 && !car._dwell) {
         const nl = car.lane + (car.turnLaneWant > car.lane ? 1 : -1);
         let clear = true;
@@ -842,6 +1150,7 @@ export class Traffic {
           }
         }
         car.next = null;
+        if (PY25) car.turnLaneWant = -1;   // the next edge picks its own turn lane 34 m before ITS junction
         e.cars.delete(car);
         if (!pick) {
           if (e.oneway === 0) this._uTurn(car, e, mEnd);
@@ -927,6 +1236,7 @@ export class Traffic {
       const off = this._laneOffset(e, car);
       this._placeCar(car, s.x - hz * off, s.y + (NO_DATUM ? 0.03 : 0.002), s.z + hx * off, Math.atan2(hx, hz), dt);   // see the parked-car note: origin = contact patch
     }
+    if (PY25) this._buildCarGrid();
     if (this.camera) this.lights.update(this.cars, this.camera);
     // VH13 — LAMP LENSES ON AFTER DUSK, AND ONLY ON MOVING CARS. The light/tail
     // materials used to carry a constant emissive (0x202226 / 0x350505) at every

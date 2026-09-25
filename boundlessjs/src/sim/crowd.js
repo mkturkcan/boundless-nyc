@@ -554,7 +554,7 @@ export class Crowd {
     this.storeMat = this.mesh.material;
     // per-slot state
     const f = (n = 1) => new Float32Array(cap * n);
-    this.st = { phase: f(), speed: f(), amp: f(), seed: f(), gait: new Int16Array(cap).fill(-1), variant: new Int16Array(cap).fill(-1), clipA: new Int16Array(cap).fill(-1), tA: f(), clipB: new Int16Array(cap).fill(-1), tB: f(), w: f(), style: f(4) };
+    this.st = { phase: f(), speed: f(), amp: f(), seed: f(), gait: new Int16Array(cap).fill(-1), variant: new Int16Array(cap).fill(-1), clipA: new Int16Array(cap).fill(-1), tA: f(), clipB: new Int16Array(cap).fill(-1), tB: f(), w: f(), style: f(4), pace: f().fill(1) };
     // variant weights: adults of both genders, a heavier build, children, rare police
     this.pool = [];
     for (let i = 0; i < assets.variants.length; i++) {
@@ -625,7 +625,7 @@ export class Crowd {
   setAnim(idx, phase, rate, amp, skin) {
     if (this.show) return;
     const s = this.st;
-    s.phase[idx] = phase; s.speed[idx] = rate / 4.4; s.amp[idx] = amp; s.seed[idx] = skin;
+    s.phase[idx] = phase; s.speed[idx] = rate / 4.4; s.amp[idx] = amp; s.seed[idx] = skin; s.pace[idx] = 1;
     const v = this.pool[Math.min(this.pool.length - 1, Math.floor(skin * this.pool.length))];
     if (s.variant[idx] !== v) { s.variant[idx] = v; s.clipA[idx] = -1; s.clipB[idx] = -1; s.w[idx] = 0; }
     // walk style: heavier builds walk heavyset, fast walkers hurry, the rest from the NYC mix
@@ -633,6 +633,9 @@ export class Crowd {
     s.gait[idx] = V.build === 'heavy' && hsd < 0.4 ? STYLES.length - 1 : s.speed[idx] > 1.62 && hsd < 0.3 ? 5 : STYLE_BAG[Math.floor(hash(Math.floor(skin * 1e6), 9) * STYLE_BAG.length)];
   }
   setAmp(idx, amp) { if (!this.show) this.st.amp[idx] = amp; }
+  // PY25 (sim/peds.js): a walker slowed behind someone plays its walk at that fraction of its rate, so the feet stay
+  // planted; the walk clip itself is still the one picked for its own pace (no clip swap while easing)
+  setPace(idx, f) { if (!this.show) this.st.pace[idx] = f; }
   // PROPS: peds.js outfit bits (4 backpack, 8 bag) -> which fitted backpack / bag (stable per walker); uniformed police and
   // bodies without fits (GEN3 kids) carry none. The look-dev row takes ?crowdprops=all (fit k % 5 on walker k) or a list.
   _propMask(i, V, B) {
@@ -764,8 +767,9 @@ export class Crowd {
       // feet stay planted only while the playback rate tracks the walker's speed: clamp widened 1.9 -> 2.3 (film 7 review: a
       // quarter of the walkers were over 1.9 and skated), and peds.js walks 1.05-1.5 m/s now (was 1.15-1.8)
       const rateOf = (c) => (c.kind === 'walk' && c.speed > 0.1 ? Math.min(2.3, Math.max(0.5, st.speed[i] / (c.speed * gait))) : 1);
-      st.tA[i] += dt * cA.fps * rateOf(cA);
-      st.tB[i] += dt * cB.fps * rateOf(cB);
+      const pace = this.show ? 1 : st.pace[i] || 1;
+      st.tA[i] += dt * cA.fps * rateOf(cA) * (cA.kind === 'walk' ? pace : 1);
+      st.tB[i] += dt * cB.fps * rateOf(cB) * (cB.kind === 'walk' ? pace : 1);
       st.w[i] = Math.max(0, st.w[i] - dt / FADE);
       // ---- pose row
       const row = P.rows++;

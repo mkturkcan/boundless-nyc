@@ -1,0 +1,30 @@
+classes in view:
+   2 building               rgb (70, 70, 70)   41.6 %
+  17 vegetation             rgb (107, 142, 35)   16.5 %
+   3 road                   rgb (128, 64, 128)   11.5 %
+   1 sky                    rgb (70, 130, 180)    8.2 %
+  15 terrain                rgb (152, 251, 152)    7.2 %
+   4 sidewalk               rgb (244, 35, 232)    6.3 %
+  16 grass                  rgb (40, 180, 10)    3.0 %
+  11 gutter                 rgb (60, 20, 190)    1.0 %
+  34 roof_structure         rgb (120, 160, 210)    0.9 %
+   7 crosswalk              rgb (0, 250, 250)    0.6 %
+  23 pedestrian             rgb (220, 20, 60)    0.5 %
+  31 subway_entrance        rgb (110, 0, 250)    0.4 %
+  21 truck                  rgb (0, 0, 70)    0.4 %
+  19 car                    rgb (0, 0, 142)    0.4 %
+  27 street_light           rgb (153, 153, 153)    0.3 %
+   6 road_marking           rgb (255, 255, 255)    0.2 %
+   5 curb                   rgb (170, 0, 180)    0.2 %
+  29 street_furniture       rgb (140, 100, 250)    0.2 %
+  24 traffic_signal         rgb (250, 170, 30)    0.2 %
+  10 bus_lane               rgb (180, 80, 20)    0.2 %
+243 labelled objects; the largest:
+  id 156436 building       bbox [0, 102, 299, 618]  area 160876  mask 160876
+  id 156283 building       bbox [1012, 150, 268, 331]  area 54634  mask 54634
+  id  65723 building       bbox [0, 0, 322, 348]  area 48698  mask 48698
+  id    244 vegetation     bbox [1060, 448, 220, 272]  area 34235  mask 34235
+  id 156364 building       bbox [696, 171, 309, 139]  area 31611  mask 31611
+  id    247 vegetation     bbox [963, 384, 212, 300]  area 27766  mask 27766
+  id  65724 building       bbox [846, 78, 290, 219]  area 23478  mask 23478
+  id  65732 building       bbox [1071, 0, 209, 150]  area 19342  mask 19342

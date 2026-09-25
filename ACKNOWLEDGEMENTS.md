@@ -77,7 +77,8 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
 
 - **Poly Haven** (<https://polyhaven.com>), **CC0 1.0**:
   - PBR sets: `asphalt_02`, `dirty_concrete`, `leafy_grass`, `concrete_pavement_03`, `red_bricks_04`,
-    `brown_brick_02`, `white_bricks`, `sandstone_blocks_04`, `plastered_wall_05`
+    `brown_brick_02`, `white_bricks`, `sandstone_blocks_04`, `plastered_wall_05`, `stone_wall_03`, `sandstone_blocks_08`,
+    `concrete_floor_worn_001` (the Columbia campus stone)
   - eight 4K sky HDRIs
 - **ambientCG** (<https://ambientcg.com>), **CC0 1.0**: Asphalt025C, Concrete031, Grass004, PavingStones128,
   Bricks090.

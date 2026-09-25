@@ -10,6 +10,7 @@
 // merged mesh per material per building, all repeated parts in shared pooled
 // InstancedMeshes (claim/release with slot compaction).
 import * as THREE from 'three';
+import { CL24 } from './cityLamps.js';
 import { TOWER_H } from './towers.js';
 import earcut from 'earcut';
 import { createMaterials } from '@nyc/materials.js';
@@ -323,6 +324,9 @@ class DressBatcher extends Batcher {
   definePart(id, geometry, matName, opts = {}) { this.pools.define(id, geometry, matName, opts); }
   hasPart(id) { return this.pools.has(id); }
   addInstance(id, matrix, tint = null) {
+    // CL24 (owner 2026-09-25: "I hate this transparent ellipse effect"): the kit's storefront and lamp spill 'pools' are
+    // translucent ground ellipses; with real street lighting (world/cityLamps.js) they are not drawn at all
+    if (CL24 && id === 'light:pool') return;
     const h = this.pools.claim(id, matrix, tint);
     if (h) this.handles.push([id, h]);
   }

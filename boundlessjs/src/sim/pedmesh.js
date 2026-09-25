@@ -162,6 +162,7 @@ export function buildPedMesh(cap, baseMaterial) {
   style.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('aStyle', style);
   const timeRef = { value: 0 };
+  const baseRate = new Float32Array(cap);
   const mat = baseMaterial;
   const prevHook = mat.onBeforeCompile;
   mat.onBeforeCompile = (shader, renderer) => {
@@ -181,6 +182,16 @@ export function buildPedMesh(cap, baseMaterial) {
     timeRef,
     setAnim(idx, phase, rate, amp, skin) {
       anim.setXYZW(idx, phase, rate, amp, skin);
+      baseRate[idx] = rate;
+      anim.needsUpdate = true;
+    },
+    // PY25 (sim/peds.js): walk-cycle rate x f for a walker slowed behind someone; the phase offset absorbs the change so
+    // the legs do not jump (phase = t * rate + offset)
+    setPace(idx, f) {
+      const r0 = anim.getY(idx), r1 = baseRate[idx] * f;
+      if (Math.abs(r1 - r0) < 0.04 * (baseRate[idx] || 1)) return;
+      anim.setX(idx, anim.getX(idx) + timeRef.value * (r0 - r1));
+      anim.setY(idx, r1);
       anim.needsUpdate = true;
     },
     setAmp(idx, amp) {

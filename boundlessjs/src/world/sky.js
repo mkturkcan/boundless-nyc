@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Sky as SkyMesh } from 'three/addons/objects/Sky.js';
-import { ENV, applyLB14Ground } from './materials.js';   // LB14 — day-only ground/roof calibration
+import { ENV, applyLB14Ground, FS26, FOG_SKY } from './materials.js';   // LB14 — day-only ground/roof calibration
 import { GFX } from './weather.js';
 // N11 — night ambient (docs/notes/night-r11.md). `?n11=0` restores the round-10 rig.
 import {
@@ -22,6 +22,7 @@ import {
 //   sun: multiplies the 3.4 * sqrt(sin elev) key
 //   env: scene.environmentIntensity (the sky-only IBL: cool, and the ambient's bulk)
 //   bnc: engine.bounce, the warm inter-reflected half of a canyon's ambient
+const GH25 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gh25') === '0');
 const PRESETS = {
   // LB13 — THE SHADOW BUDGET (docs/notes/light-r13.md). `?lb13=0` restores the row below verbatim
   // (DAY_R12). Four changes, all day-only, so golden/dusk/night are bit-identical:
@@ -50,7 +51,19 @@ const PRESETS = {
   //   warmK 0.35 trims the grade's shadow warm-push (+12.8 sRGB R / -7.7 B on every shaded pixel).
   day:    { elev: 42, azim: 128, expo: 0.62, fog: 0xcfd8e2, fogD: 0.000095, night: 0, env: 0.14, sun: 2.5, bnc: 1.5, skyGain: 0.55,
             hemi: 0.80, probeK: 0.42, expoK: 0.72, warmK: 0.35 },
-  golden: { elev: 7,  azim: 252, expo: 0.76, fog: 0xe2b98e, fogD: 0.00013, night: 0.05, env: 0.20, sun: 1.9, bnc: 3.0, skyGain: 0.7 },
+  // GH25 (owner 2026-09-25: "the golden hour lighting in general feels really flat and low quality"). The 7 deg sun at
+  // 252 deg put College Walk, the Low steps and every north-south street in shadow, and a 3.0 warm bounce against a 1.9
+  // key flattened what it did light (key:fill about 1.6:1). Now: the sun at 14 deg from 245 (low, raking, still warm
+  // through sunW), a key that dominates the fill, a cool blue sky fill instead of the warm bounce (warm key against a
+  // blue shade is the golden-hour contrast), a lighter probe, and scattered cumulus with cirrus (CS25). `?gh25=0`
+  // restores the round-14 row.
+  golden: GH25 ? { elev: 14, azim: 245, expo: 0.76, fog: 0xe2b98e, fogD: 0.00013, night: 0.05, env: 0.20, sun: 3.2, bnc: 1.0, skyGain: 0.7,
+            probeK: 0.5, hemi: 0.75, hemiC: 0x8aa9d8, sunW: 0.35,
+            cloud: { cov: 0.35, dens: 0.9, cirrus: 0.5, h: 2200, lit: 1.6, shade: 0.55 },
+            // chosen from a four-way sweep on the trailer's first frame: warm highlights against cool shade, a touch more
+            // saturation and contrast, a brighter sun-side haze and light shafts
+            grade: { lut: 'teal_orange', lutAmt: 0.35, contrast: 0.6, saturation: 1.18, warmth: 0.06, hazeSun: 1.4, godrays: 0.5 } }
+    : { elev: 7,  azim: 252, expo: 0.76, fog: 0xe2b98e, fogD: 0.00013, night: 0.05, env: 0.20, sun: 1.9, bnc: 3.0, skyGain: 0.7 },
   // N11: `nAmb` = street-lighting ambient level, `nGlow` = sky-glow level, `nFog` =
   // the horizon colour the aerial perspective fades the distance INTO after dark
   // (the old 0x39394e / 0x07090f faded it into black, which is why a night skyline
@@ -177,6 +190,67 @@ const N11_SKYGLOW = 0.21;  // hemi (cool): the glow overhead
 // warmth of a NYC noon lives in the bounce off the masonry, not in the key.
 const WARM = new THREE.Color(0xffb072), COOL = new THREE.Color(0xfffcf7);
 
+const CS25_GLSL = /* glsl */ `
+        // CS25 CLOUDS (owner 2026-09-25: golden hour "flat and low quality"; a cloudless analytic dome reads as CG
+        // every time). Two layers over the city: a cumulus/altocumulus deck at cs25H metres and a streaky cirrus deck
+        // at 4x that. Density is domain-warped fbm on the layer plane; light is the sun colour at the layer, shadowed
+        // by the density a step toward the sun (so the sun side of every cloud is bright and the far side and the
+        // base are dark), plus the sky fill; looking into the sun the thin edges light up (the silver lining). Both
+        // decks fade into the horizon haze. Units: cs25Lit / cs25Shade are sky-dome radiance, set per preset.
+        uniform float cs25Cov; uniform float cs25Dens; uniform float cs25Cirrus; uniform float cs25H; uniform float cs25T;
+        uniform vec3 cs25Lit; uniform vec3 cs25Shade; uniform vec2 cs25Wind;
+        float cs25h( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453123 ); }
+        float cs25n( vec2 p ) {
+          vec2 i = floor( p ), f = fract( p );
+          f = f * f * ( 3.0 - 2.0 * f );
+          return mix( mix( cs25h( i ), cs25h( i + vec2( 1.0, 0.0 ) ), f.x ), mix( cs25h( i + vec2( 0.0, 1.0 ) ), cs25h( i + vec2( 1.0, 1.0 ) ), f.x ), f.y );
+        }
+        float cs25fbm( vec2 p ) {
+          float v = 0.0, a = 0.5;
+          mat2 R = mat2( 0.8, -0.6, 0.6, 0.8 );
+          for ( int i = 0; i < 5; i ++ ) { v += a * cs25n( p ); p = R * p * 2.03 + 17.1; a *= 0.5; }
+          return v;
+        }
+        float cs25Cu( vec2 q ) {                         // cumulus density on the deck, 0..1
+          vec2 w = vec2( cs25fbm( q * 0.7 + 3.1 ), cs25fbm( q * 0.7 - 5.7 ) );
+          float d = cs25fbm( q + 1.6 * w );
+          return smoothstep( 1.0 - cs25Cov, 1.0 - cs25Cov + 0.28, d );
+        }
+        vec3 cs25Clouds( vec3 dir, vec3 sky, vec3 sunD ) {
+          if ( cs25Cov <= 0.0 && cs25Cirrus <= 0.0 ) return sky;
+          if ( dir.y <= 0.004 ) return sky;
+          float mu = dot( dir, sunD );
+          float fade = smoothstep( 0.004, 0.18, dir.y );          // into the horizon haze
+          vec3 col = sky;
+          // high cirrus: stretched along the wind, thin, lit through (no self shadow)
+          if ( cs25Cirrus > 0.0 ) {
+            vec2 pc = dir.xz / dir.y * ( cs25H * 4.0 ) / 9000.0 + cs25Wind * cs25T * 0.004;
+            vec2 ps = vec2( pc.x * 0.35 + pc.y * 0.9, pc.y * 0.35 - pc.x * 0.9 );
+            float c = cs25fbm( vec2( ps.x * 0.4, ps.y * 3.0 ) ) * cs25fbm( ps * 1.3 + 7.0 );
+            c = smoothstep( 0.18, 0.46, c ) * cs25Cirrus * fade;
+            float fwd = 1.0 + 1.6 * pow( max( mu, 0.0 ), 6.0 );
+            col = mix( col, cs25Lit * 0.9 * fwd + cs25Shade * 0.3, c * 0.55 );
+          }
+          if ( cs25Cov > 0.0 ) {
+            vec2 q = dir.xz / dir.y * cs25H / 2600.0 + cs25Wind * cs25T * 0.01;
+            float d = cs25Cu( q );
+            if ( d > 0.001 ) {
+              vec2 toSun = normalize( sunD.xz + vec2( 1e-4 ) );
+              float d1 = cs25Cu( q + toSun * 0.06 );             // ~150 m toward the sun on the deck
+              float d2 = cs25Cu( q + toSun * 0.16 );
+              float shadow = exp( - 2.6 * ( d1 * 0.65 + d2 * 0.55 ) );
+              float fwd = 1.0 + 2.4 * pow( max( mu, 0.0 ), 8.0 ) * ( 1.0 - d ) ;   // bright thin edges into the sun
+              vec3 lit = cs25Lit * shadow * fwd + cs25Shade * ( 0.55 + 0.45 * ( 1.0 - d ) );
+              float dist = 1.0 / max( dir.y, 0.02 );
+              float aerial = 1.0 - exp( - dist * 0.08 );          // distant clouds sink into the sky colour
+              lit = mix( lit, sky, aerial * 0.6 );
+              col = mix( col, lit, clamp( d * cs25Dens, 0.0, 1.0 ) * fade );
+            }
+          }
+          return col;
+        }
+`;
+
 // Photographed sky library (Poly Haven CC0, 4K .hdr in public/textures/hdri/).
 // Each sky drives the WHOLE lighting rig: the brightest texel gives the sun
 // direction/color, luminance statistics set sun/ambient intensity and night
@@ -239,6 +313,7 @@ export class Sky {
     this._hdriTex = tex;
     this._hdriEnv = this.pmrem.fromEquirectangular(tex);
     this.hdri = name;
+    FOG_SKY.p[0] = 0;   // FS26: the visible sky is the photograph, not the dome the ring samples
     this.sky.visible = false;
     const sc = this.engine.scene;
     // Poly Haven night skies are LONG-EXPOSURE (avgL ~0.6 — brighter than
@@ -335,11 +410,19 @@ export class Sky {
       mat.uniforms.nGlowAmt = { value: 0 };
       mat.uniforms.nGlowLo = { value: new THREE.Vector3().copy(GLOW_LOW) };
       mat.uniforms.nGlowHi = { value: new THREE.Vector3().copy(GLOW_HIGH) };
+      // CS25: cloud decks (written per preset in apply(); cs25T follows ENV.time so a recorded take steps them exactly)
+      Object.assign(mat.uniforms, {
+        cs25Cov: { value: 0 }, cs25Dens: { value: 0 }, cs25Cirrus: { value: 0 }, cs25H: { value: 2200 }, cs25T: ENV.time,
+        cs25Lit: { value: new THREE.Vector3(1, 1, 1) }, cs25Shade: { value: new THREE.Vector3(0.5, 0.55, 0.62) },
+        cs25Wind: { value: new THREE.Vector2(1.0, 0.35) },
+      });
+      if (mat.uniforms.cloudCoverage) mat.uniforms.cloudCoverage.value = 0;   // three's own simple layer: off
       const f0 = mat.fragmentShader;
       mat.fragmentShader = f0.replace(
         /gl_FragColor\s*=\s*vec4\(\s*(\w+)\s*,\s*1\.0\s*\)\s*;/,
-        'gl_FragColor = vec4( min( $1 * skyGain + n11Glow( direction ), vec3( 5.0 ) ), 1.0 );'
-      ).replace('void main() {', `uniform float skyGain;
+        'gl_FragColor = vec4( min( cs25Clouds( direction, $1 * skyGain, vSunDirection ) + n11Glow( direction ), vec3( 5.0 ) ), 1.0 );'
+      ).replace('void main() {', `${CS25_GLSL}
+        uniform float skyGain;
         uniform float nGlowAmt; uniform vec3 nGlowLo; uniform vec3 nGlowHi;
         vec3 n11Glow( vec3 dir ) {
           if ( nGlowAmt <= 0.0 ) return vec3( 0.0 );
@@ -402,6 +485,23 @@ export class Sky {
     ENV.sunColor.value.copy(sunCol);
     const sky = new THREE.Color().lerpColors(new THREE.Color(0x1a2333), new THREE.Color(0x9db8d8), Math.max(trans, p.night > 0.5 ? 0.02 : 0.15));
     ENV.skyAmbient.value.copy(sky);
+    // CS25 cloud decks: `p.cloud` = { cov, dens, cirrus, h, lit, shade } (absent = clear sky). Lit side = the sun colour,
+    // shaded side = the sky fill, both in sky-dome radiance; the same decks go into the env bake below, so reflections
+    // and the IBL carry them too.
+    {
+      const cl = p.cloud || null;
+      for (const m of [this.sky.material, this.envSky && this.envSky.material]) {
+        const u = m && m.uniforms;
+        if (!u || !u.cs25Cov) continue;
+        u.cs25Cov.value = cl ? cl.cov ?? 0.35 : 0;
+        u.cs25Dens.value = cl ? cl.dens ?? 0.9 : 0;
+        u.cs25Cirrus.value = cl ? cl.cirrus ?? 0 : 0;
+        u.cs25H.value = cl?.h ?? 2200;
+        const L = cl?.lit ?? 1.6, S = cl?.shade ?? 0.55;
+        u.cs25Lit.value.set(sunCol.r * L, sunCol.g * L, sunCol.b * L);
+        u.cs25Shade.value.set(sky.r * S, sky.g * S, sky.b * S);
+      }
+    }
 
     const s = this.engine.sun, hm = this.engine.hemi;
     s.color.copy(sunCol);
@@ -516,6 +616,7 @@ export class Sky {
     this.engine.giK = p.giK ?? 1;
     this.engine.hazeDK = p.hazeDK ?? 1;
     this.engine.hazeSunK = p.hazeSunK ?? 1;
+    this.engine.presetGrade = p.grade || null;   // GH25: per-preset grade over the saved settings (weather.js)
     applyLB14Ground(mode === 'day');
 
     const fogC = new THREE.Color(nFog);   // N11: p.nFog at dusk/night, p.fog otherwise
@@ -533,6 +634,7 @@ export class Sky {
     this.engine.scene.environment = this._envRT.texture;
     this.engine.scene.environmentIntensity = nEnv;   // N11: p.nEnv at dusk/night
     this.engine.envBase = nEnv; // weather multiplies GFX.envScale per frame
+    this._bakeFogRing();   // FS26: the fog fades into this sky's own horizon
   }
   cycle() {
     const order = ['day', 'golden', 'dusk', 'night'];
@@ -542,5 +644,59 @@ export class Sky {
   update(dt) {
     ENV.time.value += dt;
     this.sky.position.copy(this.engine.camera.position);
+    // FS26: a sun moved by the editor or a time-lapse re-bakes the fog ring, at most once a second
+    this._ringAge = (this._ringAge || 0) + dt;
+    if (FS26 && !this.hdri && this._ringSun && this._ringAge > 1 && this._ringSun.dot(this.sky.material.uniforms.sunPosition.value) < 0.99998) this._bakeFogRing();
+  }
+  // FS26 (world/materials.js FOG_SKY): the clear sky dome's radiance at 8 azimuths just above the horizon (1.7 deg) and
+  // 8 at 11.5 deg, rendered into a 16 x 1 float strip and read back once. Clouds are left out: the aerial perspective of
+  // the distance converges on the clear sky at the horizon, not on whichever cloud a sample happened to hit.
+  _bakeFogRing() {
+    if (!FS26 || this.hdri) { FOG_SKY.p[0] = 0; return; }
+    const R = this.engine.renderer;
+    if (!this._ringRT) {
+      this._ringRT = new THREE.WebGLRenderTarget(16, 1, { type: THREE.FloatType, depthBuffer: false, generateMipmaps: false,
+        minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+      this._ringCam = new THREE.PerspectiveCamera(4, 1, 1, 40000);
+      this._ringBuf = new Float32Array(16 * 4);
+      this._ringSun = new THREE.Vector3();
+    }
+    const sky = this.sky, u = sky.material.uniforms, cam = this._ringCam, rt = this._ringRT;
+    const keep = [u.cs25Cov.value, u.cs25Cirrus.value, sky.position.clone(), R.getRenderTarget()];
+    u.cs25Cov.value = 0; u.cs25Cirrus.value = 0;
+    sky.position.set(0, 0, 0); sky.updateMatrixWorld(true);
+    try {
+      rt.scissorTest = true;
+      for (let s = 0; s < 16; s++) {
+        const i = s % 8, el = s < 8 ? 0.03 : 0.2;
+        const az = -Math.PI + (i / 8) * Math.PI * 2;   // fogSkyColor: fa = (atan(z, x) + pi) * 8 / 2pi = i
+        cam.position.set(0, 0, 0);
+        cam.lookAt(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+        cam.updateMatrixWorld(true);
+        rt.viewport.set(s, 0, 1, 1); rt.scissor.set(s, 0, 1, 1);
+        R.setRenderTarget(rt);
+        R.render(sky, cam);
+      }
+      R.readRenderTargetPixels(rt, 0, 0, 16, 1, this._ringBuf);
+    } finally {
+      rt.scissorTest = false;
+      R.setRenderTarget(keep[3]);
+      u.cs25Cov.value = keep[0]; u.cs25Cirrus.value = keep[1];
+      sky.position.copy(keep[2]); sky.updateMatrixWorld(true);
+    }
+    const B = this._ringBuf, ring = FOG_SKY.ring;
+    for (let s = 0; s < 16; s++) {
+      let r = B[s * 4], g = B[s * 4 + 1], b = B[s * 4 + 2];
+      if (!(isFinite(r) && isFinite(g) && isFinite(b))) { r = g = b = 0; }
+      if (s >= 8) {   // the upper ring must never catch the sun disc: cap it at 1.6x the horizon sample below it
+        const lo = s - 8, cap = 1.6 * Math.max(ring[lo * 3], ring[lo * 3 + 1], ring[lo * 3 + 2], 1e-4), m = Math.max(r, g, b);
+        if (m > cap) { r *= cap / m; g *= cap / m; b *= cap / m; }
+      }
+      ring[s * 3] = Math.max(0, r); ring[s * 3 + 1] = Math.max(0, g); ring[s * 3 + 2] = Math.max(0, b);
+    }
+    FOG_SKY.p[0] = 1;
+    FOG_SKY.p[1] = PRESETS[this.mode]?.fogSky ?? 1;
+    this._ringSun.copy(u.sunPosition.value);
+    this._ringAge = 0;
   }
 }

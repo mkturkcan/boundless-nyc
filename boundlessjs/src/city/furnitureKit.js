@@ -169,6 +169,15 @@ export function alphaMipTexture(src, alphaTest, o = {}) {
     return t;
   };
   if (!AAFIX_K) return finish(new THREE.CanvasTexture(c0));   // ?aa=0: exactly the old texture
+  const r = alphaMipLevels(raw, W0, H0, alphaTest, o);
+  if (!r) return finish(new THREE.CanvasTexture(c0));             // fully opaque / fully cut: nothing to preserve
+  return finish(alphaMipDataTexture(r.mips, o));
+}
+// TV25: the pure half of alphaMipTexture — flip, mip-safe transparent fill (per cell for an atlas), coverage-preserving
+// box chain — so the offline tree bake (tools/bake_trees.mjs) can run it in Node on the painted atlas and ship the
+// finished levels, and the runtime only uploads them. `raw` is canvas-order RGBA (row 0 = top). Returns
+// { mips: [{ data, width, height }], cov0, log } or null when there is no partial coverage to preserve.
+export function alphaMipLevels(raw, W0, H0, alphaTest, o = {}) {
   // flipY compensation: DataTexture uploads rows as given
   let lvl = new Uint8Array(W0 * H0 * 4);
   for (let y = 0; y < H0; y++) lvl.set(raw.subarray((H0 - 1 - y) * W0 * 4, (H0 - y) * W0 * 4), y * W0 * 4);
@@ -188,6 +197,23 @@ export function alphaMipTexture(src, alphaTest, o = {}) {
       r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
       for (let i = 0; i < lvl.length; i += 4) if (lvl[i + 3] < 8) { lvl[i] = r; lvl[i + 1] = g; lvl[i + 2] = b; }
     }
+    // TV25: an ATLAS (o.cells x o.cells) fills each cell with ITS OWN mean, so a purple plum card does not grow a
+    // green fringe from the atlas-wide mean in the bilinear blend at its leaf borders and in its mips
+    const nc = o.cells | 0;
+    if (nc > 1 && W0 % nc === 0 && H0 % nc === 0) {
+      const cw = W0 / nc, ch = H0 / nc;
+      for (let cy = 0; cy < nc; cy++) for (let cx = 0; cx < nc; cx++) {
+        let cr = 0, cg = 0, cb = 0, cn = 0;
+        for (let y = cy * ch; y < (cy + 1) * ch; y++) for (let x = cx * cw, i = (y * W0 + x) * 4; x < (cx + 1) * cw; x++, i += 4) {
+          if (lvl[i + 3] > 128) { cr += lvl[i]; cg += lvl[i + 1]; cb += lvl[i + 2]; cn++; }
+        }
+        if (!cn) continue;
+        cr = Math.round(cr / cn); cg = Math.round(cg / cn); cb = Math.round(cb / cn);
+        for (let y = cy * ch; y < (cy + 1) * ch; y++) for (let x = cx * cw, i = (y * W0 + x) * 4; x < (cx + 1) * cw; x++, i += 4) {
+          if (lvl[i + 3] < 8) { lvl[i] = cr; lvl[i + 1] = cg; lvl[i + 2] = cb; }
+        }
+      }
+    }
   }
   const T = Math.max(1, Math.round(alphaTest * 255));
   // coverage(k) = |{ a : min(255, k*a) >= T }| / N, and k*a > 255 implies
@@ -202,7 +228,7 @@ export function alphaMipTexture(src, alphaTest, o = {}) {
   };
   const covK = (h, n, k) => { const a = Math.ceil(T / k); return a > 255 ? 0 : h[a] / n; };
   const cov0 = covK(cumOf(lvl), W0 * H0, 1);
-  if (!(cov0 > 0 && cov0 < 1)) return finish(new THREE.CanvasTexture(c0));   // fully opaque / fully cut: nothing to preserve
+  if (!(cov0 > 0 && cov0 < 1)) return null;
   let W = W0, H = H0;
   const mips = [{ data: lvl, width: W0, height: H0 }];
   const log = [];
@@ -231,15 +257,22 @@ export function alphaMipTexture(src, alphaTest, o = {}) {
     log.push(w2 + 'x' + h2 + ':' + k.toFixed(2));
     lvl = dst; W = w2; H = h2;
   }
-  const tex = new THREE.DataTexture(mips[0].data, W0, H0, THREE.RGBAFormat, THREE.UnsignedByteType);
+  if (typeof console !== 'undefined') console.log('[alphamip] ' + (o.name || 'leaf') + ' t=' + alphaTest + ' ' + W0 + 'x' + H0
+    + ' cov0=' + (cov0 * 100).toFixed(1) + '% scales ' + log.join(' '));
+  return { mips, cov0, log };
+}
+// the finished chain (alphaMipLevels, or baked levels read back from disk) as the texture three uploads level by level
+export function alphaMipDataTexture(mips, o = {}) {
+  const tex = new THREE.DataTexture(mips[0].data, mips[0].width, mips[0].height, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.minFilter = THREE.LinearMipmapLinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
   tex.generateMipmaps = false;
   tex.mipmaps = mips;
-  console.log('[alphamip] ' + (o.name || 'leaf') + ' t=' + alphaTest + ' ' + W0 + 'x' + H0
-    + ' cov0=' + (cov0 * 100).toFixed(1) + '% scales ' + log.join(' '));
-  return finish(tex);
+  tex.colorSpace = o.srgb === false ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+  tex.anisotropy = o.anisotropy ?? 4;
+  tex.needsUpdate = true;
+  return tex;
 }
 
 // Canvas-painted foliage cluster (alpha card texture): ~90 elliptical leaves
@@ -434,6 +467,13 @@ export function buildFurnitureGeos() {
     G.treeA3Trunk = { geo: tA.trunk }; G.treeA3Crown = { geo: tA.crown, perInstanceColor: true };
     G.treeB2Trunk = { geo: tB.trunk }; G.treeB2Crown = { geo: tB.crown, perInstanceColor: true };
     G.treeC2Trunk = { geo: tC.trunk }; G.treeC2Crown = { geo: tC.crown, perInstanceColor: true };
+    // TV25: one pool pair per species FORM variant (TREE_FORMS below). Placeholder = the puff tree of the form's
+    // sizing class until trees.js swaps in the generated tree; `?tv25=0` does not create them at all.
+    if (TV25) for (const name of TV25_POOLS) {
+      const t = { A: tA, B: tB, C: tC }[TREE_FORMS[name.slice(4).replace(/\d+$/, '')].arch] || tA;
+      G[name + 'Trunk'] = { geo: t.trunk };
+      G[name + 'Crown'] = { geo: t.crown, perInstanceColor: true };
+    }
   }
   // ---- NYC cobra-head street light, the standard octagonal pole. The Street
   //      Design Manual gives the city essentially ONE streetlight: 30 ft
@@ -2238,3 +2278,153 @@ export const TREE_SPECIES = [
   { c: 0x455224, c13: 0x455431, s: 0.95, w: 1.02, arch: 'A' }, // maple
   { c: 0x4f5b34, c13: 0x4f5d40, s: 0.8, w: 0.85, arch: 'B' },  // cherry
 ];
+
+// ---------------------------------------------------------------- TV25 SPECIES FORMS (trees agent, 2026-09-25)
+// `?tv25=0` restores the round-14 trees exactly (the ez-tree presets, the A/B/C pools, the c13 crown colours).
+//
+// Why: 74 % of the census (plane, oak, linden, maple and "other") drew ONE ez-tree preset in three seeds, and the
+// rest two more presets; every crown sampled one oak spray; every tree in a row had the road's yaw. TV25 gives each
+// species its own habit and architecture (city/treeGen.js), leaf spray (trees.js atlas) and bark, and assemble.js
+// routes census species -> forms by TREE_FORM_MIX. Sizing is untouched: TC13/FD14 allometry still reads
+// TREE_SPECIES (s, w, arch) and TREE_ARCH, and each form's geometry is built at TREE_ARCH[arch] x (hk, wk) so the
+// size contract is the one those rounds calibrated against the references.
+//
+// Census mix (data/raw/trees_*.csv, 550,730 street trees; p0 decoded in compile.mjs addPoints): plane 14.1 %,
+// honeylocust 10.9, pin oak 8.4, Callery pear 6.9, Norway maple 5.5, littleleaf linden 5.1, zelkova 4.9, cherry
+// 4.4, ginkgo 3.7, sophora 3.3 ... p0 = 0 ("other", ~25 %) is ~20 % zelkova, ~10 % elms (both vase), ~13 % sophora
+// and ~12 % ash (round, compound leaf), ~4 % purple-leaf plum, ~14 % small ornamentals (lilac, raintree, crab,
+// redbud, hawthorn, serviceberry), the rest mixed broadleaf -> Z / S / X / W / M below.
+//
+// Form fields (treeGen.js): profile = crown habit; crownBase = clear-trunk fraction; leader >= 0.6 = excurrent
+// (whorled limbs along a central leader, whorlAngle bottom->top in degrees from vertical) else a fork into
+// `scaffolds` limbs at scafAngle; kids2/kidAngle2/... = secondaries; twigs/shoots = leaf clumps; cards0/cards1 =
+// LOD0/LOD1 leaf-card budgets; cell = leaf-atlas cells (trees.js LEAF_CELLS); bark = bark material; barkTint
+// multiplies the bark map.
+export const TV25 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tv25') === '0');
+// YOUNG street trees: 23.6 % of the census had dbh <= 4 in in 2015 (29.7 % <= 5), i.e. ~7-9 in and 6-10 m tall now —
+// a nursery tree grown on a central leader, limbed up high, a narrow sparse egg of a crown on a slender stem. Scaling a
+// mature form down gave them a fat bole and a dense old crown. Pool suffix 9 (treeP9 ...), routed by treePoolFor.
+const YOUNG25 = { hk: 0.78, wk: 0.6, profile: 'oval', crownBase: 0.36, lump: 0.18, lopside: 0.1, trunkR: 0.011, lean: 0.03, wiggle: 0.01,
+  leader: 0.78, scaffolds: [6, 9], whorlAngle: [62, 36], scafReach: [0.8, 0.96], scafRad: 0.5, kids2: 1.1, kidLenMax2: 0.26,
+  cards0: 907, cards1: 138, shell: 0.5, barkSegs: [7, 4, 3] };
+export const TREE_FORMS = {
+  // London plane: broad, heavy, irregular; a short trunk splits into 4-6 big limbs; mottled camouflage bark
+  P: { arch: 'A', variants: 2, seed: 101, young: { ...YOUNG25 }, profile: 'broad', crownBase: 0.27, lump: 0.15, lopside: 0.08,
+    trunkR: 0.019, lean: 0.04, wiggle: 0.015, leader: 0.12, scaffolds: [4, 6], forkSpread: 0.26, scafAngle: [30, 62], scafReach: [0.8, 0.97], scafRad: 0.66,
+    trop: [0, 0.02, 0.04], gnarl: [0.03, 0.12, 0.2], kids2: 1.5, kidStart2: 0.2, kidAngle2: [35, 65], kidReach2: [0.6, 0.98], kidLenMax2: 0.34, outBias2: 0.4, upBias2: 0.1,
+    shootsPerM: 1.82, twigsPerM: 2.31, clump: [3, 5], shootLen: [0.85, 1.15], shootAngle: [25, 65], shootUp: 0.15, scafShoots: 0.5,
+    cards0: 1250, cards1: 288, shell: 0.62, cell: [3, 11], opacity: 0.5, roll: 60, bark: 'plane', barkTint: [1, 1, 1], barkSegs: [9, 5, 3] },
+  // honeylocust: open vase, zig-zag limbs, fine bipinnate foliage you read the sky through
+  H: { arch: 'B', variants: 2, seed: 202, young: { ...YOUNG25, profile: 'vase', scafRad: 0.55, lump: 0.22, cards0: 648 }, profile: 'vase', crownBase: 0.3, lump: 0.18, lopside: 0.1, trunkR: 0.017, lean: 0.06, wiggle: 0.02,
+    leader: 0.06, scaffolds: [3, 5], forkSpread: 0.2, scafAngle: [18, 42], scafReach: [0.85, 0.98], scafRad: 0.6,
+    trop: [0, 0.05, 0.03], gnarl: [0.03, 0.2, 0.3], kids2: 1.1, kidAngle2: [40, 70], kidReach2: [0.55, 0.95], kidLenMax2: 0.38, outBias2: 0.45, upBias2: 0.05,
+    shootsPerM: 1.56, twigsPerM: 2.1, clump: [3, 5], shootLen: [0.7, 0.95], shootAngle: [35, 75], shootUp: 0.05, scafShoots: 0.35,
+    cards0: 1339, cards1: 200, shell: 0.55, cell: [5, 13], opacity: 0.32, roll: 70, bark: 'willow', barkTint: [0.62, 0.6, 0.58] },
+  // Callery pear: a dense upright egg; many tight-crotched limbs from a low fork; small glossy leaves
+  R: { arch: 'B', variants: 1, seed: 303, young: { ...YOUNG25, whorlAngle: [40, 22], wk: 0.5 }, profile: 'oval', crownBase: 0.2, lump: 0.08, lopside: 0.04, trunkR: 0.016, lean: 0.02,
+    leader: 0.05, scaffolds: [6, 9], forkSpread: 0.14, scafAngle: [12, 32], scafReach: [0.85, 0.97], scafRad: 0.5,
+    trop: [0, 0.07, 0.06], gnarl: [0.02, 0.08, 0.16], kids2: 2.2, kidAngle2: [28, 50], kidReach2: [0.55, 0.9], kidLenMax2: 0.3, outBias2: 0.3, upBias2: 0.2,
+    shootsPerM: 2.08, twigsPerM: 2.52, clump: [3, 5], shootLen: [0.55, 0.75], shootAngle: [25, 55], shootUp: 0.25, scafShoots: 0.6,
+    cards0: 1300, cards1: 250, shell: 0.7, cell: [6, 14], opacity: 0.55, roll: 50, bark: 'oak', barkTint: [0.7, 0.68, 0.66] },
+  // pin oak: pyramidal, a central leader to the top, drooping lower limbs, ascending upper ones
+  Q: { arch: 'A', variants: 1, seed: 404, young: { ...YOUNG25, profile: 'pyramid', whorlAngle: [88, 45], leader: 0.9 }, profile: 'pyramid', crownBase: 0.25, lump: 0.1, lopside: 0.05, trunkR: 0.017, lean: 0.02,
+    leader: 0.92, scaffolds: [11, 15], whorlAngle: [96, 46], scafReach: [0.8, 0.96], scafRad: 0.42,
+    trop: [0, -0.02, 0.02], gnarl: [0.02, 0.1, 0.18], kids2: 1.5, kidAngle2: [35, 60], kidReach2: [0.5, 0.9], kidLenMax2: 0.26, outBias2: 0.25, upBias2: 0.02,
+    shootsPerM: 1.82, twigsPerM: 2.31, clump: [3, 5], shootLen: [0.7, 0.9], shootAngle: [25, 60], shootUp: 0.1, scafShoots: 0.55,
+    cards0: 1944, cards1: 275, shell: 0.6, cell: [0], opacity: 0.48, roll: 60, bark: 'oak', barkTint: [0.78, 0.78, 0.76] },
+  // Norway / red maple: round and dense (deep shade), 4-6 limbs from a short trunk
+  M: { arch: 'A', variants: 1, seed: 505, young: { ...YOUNG25, profile: 'round', wk: 0.66 }, profile: 'round', crownBase: 0.24, lump: 0.1, lopside: 0.06, trunkR: 0.018, lean: 0.03,
+    leader: 0.12, scaffolds: [4, 6], forkSpread: 0.3, scafAngle: [42, 68], scafReach: [0.8, 0.96], scafRad: 0.62,
+    trop: [0, 0.03, 0.05], gnarl: [0.02, 0.1, 0.18], kids2: 1.8, kidAngle2: [35, 60], kidReach2: [0.6, 0.95], kidLenMax2: 0.32, outBias2: 0.35, upBias2: 0.12,
+    shootsPerM: 2.08, twigsPerM: 2.52, clump: [3, 6], shootLen: [0.7, 0.95], shootAngle: [25, 60], shootUp: 0.2, scafShoots: 0.5,
+    cards0: 1400, cards1: 300, shell: 0.68, cell: [4, 12], opacity: 0.55, roll: 55, bark: 'willow', barkTint: [0.74, 0.7, 0.66] },
+  // littleleaf / silver linden: a dense egg-pyramid on a central leader
+  L: { arch: 'A', variants: 1, seed: 606, young: { ...YOUNG25, whorlAngle: [70, 40] }, profile: 'oval', crownBase: 0.2, lump: 0.08, lopside: 0.04, trunkR: 0.016, lean: 0.02,
+    leader: 0.8, scaffolds: [9, 13], whorlAngle: [80, 45], scafReach: [0.82, 0.96], scafRad: 0.45,
+    trop: [0, 0.02, 0.04], gnarl: [0.02, 0.1, 0.16], kids2: 1.8, kidAngle2: [35, 60], kidReach2: [0.55, 0.92], kidLenMax2: 0.28, outBias2: 0.3, upBias2: 0.1,
+    shootsPerM: 2.08, twigsPerM: 2.52, clump: [3, 5], shootLen: [0.6, 0.85], shootAngle: [25, 60], shootUp: 0.15, scafShoots: 0.55,
+    cards0: 1300, cards1: 275, shell: 0.66, cell: [2], opacity: 0.52, roll: 55, bark: 'willow', barkTint: [0.8, 0.77, 0.74] },
+  // ginkgo: columnar-irregular, sparse, fan leaves in spur clusters along the limbs
+  G: { arch: 'C', variants: 1, seed: 707, profile: 'columnar', crownBase: 0.22, lump: 0.2, lopside: 0.08, trunkR: 0.02, lean: 0.02,
+    leader: 0.9, scaffolds: [6, 9], whorlAngle: [70, 40], scafReach: [0.75, 0.95], scafRad: 0.42,
+    trop: [0, 0.04, 0.03], gnarl: [0.01, 0.06, 0.12], kids2: 0.8, kidAngle2: [30, 55], kidReach2: [0.4, 0.8], kidLenMax2: 0.3, outBias2: 0.2, upBias2: 0.15,
+    shootsPerM: 1.56, twigsPerM: 1.68, clump: [3, 4], shootLen: [0.45, 0.6], shootAngle: [20, 50], shootUp: 0.2, scafShoots: 0.3, spurs: 2.4,
+    cards0: 907, cards1: 138, shell: 0.5, cell: [7], opacity: 0.4, roll: 60, bark: 'oak', barkTint: [0.72, 0.68, 0.64] },
+  // cherry (Kwanzan / Yoshino): wide, low, spreading from a low fork
+  Y: { arch: 'B', variants: 1, seed: 808, profile: 'spreading', crownBase: 0.24, lump: 0.14, lopside: 0.08, trunkR: 0.017, lean: 0.05,
+    leader: 0.05, scaffolds: [3, 5], forkSpread: 0.16, scafAngle: [35, 58], scafReach: [0.85, 0.97], scafRad: 0.6,
+    trop: [0, 0.02, 0.0], gnarl: [0.03, 0.14, 0.22], kids2: 1.6, kidAngle2: [35, 65], kidReach2: [0.6, 0.95], kidLenMax2: 0.34, outBias2: 0.4, upBias2: 0.05,
+    shootsPerM: 1.82, twigsPerM: 2.31, clump: [3, 5], shootLen: [0.55, 0.75], shootAngle: [30, 70], shootUp: 0.0, scafShoots: 0.5,
+    cards0: 1405, cards1: 200, shell: 0.6, cell: [9], opacity: 0.5, roll: 60, bark: 'birch', barkTint: [0.45, 0.3, 0.26] },
+  // zelkova / elm: a tall vase of many upright limbs arching out at the top
+  Z: { arch: 'A', variants: 1, seed: 909, young: { ...YOUNG25, profile: 'vase', leader: 0.1, scaffolds: [5, 7], scafAngle: [14, 30], scafRad: 0.5 }, profile: 'vase', crownBase: 0.24, lump: 0.12, lopside: 0.06, trunkR: 0.017, lean: 0.03,
+    leader: 0.05, scaffolds: [5, 8], forkSpread: 0.2, scafAngle: [16, 38], scafReach: [0.88, 0.98], scafRad: 0.5,
+    trop: [0, 0.04, 0.02], gnarl: [0.02, 0.1, 0.2], kids2: 1.7, kidAngle2: [30, 60], kidReach2: [0.55, 0.95], kidLenMax2: 0.32, outBias2: 0.45, upBias2: 0.05,
+    shootsPerM: 1.82, twigsPerM: 2.31, clump: [3, 5], shootLen: [0.6, 0.8], shootAngle: [30, 65], shootUp: 0.05, scafShoots: 0.45,
+    cards0: 1300, cards1: 263, shell: 0.62, cell: [8], opacity: 0.45, roll: 60, bark: 'birch', barkTint: [0.62, 0.6, 0.56] },
+  // sophora / ash: round and broad, compound leaves
+  S: { arch: 'A', variants: 1, seed: 1010, profile: 'round', crownBase: 0.3, lump: 0.14, lopside: 0.07, trunkR: 0.017, lean: 0.04,
+    leader: 0.12, scaffolds: [4, 6], forkSpread: 0.26, scafAngle: [40, 66], scafReach: [0.8, 0.96], scafRad: 0.62,
+    trop: [0, 0.02, 0.03], gnarl: [0.03, 0.12, 0.2], kids2: 1.5, kidAngle2: [35, 65], kidReach2: [0.6, 0.95], kidLenMax2: 0.34, outBias2: 0.4, upBias2: 0.08,
+    shootsPerM: 1.69, twigsPerM: 2.1, clump: [3, 5], shootLen: [0.75, 1.0], shootAngle: [30, 65], shootUp: 0.1, scafShoots: 0.45,
+    cards0: 1728, cards1: 250, shell: 0.6, cell: [1], opacity: 0.4, roll: 60, bark: 'oak', barkTint: [0.7, 0.68, 0.64] },
+  // purple-leaf plum: a small dark-purple ornamental (the one non-green crown on many blocks)
+  X: { arch: 'A', variants: 1, seed: 1111, hk: 0.55, wk: 0.65, profile: 'round', crownBase: 0.25, lump: 0.12, lopside: 0.07, trunkR: 0.02, lean: 0.05,
+    leader: 0.08, scaffolds: [3, 5], forkSpread: 0.18, scafAngle: [35, 60], scafReach: [0.85, 0.97], scafRad: 0.6,
+    trop: [0, 0.03, 0.02], gnarl: [0.03, 0.14, 0.22], kids2: 1.8, kidAngle2: [35, 60], kidReach2: [0.6, 0.95], kidLenMax2: 0.36, outBias2: 0.35, upBias2: 0.1,
+    shootsPerM: 1.95, twigsPerM: 2.52, clump: [3, 5], shootLen: [0.5, 0.65], shootAngle: [30, 65], shootUp: 0.1, scafShoots: 0.5,
+    cards0: 1123, cards1: 163, shell: 0.62, cell: [10], opacity: 0.52, roll: 60, bark: 'birch', barkTint: [0.4, 0.3, 0.28] },
+  // small green ornamental (crab apple, hawthorn, lilac, redbud, serviceberry)
+  W: { arch: 'A', variants: 1, seed: 1212, hk: 0.55, wk: 0.65, profile: 'spreading', crownBase: 0.25, lump: 0.16, lopside: 0.1, trunkR: 0.019, lean: 0.06,
+    leader: 0.06, scaffolds: [3, 6], forkSpread: 0.2, scafAngle: [30, 62], scafReach: [0.85, 0.97], scafRad: 0.58,
+    trop: [0, 0.03, 0.01], gnarl: [0.04, 0.16, 0.24], kids2: 1.8, kidAngle2: [35, 65], kidReach2: [0.6, 0.95], kidLenMax2: 0.36, outBias2: 0.35, upBias2: 0.05,
+    shootsPerM: 1.95, twigsPerM: 2.52, clump: [3, 5], shootLen: [0.5, 0.65], shootAngle: [30, 65], shootUp: 0.05, scafShoots: 0.5,
+    cards0: 1123, cards1: 163, shell: 0.62, cell: [9, 8], opacity: 0.5, roll: 60, bark: 'oak', barkTint: [0.62, 0.58, 0.54] },
+};
+// TV25 EARLY FETCH of the baked tree set (public/models/trees25, tools/bake_trees.mjs). Started when this module is first
+// imported — the instancer, at the top of the boot — so the two requests are not queued behind the tile stream and the
+// fleet/crowd asset banks: fetched from trees.js at its import they took 41-78 s to arrive (ab2, sweep1) for 16-91 ms of
+// main-thread work. trees.js consumes the promises; a failed fetch resolves to null (-> runtime generation there).
+export const TV25_BAKE = (TV25 && typeof window !== 'undefined' && typeof fetch === 'function' && !/(^|[?&])tv25gen=1/.test(location.search))
+  ? {
+    t0: performance.now(),
+    json: fetch('models/trees25/trees25.json', { priority: 'high' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    bin: fetch('models/trees25/trees25.bin', { priority: 'high' }).then((r) => (r.ok ? r.arrayBuffer() : null)).catch(() => null),
+  }
+  : null;
+// census species (p0, TREE_SPECIES index) -> weighted forms
+export const TREE_FORM_MIX = {
+  0: [['Z', 0.32], ['S', 0.25], ['M', 0.15], ['W', 0.2], ['X', 0.08]],   // other
+  1: [['P', 1]], 2: [['H', 1]], 3: [['R', 1]], 4: [['G', 1]], 5: [['Q', 1]], 6: [['L', 1]],
+  7: [['M', 0.93], ['X', 0.07]],   // maple (~5 % of the city's maples are 'Crimson King' purple)
+  8: [['Y', 0.8], ['X', 0.2]],     // cherry ('Schubert' chokecherry is purple all summer: ~15 % of the class)
+};
+// every TV25 pool base name ('treeP', 'treeP2', ...): trees.js builds them, furnitureKit/instancer allocate them
+export const TV25_POOLS = [];
+for (const [id, F] of Object.entries(TREE_FORMS)) {
+  for (let v = 0; v < (F.variants || 1); v++) TV25_POOLS.push('tree' + id + (v ? String(v + 1) : ''));
+  if (F.young) TV25_POOLS.push('tree' + id + '9');
+}
+// the build spec of one pool ('treeP2', 'treeQ9' ...): form (suffix 9 = its YOUNG sub-form), target box and seed. ONE
+// definition for the offline bake (tools/bake_trees.mjs) and the runtime fallback (trees.js), so both build the same tree.
+export function tv25Spec(base) {
+  const id = base.slice(4).replace(/\d+$/, ''), suf = base.slice(4 + id.length);
+  const F0 = TREE_FORMS[id];
+  if (!F0) return null;
+  const young = suf === '9', v = young ? 9 : (parseInt(suf, 10) || 1) - 1;
+  const F = young ? { ...F0, ...F0.young } : F0;
+  const A = TREE_ARCH[F.arch] || TREE_ARCH.A;
+  const kv = 0.94 + 0.12 * (((F.seed * 13 + v * 71) % 97) / 97);   // per-variant envelope jitter
+  return { id, v, young, F, H: A.h * (F.hk ?? 1) * kv, W: A.w * (F.wk ?? 1) * kv, seed: F.seed + v * 7717 };
+}
+const _h25 = (x, z, k) => { const s = Math.sin(x * (91.7 + k) + z * (47.3 - k * 0.37) + k * 13.1) * 43758.5453; return s - Math.floor(s); };
+// assemble.js: the pool base name for a census tree at world (x, z) — form by the species mix, variant by hash
+export function treePoolFor(p0, x, z, dbh = 99, p2 = 0) {
+  const mix = TREE_FORM_MIX[p0] || TREE_FORM_MIX[0];
+  let u = _h25(x, z, 1), id = mix[0][0];
+  for (const [f, w] of mix) { id = f; if ((u -= w) < 0) break; }
+  if ((p2 & 1) && dbh <= 4 && TREE_FORMS[id].young) return 'tree' + id + '9';   // a census sapling of 2015
+  const nv = TREE_FORMS[id].variants || 1;
+  const v = Math.min(nv - 1, (_h25(x, z, 2) * nv) | 0);
+  return 'tree' + id + (v ? String(v + 1) : '');
+}

@@ -107,9 +107,11 @@ varying vec3 vObjN;
 
 function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = null, sizeY = 1.5, decal = null, plate = false } = {}) {
   const prev = mat.onBeforeCompile;
+  const sizeU = { value: sizeY };   // a uniform, not a literal: every kind shares its part programs (PF25 program census)
   const hubU = { value: (hubs || []).concat([0, 0, 0, 0].map(() => ({ p: [0, -100, 0], r: 0 }))).slice(0, 4).map((h) => new THREE.Vector4(h.p[0], h.p[1], h.p[2], h.r)) };
   mat.onBeforeCompile = (sh, r) => {
     sh.uniforms.uHub = hubU;
+    sh.uniforms.f24SizeY = sizeU;
     sh.uniforms.f24Night = ENV.night;
     sh.uniforms.f24Time = ENV.time;
     sh.uniforms.f24Env = F24ENV;
@@ -127,7 +129,7 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = n
         vMapUv = (vMapUv + vec2(mod(pid, 8.0), floor(pid / 8.0))) / 8.0;
       }
       #endif`);
-    let fs = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_PARS + 'uniform float f24Time;\n');
+    let fs = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_PARS + 'uniform float f24Time;\nuniform float f24SizeY;\n');
     fs = fs.replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
       #ifdef USE_ENVMAP
         iblIrradiance *= f24Env / max(envMapIntensity, 1e-3);
@@ -151,14 +153,14 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = n
         }` : ''}
         // road film: a smooth rise toward the sills and wheel arches, streaked vertically — never splotches
         // (thresholded blob noise read as dents and mud splats on the 125th St taxi)
-        float h = vObjPos.y / ${sizeY.toFixed(3)};
+        float h = vObjPos.y / f24SizeY;
         float n = 0.65 + 0.35 * f24n(vec3(vObjPos.x * 1.7, vObjPos.y * 11.0, vObjPos.z * 1.7) + vSeed * 37.0);
         float dirt = vPaint.y * pow(1.0 - smoothstep(0.02, 0.5, h), 1.6) * n;
         vec3 grime = vec3(0.30, 0.28, 0.25) * dot(diffuseColor.rgb, vec3(0.3333)) + vec3(0.045, 0.040, 0.034);
         diffuseColor.rgb = mix(diffuseColor.rgb, grime, clamp(dirt, 0.0, 0.7));
       }`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-      roughnessFactor = mix(vPaint.z, 0.7, clamp(vPaint.y * pow(1.0 - smoothstep(0.02, 0.5, vObjPos.y / ${sizeY.toFixed(3)}), 1.6), 0.0, 0.8));`)
+      roughnessFactor = mix(vPaint.z, 0.7, clamp(vPaint.y * pow(1.0 - smoothstep(0.02, 0.5, vObjPos.y / f24SizeY), 1.6), 0.0, 0.8));`)
         .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
       metalnessFactor = vPaint.x;`);
     }
@@ -196,7 +198,7 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = n
     sh.fragmentShader = fs;
     prev?.call(mat, sh, r);
   };
-  const tag = `f24|${paint ? 'p' : ''}${lamp ? 'l' : ''}${glass ? 'g' : ''}${decal ? 'd' : ''}${plate ? (/taxi/.test(kind) ? 'P' : 'q') : ''}|${sizeY.toFixed(2)}`;
+  const tag = `f24|${paint ? 'p' : ''}${lamp ? 'l' : ''}${glass ? 'g' : ''}${decal ? 'd' : ''}${plate ? (/taxi/.test(kind) ? 'P' : 'q') : ''}`;
   const prevKey = mat.customProgramCacheKey?.bind(mat);
   mat.customProgramCacheKey = () => tag + (prevKey ? '|' + prevKey() : '');
   mat.needsUpdate = true;

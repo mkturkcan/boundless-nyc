@@ -10,11 +10,11 @@ streetscape studies in which every modelled element can be traced to a public re
 | | |
 |---|---|
 | Coverage | Manhattan, the Bronx, Brooklyn and Queens |
-| Buildings | 937,965: 930,787 NYC Building Footprints and 7,178 OpenStreetMap footprints, joined to PLUTO (use, class, floors, year) and to facade-inspection filings (wall material); 16 facade typologies with procedural architectural detail; 55 landmarks with dedicated models |
+| Buildings | Every footprint of NYC Building Footprints, gap-filled from OpenStreetMap and joined to PLUTO (use, class, floors, year) and to facade-inspection filings (wall material); facade typologies with procedural architectural detail; landmarks with dedicated models |
 | Streets | NYC Street Centerline (CSCL): widths, lane counts, direction, speed limits and grade separation become the carriageway, kerbs, sidewalks, markings and a routable lane graph |
 | Street furniture | Street trees, hydrants, bus shelters, LinkNYC kiosks, bicycle racks and subway entrances placed from their records; signals at junctions derived from the street network; lamps, signage and street furniture generated along the kerbs |
-| Streaming | 2,884 tiles of 512 m (1 km detail radius) and 210 far-field tiles of 2,048 m (13 km radius), 2.4 GB compiled |
-| Simulation | IDM car following on the lane graph with signal phases and turn planning; pedestrians on the sidewalk graph with signal-aware crossings; 14 vehicle types, 37 pedestrian variants |
+| Streaming | Binary tiles streamed around the camera at full detail, with coarser far-field tiles beyond |
+| Simulation | IDM car following on the lane graph with signal phases and turn planning; pedestrians on the sidewalk graph with signal-aware crossings; vehicles of the NYC fleet: taxis, private cars, vans, box trucks, a minibus and emergency vehicles |
 | Sensors | RGB; semantic segmentation (Cityscapes-compatible classes); instance segmentation with visible and amodal boxes, occlusion ratios and 3D poses; metric depth |
 | Interfaces | Interactive browser client; simulation server with a TCP API and a Python client (synchronous stepping, actor control, sensors, map queries) |
 
@@ -37,8 +37,8 @@ vehicles and pedestrians, and renders every frame together with its labels.
 
 ## Quick start
 
-**Binary release (Windows x64).** Download `BoundlessNYC-<version>-win64.zip` from Releases (1.3 GB; the server with
-the compiled city), extract it, start the server and run an example:
+**Binary release (Windows x64).** Download `BoundlessNYC-<version>-win64.zip` from Releases (the server with the
+compiled city), extract it, start the server and run an example:
 
 ```
 StartServer.bat
@@ -78,39 +78,23 @@ junction = m.get_junctions(center=here, radius=60)[0]
 taxi = world.spawn_actor(lib.find("vehicle.taxi2"), m.get_spawn_points(center=junction.location, radius=90)[0])
 taxi.set_autopilot(True, route=["straight", "right"])
 
-# instance segmentation + per-object labels (visible/amodal boxes, occlusion, 3D pose), 6.5 m behind the taxi
-cam = world.spawn_actor(lib.find("sensor.camera.instance_segmentation"),
-                        Transform(Location(-6.5, 0, 3.0), Rotation(pitch=-12)), attach_to=taxi)
+# instance segmentation with per-object labels (visible and amodal boxes, occlusion, 3D pose), behind the taxi
+bp = lib.find("sensor.camera.instance_segmentation")
+bp.set_attribute("amodal", 8)                    # amodal box and occlusion for the 8 largest objects
+cam = world.spawn_actor(bp, Transform(Location(-6.5, 0, 3.0), Rotation(pitch=-12)), attach_to=taxi)
 cam.listen(lambda image: print(image.frame, [(l.class_name, l.bbox, l.occlusion) for l in image.labels]))
 
 for _ in range(100):
     world.tick()
 ```
 
-Frames are ENU metres (x east, y north, z up); attachment offsets are x forward, y left, z up. The full reference is in
+Frames are ENU metres (x east, y north, z up); attachment offsets are x forward, y left, z up. The
+[tutorials](https://mkturkcan.github.io/boundless-nyc/tutorials/) go from a first connection to a recorded dataset, with
+one script per step in [PythonAPI/examples/tutorials/](PythonAPI/examples/tutorials/). The full reference is in
 [docs/api/python_api.md](docs/api/python_api.md); the language-independent wire protocol is in
 [docs/api/protocol.md](docs/api/protocol.md).
 
 ![RGB, semantic segmentation, instance segmentation with visible and amodal boxes, and depth for one step at W 120th St and Amsterdam Ave](docs/assets/figures/sensors.jpg)
-
-## Performance
-
-Setup:
-
-- Hardware: release build on Windows 11 with an NVIDIA RTX 3060 Laptop GPU (Direct3D 11 through ANGLE).
-- Scene: W 120th St & Amsterdam Ave, with one autopilot vehicle and ambient traffic.
-- Settings: 1280 × 720, synchronous mode, fixed step 0.05 s.
-- Measurement: `PythonAPI/examples/benchmark.py` (60 ticks per configuration, after 5 warm-up ticks); each value is
-  the mean of two consecutive runs.
-
-| Sensor configuration | ms / step | × real time |
-|---|---:|---:|
-| none | 72 | 0.69 |
-| RGB | 91 | 0.55 |
-| depth | 118 | 0.42 |
-| RGB + semantic + instance, one pose | 180 | 0.28 |
-| RGB + semantic + instance, amodal boxes for 8 objects | 272 | 0.18 |
-| RGB + semantic + instance, plus a vehicle-mounted RGB camera | 274 | 0.18 |
 
 ## Coverage
 
@@ -118,10 +102,10 @@ Setup:
 
 ## Architecture and repository layout
 
-![The compiler, the compiled city, the interactive client, the simulation server and the Python API](docs/assets/figures/architecture.png)
+![Public records are compiled into binary tiles; the client streams, simulates and renders them inside the simulation server, which the Python API drives over TCP](docs/assets/figures/architecture.png)
 
 ```
-boundlessjs/            renderer, simulation and perception client (three.js r185, Vite)
+boundlessjs/            renderer, simulation and perception client (three.js, Vite)
   src/                  engine, streaming, materials, traffic, pedestrians, perception, API bridge
   tools/pipeline/       city compiler: NYC Open Data -> binary tiles
   public/               LUTs, fonts, data; tiles, models and textures are downloaded (BUILDING.md)
@@ -137,7 +121,8 @@ docs/                   documentation site, API reference, wire protocol, render
 
 ![Six frames from the simulator: Fifth Avenue, 125th Street, Times Square at night, Harlem brownstones, Williamsburg in the rain and Columbia's Low Library](docs/assets/figures/gallery.jpg)
 
-The figures in this README are generated by `tools/figures/` from renders of the simulator and from the compiled tiles.
+The figures in this README are generated by `tools/figures/` from renders of the simulator and from the compiled tiles;
+the architecture diagram is a draw.io file in `docs/assets/figures/src/`.
 
 ## Licensing
 

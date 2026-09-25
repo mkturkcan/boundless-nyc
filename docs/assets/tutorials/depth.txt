@@ -1,0 +1,3 @@
+depth: 5th / 50th / 95th percentile 9.8 / 31.5 / 218.2 m; sky 14.3 % of pixels; 46.0 % at or beyond the 16-bit PNG's 65.535 m
+197190 points -> points.ply
+image centre: 63.19 m along the view axis, world Location(x=771.161, y=2728.335, z=4.819)

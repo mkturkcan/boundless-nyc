@@ -618,6 +618,11 @@ if (typeof document !== 'undefined') {
 // `?ct25=0` leaves the materials flat.
 export const CT25 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ct25') === '0');
 export const CT26 = CT25 && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ct26') === '0');
+// WR26 (owner 2026-09-25: "solve the flatness"): a street window mirrors the far side of the street. The analytic sky mirror
+// put the bright horizon in every eye-level pane (a shaded pane measured 155 grey against 100 for the brick round it), so
+// the glazing read as frosted panels. Now the reflected ray meets a modelled far wall (lots of varied height and masonry,
+// a window grid, lit like the city) or the roadway, and only above that skyline the sky and the sun. `?wr26=0` reverts.
+export const WR26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('wr26') === '0');
 const STONE_SETS = {
   cgranite:   { mean: [0.3769, 0.2992, 0.1664], size: 2.17 },   // stone_wall_03: speckled, jointless (steps, walls, rims)
   climestone: { mean: [0.3772, 0.2890, 0.1764], size: 3.00 },   // sandstone_blocks_08: ashlar coursing (Low Library)
@@ -2032,14 +2037,55 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
               float f0P = fGlass ? FAC_glassF.x : 0.075;    // punched glazing is clear glass
               float fresP = fresnelR(max(dot(Vw, Nj), 0.0), f0P);
               float fpP = max(aaU, aaV) * 0.35;
-              FAC_emis += skyLook(Rw, sunDirW, sunColW, uZenC, uHorC, uRefl, FAC_glassF.z)
-                        * FAC_reflTint * fresP * glassW;
+              vec3 mirC = skyLook(Rw, sunDirW, sunColW, uZenC, uHorC, uRefl, FAC_glassF.z);
+              float skyVis = 1.0;
+              ${WR26 ? `
+              // WR26: the far side of the street. The ray leaves the wall at dn per unit length, so it meets a far wall
+              // wSt away at height yHit; each lot along that wall has its own height and masonry, the wall carries a
+              // window grid, and a ray that comes down first meets the roadway. The grid is box-filtered by its own
+              // footprint (pcov), so a distant pane averages to the wall mean instead of shimmering.
+              {
+                // the geometric normal, not the dFdx/dFdy one: at city coordinates (x ~ 2000 m) the derivative normal
+                // carries float noise that a patterned reflection turns into speckle
+                vec3 NwS = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);
+                if (dot(NwS, Vw) < 0.0) NwS = -NwS;
+                vec3 RwS = reflect(-Vw, normalize(NwS + vec3(pj1, pj2, pj1 * 0.5) * 0.055));
+                float dn = dot(RwS, NwS);
+                float tl = length(NwS.xz);
+                vec3 tang = vec3(-NwS.z, 0.0, NwS.x) / max(tl, 1e-3);
+                float wSt = mix(17.0, 30.0, hash12(vec2(wallSeed * 7.3 + cvar * 3.1, 2.7)));
+                float tHit = wSt / max(dn, 0.03);
+                float yHit = vFUv.y + RwS.y * tHit;
+                float sHit = dot(vWP + RwS * tHit, tang);
+                float fwS = max(fwidth(sHit), 1e-3), fwY = max(fwidth(yHit), 1e-3);   // outside any branch: derivatives stay defined
+                float lot = floor(sHit / 14.0);
+                float lh = hash12(vec2(lot * 1.37 + cvar * 5.3, wallSeed * 3.9 + 0.7));
+                float hOpp = clamp(bldgH * mix(0.55, 1.3, lh), 8.0, 55.0);
+                float lc = hash12(vec2(lot * 4.1 + 9.3, cvar * 2.9));
+                vec3 wallA = lc < 0.45 ? vec3(0.52, 0.30, 0.23) : lc < 0.7 ? vec3(0.44, 0.34, 0.28)
+                           : lc < 0.88 ? vec3(0.70, 0.62, 0.50) : vec3(0.52, 0.52, 0.51);
+                float bay = mix(1.6, 2.3, lh), flo = mix(2.9, 3.5, lc);
+                float win = pcov(sHit / bay, 0.22, 0.78, fwS / bay) * pcov(yHit / flo, 0.32, 0.86, fwY / flo);
+                win *= smoothstep(1.5, 3.5, yHit);                                  // shopfronts: one dark band instead
+                float shop = 1.0 - smoothstep(3.2, 4.2, yHit);
+                vec3 wallC = uHorC * uRefl * wallA * mix(1.0, 0.16, max(win * 0.9, shop * 0.75))
+                           * (0.85 + 0.35 * clamp(dot(-NwS, sunDirW) * 3.0, 0.0, 1.0) * (1.0 - night));
+                vec3 roadC = uHorC * uRefl * vec3(0.26, 0.26, 0.27);
+                float fwH = max(fwY, 0.25);
+                float farVis = smoothstep(hOpp - fwH, hOpp + fwH, yHit);
+                float onRoad = 1.0 - smoothstep(-fwH, fwH, yHit);
+                vec3 farC = mix(wallC, roadC, onRoad);
+                float useF = smoothstep(0.5, 0.7, tl) * (1.0 - smoothstep(0.75, 0.9, night));   // walls only; night keeps its glow mirror
+                skyVis = mix(1.0, farVis, useF);
+                mirC = mix(mirC, mix(farC, mirC, farVis), useF);
+              }` : ''}
+              FAC_emis += mirC * FAC_reflTint * fresP * glassW;
               // specular AA: the disc exponent is widened by the pixel
               // footprint and its peak clamped inside sunDisc(), otherwise
               // sub-pixel mirrors strobe (and sparkle through bloom)
               FAC_emis += sunColW * FAC_reflTint
                         * sunDisc(Rw, sunDirW, fGlass ? FAC_glassF.y : 0.06, fpP)
-                        * fresP * 16.0 * uRefl * glassW * (1.0 - night);
+                        * fresP * 16.0 * uRefl * glassW * (1.0 - night) * skyVis;
             }
             // ---- sash frames at the glass plane: perimeter stiles + a
             // double-hung meeting rail (residential/punched), or a full

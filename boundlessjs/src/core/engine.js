@@ -394,6 +394,11 @@ class HazePass extends Pass {
   }
 }
 
+// GR26 (owner 2026-09-25: "solve the flatness"): shafts are light scattered by the air IN FRONT of a surface, so over a
+// wall 30 m away there is almost none. The composite added the full shaft to every pixel, which laid a milky veil over
+// the whole lower frame whenever the camera faced the sun. Now it is weighted by the air along the view ray (distance
+// from the depth buffer; the sky keeps all of it). `?gr26=0` restores the flat composite.
+const GR26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gr26') === '0');
 // Screen-space god rays: quarter-res sky/sun occlusion mask -> 48-tap radial
 // march toward the projected sun -> additive composite. Sun screen position
 // and off-screen/behind-camera fade are computed CPU-side each frame.
@@ -453,6 +458,9 @@ class GodraysPass extends Pass {
       tRays: { value: this.rayRT.texture },
       uSunCol: { value: new THREE.Color(1, 0.9, 0.75) },
       uIntensity: { value: 0.0 },
+      tDepth: { value: depthTexture },
+      uInvProj: { value: new THREE.Matrix4() },
+      uAirK: { value: GR26 ? 1.0 : 0.0 },
     };
     this._comp = new FullScreenQuad(new THREE.ShaderMaterial({
       uniforms: this.compUniforms,
@@ -461,10 +469,18 @@ class GodraysPass extends Pass {
       fragmentShader: /* glsl */ `
         uniform sampler2D tDiffuse; uniform sampler2D tRays;
         uniform vec3 uSunCol; uniform float uIntensity;
+        uniform sampler2D tDepth; uniform mat4 uInvProj; uniform float uAirK;
         varying vec2 vUv;
         void main() {
           vec4 base = texture2D(tDiffuse, vUv);
           float r = texture2D(tRays, vUv).r;
+          if (uAirK > 0.0) {
+            float d = texture2D(tDepth, vUv).x;
+            float sky = step(0.99995, d);
+            vec4 vp = uInvProj * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+            float dist = length(vp.xyz / vp.w);
+            r *= mix(1.0, mix(smoothstep(0.0, 2500.0, dist), 1.0, sky), uAirK);
+          }
           gl_FragColor = vec4(base.rgb + uSunCol * r * uIntensity, base.a);
         }`,
     }));
@@ -489,6 +505,7 @@ class GodraysPass extends Pass {
     renderer.setRenderTarget(this.rayRT);
     this._march.render(renderer);
     this.compUniforms.tDiffuse.value = readBuffer.texture;
+    this.compUniforms.uInvProj.value.copy(this.camera.projectionMatrixInverse);
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
     this._comp.render(renderer);
   }

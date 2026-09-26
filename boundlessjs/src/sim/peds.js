@@ -16,6 +16,15 @@ const PY25 = typeof location === 'undefined' || new URLSearchParams(location.sea
 // not using the sidewalk properly". Sidewalks become two-lane bands (_band / _laneLine), walk lines never run on lawn or
 // along a median (_mkEdges), footways keep their walkers within the path's own width. `?lanes=0`: the old single line.
 const LN25 = PY25 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('lanes') !== '0');
+// PD26 (owner 2026-09-25, second pass): the bands stop at every building wall (also one whose tile arrived after the edge
+// was built), and a walker whose line runs into a wall steps off it instead of turning back and forth; a companion is
+// never spawned inside a building; no random stop and no corner hop on a lawn; a corner hop is car-checked before the
+// walker steps off, like a crossing. `?ped26=0`: the LN25 behaviour.
+const PD26 = LN25 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('ped26') !== '0');
+// ST26 (opt-in, `?stoop26=1`): stoop flights as LOCAL frontage zones (the station's own 2 m) with a 2 m look-ahead. Measured
+// 2026-09-25 against the continuous frontage line it is worse on the Harlem brownstone blocks (W 122nd St: stoop contact
+// 261 -> 369 s, walker contact 148 -> 565 s: both directions converge at every flight), so it is not the default.
+const ST26 = PD26 && typeof location !== 'undefined' && new URLSearchParams(location.search).get('stoop26') === '1';
 const PED_TARGET = Math.min(700, Number(typeof location !== 'undefined' && new URLSearchParams(location.search).get('pedtarget')) || 520); // reference-photo sidewalk density; ?pedtarget=N (film)
 // SPAWN_R0 was 40 m: an eye-level camera at 2.4 m stands in the middle of a 40 m
 // hole, which is exactly the part of the frame the photographs fill with people
@@ -296,6 +305,23 @@ export class Peds {
       if (x >= p.minX && x <= p.maxX && z >= p.minZ && z <= p.maxZ && COLLIDERS._pointIn2D(x, z, p.pts)) return true;
     }
     return false;
+  }
+  // PD26: lawn or a planting bed under (x, z) (the tile's TOP surface, world/assemble.js GT26): nobody stops there
+  _softAt(x, z) {
+    const S = this.streamer, q = S && S.surfaceInfoAt ? S.surfaceInfoAt(x, z, 0.05) : null;
+    return !!q && q.kind === 'grass';
+  }
+  // PD26: does the straight hop a -> b run over a lawn (and nowhere over the carriageway: a street crossing keeps the
+  // median bed it passes)? Sampled every 1.5 m
+  _overLawn(a, b) {
+    const S = this.streamer, L = Math.hypot(b.x - a.x, b.z - a.z), n = Math.max(1, Math.ceil(L / 1.5));
+    let soft = false;
+    for (let k = 1; k < n; k++) {
+      const t = k / n, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t;
+      if (S && S.roadAt && S.roadAt(x, z, 0.2) === true) return false;
+      if (!soft && this._softAt(x, z)) soft = true;
+    }
+    return soft;
   }
   // a straight corner crossing between two campus walkways must not run through a kit obstacle either (sampled every metre)
   _crossBlocked(a, b) {
@@ -673,6 +699,7 @@ export class Peds {
     const G = this._obsG, L = this._obsL;
     if (!G || !L || !L.length || e.campus || e.kind === 'path' || !(e.len > 0)) return;
     const n = Math.floor(e.len / 2) + 1, zK = new Float32Array(n).fill(-99), zF = new Float32Array(n).fill(99);
+    const FR = ST26 ? 1 : 3;
     let any = false;
     for (let j = 0; j < n; j++) {
       const s = this.sample(e, Math.min(e.len, j * 2)), ob = e.side || 1;
@@ -700,11 +727,17 @@ export class Peds {
             // reaching over most of the width (a deep stoop, a shelter): it belongs to the side it stands against
             if (kerbSide && bldgSide) { if (bl - bmax <= bmin - pLo) kerbSide = false; else bldgSide = false; }
             if (!kerbSide && !bldgSide) continue;             // mid-pavement: the look-ahead goes round it
-            // tree pits 8-9 m apart keep one furniture line (+-4.5 m); a stoop run keeps one frontage line (+-3 m)
+            // tree pits 8-9 m apart keep one furniture line (+-4.5 m); a stoop run keeps one frontage line (+-3 m).
+            // ST26 (opt-in): frontage kit only where it stands (the station's own 2 m), the areaway between two flights
+            // pavement again; measured worse on the brownstone blocks than the continuous line (see ST26)
             if (kerbSide) { if (amax >= -4.5 && amin <= 4.5 && bmax + 0.3 > K) K = bmax + 0.3; }
-            else if (amax >= -3 && amin <= 3 && bmin - 0.3 < F) F = bmin - 0.3;
+            else if (amax >= -FR && amin <= FR && bmin - 0.3 < F) F = bmin - 0.3;
           }
         }
+      // PD26: ...and the first building wall across the paving, 0.5 m short of it (a footprint standing between two
+      // probed vertices, or one whose tile arrived after this edge was built: two walkers turned back and forth inside
+      // a Lenox Ave footprint for a minute)
+      if (PD26) for (let l = Math.max(pLo, -0.5); l <= bl + 0.3; l += 0.25) if (this._inBuilding(s.x + nx * l, s.z + nz * l, s.y)) { if (l - 0.5 < F) F = l - 0.5; break; }
       zK[j] = K; zF[j] = F;
       if (K > -99 || F < 99) any = true;
     }
@@ -884,6 +917,7 @@ export class Peds {
       if (LN25) pyLu = behind ? (lead.lu ?? 0.5) : b0 !== a0 ? Math.max(0, Math.min(1, (pyLat - a0) / (b0 - a0))) : 0.5;
       const q = this.sample(e, pyD), ob = e.side || 1;
       if (!this._clearAt(q.x - q.dirz * ob * pyLat, q.z + q.dirx * ob * pyLat, q.y, 0.4, false)) return;
+      if (PD26 && this._inBuilding(q.x - q.dirz * ob * pyLat, q.z + q.dirx * ob * pyLat, q.y)) return;   // (the lead is tested at its spawn)
     }
     const c = new THREE.Color().copy(lead.color).offsetHSL((Math.random() - 0.5) * 0.2, 0, (Math.random() - 0.5) * 0.15);
     let mask = 0;
@@ -1129,7 +1163,7 @@ export class Peds {
       if (p.stand > 0) {
         p.stand -= dt;
         if (PY25 && p._obsGen !== this._obsGen) { p._obsGen = this._obsGen; if (!this._clearAt(p._x, p._z, p._y, 0.25, false)) p.stand = 0; }
-      } else if (!p.waiting && Math.random() < dt * 0.003 && (!PY25 || this._clearAt(p._x, p._z, p._y, 0.75, false))) { p.stand = 5 + Math.random() * 25; p.standFace = [1, -1, 0][(Math.random() * 3) | 0]; }
+      } else if (!p.waiting && Math.random() < dt * 0.003 && (!PY25 || this._clearAt(p._x, p._z, p._y, 0.75, false)) && !(PD26 && this._softAt(p._x, p._z))) { p.stand = 5 + Math.random() * 25; p.standFace = [1, -1, 0][(Math.random() * 3) | 0]; }
       if (!p.waiting && !(p.stand > 0)) p.d += p.v * (PY25 ? (p.vf ?? 1) : 1) * dt * p.dir;
       // PY25: nobody waits at a kerb for ever (a car that never leaves, a crossing that never opens): after 48 s, the
       // length of a signal cycle and then some, the walker gives up and walks back along its sidewalk
@@ -1187,7 +1221,12 @@ export class Peds {
             }
             // the NEAREST ends only (2 of them: around the corner, or straight over the crosswalk): a random pick among all
             // ends within 34 m sent walkers diagonally through the junction box, across the traffic (film 7 fTraffic)
-            if (cands.length) { cands.sort((x, y) => x.dist2 - y.dist2); best = cands[cands.length > 1 && Math.random() < 0.35 ? 1 : 0]; }
+            if (cands.length) {
+              cands.sort((x, y) => x.dist2 - y.dist2);
+              // PD26: never a hop over a lawn (a straight line between two park path ends ran across the grass)
+              if (PD26) { let k = 0; for (let j = 0; j < cands.length && k < 2; j++) if (!this._overLawn(here, cands[j].q)) cands[k++] = cands[j]; cands.length = k; }
+              if (cands.length) best = cands[cands.length > 1 && Math.random() < 0.35 ? 1 : 0];
+            }
           }
           if (best) {
             // the crossing keeps the walker's line across the pavement at both ends, so a crowd uses the width of the
@@ -1240,7 +1279,9 @@ export class Peds {
               p.goT -= dt;
               if (p.goT > 0) hold = true;
             }
-            if (!hold && roadway) {
+            // PD26: a corner hop too (it cuts the corner past the kerb radius, where a turning car's front corner sweeps:
+            // the last walker-car contacts were hops started beside a turning taxi, never checked before stepping off)
+            if (!hold && (roadway || PD26)) {
               // the cars (PY25: asked 5 times a second while the walker waits, not every frame)
               if (!PY25 || p.pick !== best || (p.carT = (p.carT || 0) - dt) <= 0) { p.carT = 0.2; p.carHold = this._carInPath(x0, z0, x1, z1, false, p.v); }
               if (p.carHold) hold = true;
@@ -1278,7 +1319,18 @@ export class Peds {
         const la = p.latS ?? 0, dA = p.d + p.dir * 1.2;
         if (dA > 0 && dA < p.e.len) {
           const q = this.sample(p.e, dA);
-          if (this._inBuilding(q.x - q.dirz * ob * la, q.z + q.dirx * ob * la, q.y)) { p.dir = -p.dir; p.lat = this._pickLat(p.e, p.dir, p); p._latA = undefined; }
+          if (this._inBuilding(q.x - q.dirz * ob * la, q.z + q.dirx * ob * la, q.y)) {
+            // PD26: the wall is only across part of the paving: step off it onto the band's line there (the band stops
+            // 0.5 m short of every wall, _zones) instead of turning back, which trapped anyone already beside it
+            let clear = false;
+            if (PD26) {
+              if (p.e.zGen !== this._obsGen) this._zones(p.e);
+              const B2 = this._band(p.e, q, dA), l2 = Math.max(B2.lo, Math.min(B2.hi, this._laneLine(B2, p.e, p.dir, p.lu ?? 0.5)));
+              clear = !this._inBuilding(q.x - q.dirz * ob * l2, q.z + q.dirx * ob * l2, q.y);
+              if (clear) p._latA = undefined;
+            }
+            if (!clear) { p.dir = -p.dir; p.lat = this._pickLat(p.e, p.dir, p); p._latA = undefined; }
+          }
         }
       }
       if (PY25) {
@@ -1287,6 +1339,14 @@ export class Peds {
         if (LN25) {
           const B = this._band(p.e, s, p.d);
           lo = B.pLo; hi = B.pHi;
+          // ST26 (opt-in): with local zones a walker takes the line past a stoop flight 2 m BEFORE it (the station ahead
+          // in its own direction), not at it, and is back in its lane once the flight is behind it
+          if (ST26 && p.e.zK && p.e.zGen === this._obsGen) {
+            const j2 = Math.max(0, Math.min(p.e.zK.length - 1, Math.round((p.d + p.dir * 2) / 2)));
+            let l2 = Math.max(B.lo, Math.min(B.pHi, p.e.zK[j2])), h2 = Math.min(B.hi, Math.max(B.pLo, p.e.zF[j2]));
+            if (h2 - l2 < 0.3) { l2 = Math.max(B.pLo, Math.min(l2, h2 - 0.3)); if (h2 < l2) h2 = l2; }
+            B.lo = l2; B.hi = h2;
+          }
           if (p.lu === undefined) p.lu = Math.random();
           if ((p.d < 6 || p.e.len - p.d < 6) && p.e.len > 12) {
             const sR = this.sample(p.e, p.d < 6 ? 6 : p.e.len - 6), hR = Math.max(lo, sR.wOut - 0.5);

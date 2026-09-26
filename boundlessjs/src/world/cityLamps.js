@@ -73,6 +73,10 @@ const LOOP = /* glsl */ `
 			float f = cl24Throw( -Lw, lc.w );
 			if ( f <= 0.0 ) continue;
 			directLight.direction = clR * Lw;
+			#ifdef CL_R0
+			// a finite luminaire for surfaces that reach into its near field (tree crowns): no inverse-square blow-up
+			d = sqrt( d2 + float( CL_R0 ) * float( CL_R0 ) );
+			#endif
 			directLight.color = lc.rgb * ( f * getDistanceAttenuation( d, lp.w, 2.0 ) );
 			directLight.visible = true;
 			RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );

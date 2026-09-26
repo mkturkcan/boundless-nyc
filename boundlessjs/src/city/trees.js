@@ -400,7 +400,27 @@ const LEAF25 = {
   // Swept at harlemRow (sweep1/sweep3): (0.72, 1.5) left sun-facing cards cream and the shade at ~0.5x the reference;
   // (0.32, 3.2) puts the mid canopy at (96-102, 109-115, 44-46) against Street View's (93-123, 113-143, 50-69).
   bal: { value: new THREE.Vector4(0.32, 3.2, 0.75, 0.3) },
+  // TC26 sun self-shadow: x floor, y peak (mixed by the baked sun visibility toward the actual sun), z visibility exponent,
+  // w clump-normal weight on the sun's diffuse
+  sun: { value: new THREE.Vector4(0.08, 1.25, 1.2, 1.5) },
+  // TC26 waxy sheen: x roughness, y gain, z true-card-facing share of its normal; w per-clump tone amplitude
+  sheen: { value: new THREE.Vector4(0.5, 0.0, 0.5, 0.10) },
+  // TC26 clump sky: x how much ambient a clump's underside loses (tops keep theirs: nothing is lifted), y the sheen's F90,
+  // z the indirect gain at night (replaces bal.y as ENV.night goes 0.15 -> 0.6; golden 0.05 keeps bal.y)
+  clu: { value: new THREE.Vector4(0.6, 0.5, 1.2, 0) },
 };
+// TC26 (2026-09-25 night): the sunlit half of a crown read as ONE flat tone, because the only occlusion on the sun was the
+// sky AO (direction-blind) over a half-volume, half-clump normal. Now the bake carries each vertex's visibility toward any
+// sun direction (aSun: a linear fit of the leaf-density transmittance, treeGen.js) and the pure clump normal (aClu, with a
+// per-clump tone), so the sun lights the sun-side shell of every clump, the clump's far side and the crown interior fall
+// into their own shade, and a rougher cuticle lobe gives waxy leaves their sheen. Lamps keep the sky AO, and the crown sees
+// them as finite luminaires (cityLamps.js CL_R0): the near field no longer blows the crown out under the lamp head.
+// The day terms are ON at the TV25 balance (backlit check: no lift, columbia 104,130,101 -> 104,129,102; the lit half of a
+// front-lit crown gains cluster shade, lead sweep sw3 harlemRow). A larger direct share (0.55) gave more depth front-lit but
+// whitened backlit crowns, so the balance stays. `?tc26=0` restores TV25 by day exactly; window.__TC26(on) switches in place.
+// The NIGHT half (N26: CL_R0 near field + the night indirect gain) is on; `?tc26n=0` restores TV25 at night exactly.
+let TC26 = !(typeof location !== 'undefined' && /(^|[?&])tc26=0/.test(location.search));
+const N26 = !(typeof location !== 'undefined' && /(^|[?&])tc26n=0/.test(location.search));
 if (typeof window !== 'undefined') window.__TREE25 = LEAF25;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -423,6 +443,13 @@ function wrapTex25(img, srgb) {
   t.anisotropy = 8; t.needsUpdate = true;
   return t;
 }
+// TC26: the crown takes the street lamps as finite luminaires (cityLamps.js CL_R0, metres): leaves 1-3 m from a lamp head
+// sat in its inverse-square near field and blew out
+function tc26Defines(m) {
+  m.defines = { ...(m.defines || {}) };
+  if (TC26 || N26) m.defines.CL_R0 = '2.5';
+  else delete m.defines.CL_R0;
+}
 // the crown's TV25 shading, chained after every other hook on the shared crownMat
 function applyCrownShading25(m) {
   if (m.__tv25) return;
@@ -431,17 +458,68 @@ function applyCrownShading25(m) {
     prev?.call(m, sh, r);
     sh.uniforms.uLeafGain = LEAF25.gain; sh.uniforms.uLeafLight = LEAF25.light; sh.uniforms.uLeafTrans = LEAF25.trans; sh.uniforms.uLeafBal = LEAF25.bal;
     sh.uniforms.uLeafNight = ENV.night;
+    if (TC26) { sh.uniforms.uLeafSun = LEAF25.sun; sh.uniforms.uLeafSheen = LEAF25.sheen; sh.uniforms.uLeafClu = LEAF25.clu; }
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aAO; varying float vAO25;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO25 = aAO;');
+      .replace('#include <common>', '#include <common>\nattribute float aAO; varying float vAO25;' + (TC26 ? '\nattribute vec4 aSun; attribute vec3 aClu; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26;' : ''))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO25 = aAO;' + (TC26 ? `
+      {
+        // TC26: the sun visibility gradient, the clump normal and the card facing into view space (a missing attribute
+        // reads (0,0,0,1): fully visible, no clump, no facing)
+        mat3 m26 = mat3( modelViewMatrix );
+        #ifdef USE_INSTANCING
+          m26 = m26 * mat3( instanceMatrix );
+        #endif
+        float sl26 = length( aSun.xyz ), cl26 = length( aClu );
+        vec3 s26 = m26 * aSun.xyz, c26 = m26 * aClu, f26 = m26 * aFace;
+        vSun26 = vec4( sl26 > 1e-3 ? normalize( s26 ) * sl26 : vec3( 0.0 ), aSun.w );
+        vClu26 = cl26 > 0.3 ? normalize( c26 ) : vec3( 0.0 );
+        vTone26 = cl26 > 0.3 ? clamp( ( cl26 - 0.75 ) * 4.0, -1.0, 1.0 ) : 0.0;
+        vFace26 = length( f26 ) > 1e-3 ? normalize( f26 ) : vec3( 0.0 );
+      }` : ''));
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uLeafGain; uniform vec4 uLeafLight; uniform vec3 uLeafTrans; uniform vec4 uLeafBal; uniform float uLeafNight; varying float vAO25;')
+      .replace('#include <common>', '#include <common>\nuniform vec3 uLeafGain; uniform vec4 uLeafLight; uniform vec3 uLeafTrans; uniform vec4 uLeafBal; uniform float uLeafNight; varying float vAO25;'
+        + (TC26 ? '\nuniform vec4 uLeafSun; uniform vec4 uLeafSheen; uniform vec4 uLeafClu; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26; float leaf26Sun = 0.0;' : ''))
       // the prop light-trim contract (materials.js applyLightTrim), with the atlas carrying a real leaf albedo
-      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uLeafGain * mix(0.30, 0.88, uLeafNight);')
+      // (TC26: x a per-clump tone, lighter and warmer or darker and cooler, so clumps read as units)
+      .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uLeafGain * mix(0.30, 0.88, uLeafNight)'
+        + (TC26 ? ' * ( 1.0 + uLeafSheen.w * vTone26 * vec3( 1.3, 1.0, 0.45 ) );' : ';'))
       // both faces of a card take the OUTWARD crown-volume normal (three flips it on back faces)
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif')
       // wrap + transmission: thin leaves light around the terminator, and a backlit crown rim glows
-      .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>
+      .replace('#include <lights_physical_pars_fragment>', TC26 ? `#include <lights_physical_pars_fragment>
+void RE_Direct_Leaf25( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
+  // lamps (and any light but the sun): the sky AO on the direct, as in TV25
+  vec3 N = geometryNormal;
+  float occ = mix( 1.0, vAO25, uLeafLight.z );
+  if ( leaf26Sun > 0.5 ) {
+    // the sun: clump-weighted normal, and the baked visibility toward THIS light direction (per-clump self-shadowing)
+    N = normalize( geometryNormal + vClu26 * uLeafSun.w );
+    float vis = saturate( vSun26.w + dot( vSun26.xyz, directLight.direction ) );
+    occ = mix( uLeafSun.x, uLeafSun.y, pow( vis, uLeafSun.z ) );
+  }
+  vec3 col = directLight.color * occ;
+  float dotNL = dot( N, directLight.direction );
+  float w = uLeafLight.w;
+  vec3 irradiance = saturate( ( dotNL + w ) / ( 1.0 + w ) ) * col;
+  reflectedLight.directSpecular += saturate( dotNL ) * col * BRDF_GGX_Multiscatter( directLight.direction, geometryViewDir, N, material );
+  reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );
+  float back = pow( saturate( dot( geometryViewDir, -directLight.direction ) ), uLeafLight.y );
+  float away = saturate( -dotNL );
+  // (transmission takes the visibility but never the sunlit lift: a backlit crown goes darker green with glowing rims)
+  reflectedLight.directDiffuse += directLight.color * min( occ, 1.0 ) * material.diffuseContribution * uLeafTrans * ( 0.3 * away + back ) * uLeafLight.x * RECIPROCAL_PI;
+  if ( leaf26Sun > 0.5 && uLeafSheen.y > 0.0 ) {
+    // waxy cuticle sheen: a rougher lobe on a normal between the clump's and the card's own (turned to the viewer)
+    vec3 F = vFace26 * ( dot( vFace26, geometryViewDir ) < 0.0 ? -1.0 : 1.0 );
+    vec3 Ns = normalize( mix( N, F, uLeafSheen.z ) + N * 1e-3 );
+    PhysicalMaterial ms = material;
+    ms.roughness = uLeafSheen.x;
+    ms.specularColorBlended = vec3( 0.04 );
+    ms.specularF90 = uLeafClu.y;
+    reflectedLight.directSpecular += saturate( dot( Ns, directLight.direction ) ) * col * BRDF_GGX( directLight.direction, geometryViewDir, Ns, ms ) * uLeafSheen.y;
+  }
+}
+#undef RE_Direct
+#define RE_Direct RE_Direct_Leaf25` : `#include <lights_physical_pars_fragment>
 void RE_Direct_Leaf25( const in IncidentLight directLight, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in PhysicalMaterial material, inout ReflectedLight reflectedLight ) {
   float dotNL = dot( geometryNormal, directLight.direction );
   float w = uLeafLight.w;
@@ -455,13 +533,28 @@ void RE_Direct_Leaf25( const in IncidentLight directLight, const in vec3 geometr
 #undef RE_Direct
 #define RE_Direct RE_Direct_Leaf25`)
       // baked crown AO: all of the ambient, part of the direct (self-shadowing the shadow map is too coarse for)
-      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+      .replace('#include <lights_fragment_end>', TC26 ? `#include <lights_fragment_end>
+      // (the canopy's multiple-scattering gain is a DAYLIGHT calibration: at night the ambient is the warm street bounce, and
+      // x3.2 on it lit every crown in the street like a lamp; night takes uLeafClu.z)
+      reflectedLight.indirectDiffuse *= mix(uLeafBal.w, 1.0, vAO25) * mix( uLeafBal.y, uLeafClu.z, smoothstep( 0.15, 0.6, uLeafNight ) )
+        * ( 1.0 - uLeafClu.x * 0.5 * saturate( -dot( vClu26, normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) ) ) );
+      reflectedLight.indirectSpecular *= mix(0.35, 1.0, vAO25) * uLeafBal.z;
+      reflectedLight.directDiffuse *= uLeafBal.x;
+      reflectedLight.directSpecular *= uLeafBal.x;` : `#include <lights_fragment_end>
       reflectedLight.indirectDiffuse *= mix(uLeafBal.w, 1.0, vAO25) * uLeafBal.y;
       reflectedLight.indirectSpecular *= mix(0.35, 1.0, vAO25) * uLeafBal.z;
       reflectedLight.directDiffuse *= mix(1.0, vAO25, uLeafLight.z) * uLeafBal.x;
       reflectedLight.directSpecular *= mix(1.0, vAO25, uLeafLight.z) * uLeafBal.x;`);
+    // TC26: flag the directional (sun) loop, so RE_Direct_Leaf25 knows the sun from the street lamps and headlamps
+    if (TC26) {
+      const lfb = THREE.ShaderChunk.lights_fragment_begin, mk = '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )';
+      if (lfb.includes(mk)) sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_begin>', lfb.replace(mk, 'leaf26Sun = 1.0;\n' + mk));
+    }
   };
-  m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|tv25';
+  tc26Defines(m);
+  m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + (TC26 ? '|tv25|tc26' : '|tv25');
+  // measurement pages: window.__TC26(false|true) switches the crown between TV25 and TC26 shading in place (one recompile)
+  if (typeof window !== 'undefined') window.__TC26 = (on) => { TC26 = !!on; tc26Defines(m); m.needsUpdate = true; return TC26; };
   m.__tv25 = true;
   m.needsUpdate = true;
 }
@@ -636,6 +729,14 @@ async function upgradeTreesTV25(instancer) {
   }
   applyEdgeFade(instancer);
   applyCrownShading25(instancer.crownMat);
+  // N26: the canopy's x3.2 multiple-scattering gain is a DAYLIGHT calibration; on the warm night bounce it lit every crown in
+  // the street (harlemRowN: canopy 60,51 -> 34,24 at x1.0, lamp core unchanged). Night 0.15 -> 0.6 takes it to 1.0; golden
+  // (0.05) and day keep 3.2 exactly.
+  if (N26) {
+    const B0 = LEAF25.bal.value.y;
+    const nightBal = () => { const n = ENV.night.value, t = Math.min(1, Math.max(0, (n - 0.15) / 0.45)); LEAF25.bal.value.y = B0 + (1.0 - B0) * t * t * (3 - 2 * t); requestAnimationFrame(nightBal); };
+    requestAnimationFrame(nightBal);
+  }
   instancer.crownMat.map = T.atlas;
   instancer.crownMat.alphaTest = T25.ALPHA;
   instancer.crownMat.needsUpdate = true;

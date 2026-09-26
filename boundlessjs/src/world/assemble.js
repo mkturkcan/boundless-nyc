@@ -1655,8 +1655,21 @@ export async function assembleTile(key, arrayBuf, ctx) {
   // Park lawn in the critic's worst frame since round 1) and the pedestrian
   // graph must not run down the middle of the carriageway (26.8 % of its
   // vertices did). Published on the tile record as `surfaceInfo`.
+  // GT26 (sims, 2026-09-25): the TOP surface. Planting beds (the Lenox malls, campus beds, park path ends) compile as a
+  // grass section laid 5-10 cm OVER a sidewalk section, and the pavement-first answer let walkers stand on the beds
+  // with their feet under the drawn grass. Where a grass (or campus underlay) triangle covers the point and lies above
+  // the pavement found, the answer is the grass and its height. `?gtop=0`: pavement first, as before.
+  const GTOP = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gtop') === '0');
+  const grassOver = (x, z, y) => {
+    if (!GTOP) return null;
+    const g = sectionY('grass', x, z, 0.02);
+    return g !== null && g > y + 0.01 ? g : null;
+  };
   const surfaceKindAt = (x, z, tol = 0.35) => {
-    for (const k of WALK_KINDS) { const y = sectionY(k, x, z, tol); if (y !== null) return { kind: k, y, road: false }; }
+    for (const k of WALK_KINDS) {
+      const y = sectionY(k, x, z, tol);
+      if (y !== null) { const g = grassOver(x, z, y); return g !== null ? { kind: 'grass', y: g, road: false } : { kind: k, y, road: false }; }
+    }
     const g = sectionY('grass', x, z, tol); if (g !== null) return { kind: 'grass', y: g, road: false };
     for (const k of ROAD_KINDS) { const y = sectionY(k, x, z, tol); if (y !== null) return { kind: k, y, road: true }; }
     return null;
@@ -2869,7 +2882,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     // the tile's own top-surface sampler, published so that anything which
     // stands on the ground (peds, the player, later the vehicle sim) can ask
     // the pavement its height instead of guessing a lift off the terrain grid.
-    surfaceY: (x, z) => padYAt(x, z, 0.45),
+    surfaceY: (x, z) => { const y = padYAt(x, z, 0.45), g = y !== null ? grassOver(x, z, y) : null; return g !== null ? g : y; },   // GT26: the top
     // …and WHAT that surface is ({kind, y, road}), so a sim can refuse to put a
     // parked car on a lawn or a pedestrian in a traffic lane.
     surfaceInfo: (x, z, tol = 0.4) => surfaceKindAt(x, z, tol),

@@ -30,7 +30,7 @@ import * as THREE from 'three';
 
 // Bump when a change here alters the generated geometry: the baked set (public/models/trees25, tools/bake_trees.mjs)
 // carries this in its key, and trees.js falls back to runtime generation (and says so) when the key is stale.
-export const TREE_GEN_VERSION = 1;
+export const TREE_GEN_VERSION = 2;   // 2: TC26 aSun + aClu
 // FNV-1a over the forms, the pool list and the code versions: the identity of a bake
 export function bakeKey25(forms, pools, extra = '') {
   const s = JSON.stringify(forms) + '|' + pools.join(',') + '|g' + TREE_GEN_VERSION + '|' + extra;
@@ -417,6 +417,37 @@ function skyVis(D, x, y, z, ext) {
   }
   return sv / sw;
 }
+// TC26 SUN VISIBILITY: the same transmittance along the 17 sky directions, fitted (least squares) as vis(L) ~ c0 + c1.L,
+// so the shader can self-shadow a card toward the ACTUAL sun: the sun-side shell of every clump stays open, the clump's
+// far side, the crown interior and the anti-sun half go dark. SUN_FIT[k] = row k of (A^T A)^-1 A^T, A rows [1, d].
+const SUN_FIT = (() => {
+  const a = [0, 1, 2, 3].map(() => new Array(8).fill(0));
+  for (const [dx, dy, dz] of SKY_DIRS) { const r = [1, dx, dy, dz]; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) a[i][j] += r[i] * r[j]; }
+  for (let i = 0; i < 4; i++) a[i][4 + i] = 1;
+  for (let c = 0; c < 4; c++) {
+    let p = c;
+    for (let r = c + 1; r < 4; r++) if (Math.abs(a[r][c]) > Math.abs(a[p][c])) p = r;
+    [a[c], a[p]] = [a[p], a[c]];
+    const d = a[c][c];
+    for (let j = 0; j < 8; j++) a[c][j] /= d;
+    for (let r = 0; r < 4; r++) if (r !== c) { const f = a[r][c]; for (let j = 0; j < 8; j++) a[r][j] -= f * a[c][j]; }
+  }
+  return SKY_DIRS.map(([dx, dy, dz]) => [0, 1, 2, 3].map((i) => a[i][4] + a[i][5] * dx + a[i][6] * dy + a[i][7] * dz));
+})();
+function sunFit(D, x, y, z, ext) {
+  const st = D.cs * 0.75;
+  let c0 = 0, c1 = 0, c2 = 0, c3 = 0;
+  for (let k = 0; k < SKY_DIRS.length; k++) {
+    const [dx, dy, dz] = SKY_DIRS[k];
+    let tau = 0;
+    for (let t = st * 0.6; t < D.reach; t += st) tau += D.at(x + dx * t, y + dy * t, z + dz * t) * st;
+    const T = Math.exp(-ext * tau), m = SUN_FIT[k];
+    c0 += m[0] * T; c1 += m[1] * T; c2 += m[2] * T; c3 += m[3] * T;
+  }
+  return [c1, c2, c3, c0];
+}
+// a clump's tone offset in [-1, 1] from its centre (no rnd(): the generator's stream, and so every other output, is unchanged)
+const toneHash = (x, y, z) => { const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719) * 43758.5453; return (s - Math.floor(s)) * 2 - 1; };
 
 // ---------------------------------------------------------------- geometry: bark tubes
 function tubes(branches, segsByLvl, secLenByLvl, tint, aoFn, barkU, minR2) {
@@ -479,10 +510,12 @@ function tubes(branches, segsByLvl, secLenByLvl, tint, aoFn, barkU, minR2) {
 // `cellUV(cell)` -> [u0, v0, u1, v1] in the leaf atlas. Normals are the crown-VOLUME normal (ellipsoid gradient from
 // the crown centre, lifted toward the sky) so a card shades as part of the crown mass, not as a flat sheet; `aFace`
 // keeps the true card facing for the edge-on fade; `aAO` is the baked crown sky visibility.
-function cardsGeo(cards, env, cellUV, colFn) {
+function cardsGeo(cards, env, cellUV, colFn, sunFn) {
   const n = cards.length;
   const P = new Float32Array(n * 12), N = new Float32Array(n * 12), UV = new Float32Array(n * 8);
   const C = new Float32Array(n * 12), FA = new Float32Array(n * 12), AO = new Float32Array(n * 4);
+  // TC26: aSun (sun-visibility fit, xyz gradient + w constant) and aClu (the pure clump normal x (0.75 + 0.25 tone))
+  const SV = new Float32Array(n * 16), CLU = new Float32Array(n * 12);
   const I = new (n * 4 > 65535 ? Uint32Array : Uint16Array)(n * 6);
   const cy = env.yb + env.cH * 0.55, ry = Math.max(0.5, env.cH * 0.55), rx = Math.max(0.5, env.R0);
   for (let k = 0; k < n; k++) {
@@ -515,7 +548,13 @@ function cardsGeo(cards, env, cellUV, colFn) {
         const kl = Math.hypot(kx, ky, kz) || 1;
         const wk = c.clump ? 0.5 : 0.3;
         nx = nx * (1 - wk) + (kx / kl) * wk; ny = ny * (1 - wk) + (ky / kl) * wk; nz = nz * (1 - wk) + (kz / kl) * wk;
+        if (!c.bark) {
+          const tk = 0.75 + 0.25 * toneHash(cl[0], cl[1], cl[2]);
+          CLU[o] = (kx / kl) * tk; CLU[o + 1] = (ky / kl) * tk; CLU[o + 2] = (kz / kl) * tk;
+        }
       }
+      if (sunFn) { const sv = sunFn(q[j][0], q[j][1], q[j][2]); SV.set(sv, (k * 4 + j) * 4); }
+      else SV[(k * 4 + j) * 4 + 3] = 1;
       // a quarter of the card's own facing (flipped to the outside) keeps some leaf-to-leaf value break-up
       const sgn = nf[0] * nx + nf[1] * ny + nf[2] * nz < 0 ? -0.22 : 0.22;
       nx += nf[0] * sgn; ny += nf[1] * sgn; nz += nf[2] * sgn;
@@ -536,6 +575,8 @@ function cardsGeo(cards, env, cellUV, colFn) {
   g.setAttribute('color', new THREE.BufferAttribute(C, 3));
   g.setAttribute('aFace', new THREE.BufferAttribute(FA, 3));
   g.setAttribute('aAO', new THREE.BufferAttribute(AO, 1));
+  g.setAttribute('aSun', new THREE.BufferAttribute(SV, 4));
+  g.setAttribute('aClu', new THREE.BufferAttribute(CLU, 3));
   g.setIndex(new THREE.BufferAttribute(I, 1));
   g.computeBoundingSphere(); g.computeBoundingBox();
   return g;
@@ -609,7 +650,8 @@ export function buildTree(F, H, W, seed, opts) {
     return [(0.93 + 0.1 * o + hj) * j, (0.97 + 0.05 * o) * j, (1.0 - 0.1 * o - hj * 0.5) * j];
   };
   const cellUV = opts.cellUV;
-  const leaves0 = cardsGeo(cards0, env, cellUV, colFn);
+  const sunOf = (x, y, z) => sunFit(D, x, y, z, ext);
+  const leaves0 = cardsGeo(cards0, env, cellUV, colFn, sunOf);
   // LOD1 crown + trunk proxy (two crossed quads in the solid bark cell of the atlas)
   if (opts.barkCell != null) {
     const trunkTopY = Math.min(sk.topY, env.yb + 0.25 * env.cH);
@@ -622,7 +664,7 @@ export function buildTree(F, H, W, seed, opts) {
       cards1.push({ p: [t0.p[0], -0.08, t0.p[2]], d: dir, size: len + 0.08, aspect: (sk.r0 * 2.3) / (len + 0.08), side, face, cell: opts.barkCell, flip: false, outer: 0.2, ao: 0.55, bark: true });
     }
   }
-  const leaves1 = cardsGeo(cards1, env, cellUV, (c) => (c.bark ? [1, 1, 1] : colFn(c)));
+  const leaves1 = cardsGeo(cards1, env, cellUV, (c) => (c.bark ? [1, 1, 1] : colFn(c)), sunOf);
   // ---- bark: trunk, scaffolds, secondaries (LOD0 only; far trees draw the proxy above)
   const tint = F.barkTint || [1, 1, 1];
   const aoBark = (p) => 0.34 + 0.66 * Math.pow(aoOf(p[0], p[1], p[2]), 0.7);

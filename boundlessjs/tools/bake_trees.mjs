@@ -45,7 +45,7 @@ const enc = (g) => {
   const G = { attrs: {} };
   for (const [name, a] of Object.entries(g.attributes)) {
     let arr, type = 'f32', norm = false;
-    if (name === 'normal' || name === 'aFace') { arr = Int8Array.from(a.array, (v) => Math.max(-127, Math.min(127, Math.round(v * 127)))); type = 'i8'; norm = true; }
+    if (name === 'normal' || name === 'aFace' || name === 'aSun' || name === 'aClu') { arr = Int8Array.from(a.array, (v) => Math.max(-127, Math.min(127, Math.round(v * 127)))); type = 'i8'; norm = true; }
     else if (name === 'aAO') { arr = Uint8Array.from(a.array, (v) => Math.max(0, Math.min(255, Math.round(v * 255)))); type = 'u8'; norm = true; }
     else arr = Float32Array.from(a.array);
     G.attrs[name] = [push(arr), a.count, a.itemSize, type, norm];

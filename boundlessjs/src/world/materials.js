@@ -623,6 +623,12 @@ export const CT26 = CT25 && !(typeof location !== 'undefined' && new URLSearchPa
 // the glazing read as frosted panels. Now the reflected ray meets a modelled far wall (lots of varied height and masonry,
 // a window grid, lit like the city) or the roadway, and only above that skyline the sky and the sun. `?wr26=0` reverts.
 export const WR26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('wr26') === '0');
+// FR26 (owner 2026-09-26, "fix still open problems"): a masonry wall seen from the sidewalk read as per-pixel static with blue
+// specks (W 122nd St, 5 m away). The albedo-relief bump takes the screen derivative of the FINAL albedo, photo grain included,
+// and the grain is at full strength at sniff range: its derivative is texel noise, so the relief normal went random per pixel
+// and every pixel reflected a different patch of sky. The relief now reads the albedo with the photo grain divided back out
+// (the procedural pattern, joints and courses keep their relief; the grain stays in the colour). `?fr26=0` reverts.
+export const FR26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('fr26') === '0');
 const STONE_SETS = {
   cgranite:   { mean: [0.3769, 0.2992, 0.1664], size: 2.17 },   // stone_wall_03: speckled, jointless (steps, walls, rims)
   climestone: { mean: [0.3772, 0.2890, 0.1764], size: 3.00 },   // sandstone_blocks_08: ashlar coursing (Low Library)
@@ -1074,14 +1080,14 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
         }
         float wlsg(float a, float b) { return wlh(a, b) * 2.0 - 1.0; }` : ''}
         ${SKYREFL_GLSL}
-        vec3 FAC_emis; float FAC_rough; vec3 FAC_nrmAdj; float FAC_dbg; vec3 FAC_dbgV;
+        vec3 FAC_emis; float FAC_rough; vec3 FAC_nrmAdj; float FAC_dbg; vec3 FAC_dbgV; float FAC_grainL;
         // per-building reflectivity FAMILY, set once in the tower block and
         // read by the glass paths: x = F0, y = plate roughness, z = aureole
         vec3 FAC_glassF; vec3 FAC_reflTint; float FAC_spand;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
       {
         if (vHide > 0.5) discard;   // building rebuilt by the NYC dresser
-        FAC_emis = vec3(0.0); FAC_rough = 0.92; FAC_nrmAdj = vec3(0.0); FAC_dbg = 0.0; FAC_dbgV = vec3(0.0); FAC_spand = 0.0;
+        FAC_emis = vec3(0.0); FAC_rough = 0.92; FAC_nrmAdj = vec3(0.0); FAC_dbg = 0.0; FAC_dbgV = vec3(0.0); FAC_spand = 0.0; FAC_grainL = 1.0;
         float floorH = vAux.x, winW = vAux.y, storeH = vAux.z, style = vAux.w;
         float bldgH = vAux2.x, litAmt = vAux2.y, flags = vAux2.w;
         // seed snapped to a coarse grid: belt-and-suspenders for any geometry path
@@ -2380,6 +2386,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
                 float wFp = max(fwidth(u), fwidth(v));                // wall-meters per pixel
                 float wStr = mix(0.36, 0.05, smoothstep(0.008, 0.06, wFp));
                 albedo *= mix(vec3(1.0), wRatC, wStr);
+                ${FR26 ? 'FAC_grainL = max(mix(1.0, dot(wRatC, vec3(0.2126, 0.7152, 0.0722)), wStr), 0.2);' : ''}
                 // low-frequency hierarchy: 2-6m sun-bleach / repointing blotches so
                 // the grain reads as material inside structure, not even noise
                 float wBlotch = fbm(vec2(u, v) * 0.27 + cvar * 23.0);
@@ -3339,7 +3346,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
           // LARGER as the feature compresses, so the relief grew with distance.
           // Full to ~37 m (a course is 7.5 px), gone by ~100 m.
           bumpG *= smoothstep(${AAFIX ? '0.12, 0.045' : '0.4, 0.14'}, length(fwidth(vWP))); // fade before pattern gradients hit pixel scale (shimmer)
-          float bh = dot(diffuseColor.rgb, vec3(1.05)) * bumpG;
+          float bh = dot(diffuseColor.rgb, vec3(1.05)) ${FR26 ? '/ FAC_grainL ' : ''}* bumpG;
           vec3 bsx = dFdx(-vViewPosition), bsy = dFdy(-vViewPosition);
           vec3 br1 = cross(bsy, normal), br2 = cross(normal, bsx);
           float bdet = dot(bsx, br1);

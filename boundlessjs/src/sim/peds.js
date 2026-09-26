@@ -25,6 +25,27 @@ const PD26 = LN25 && (typeof location === 'undefined' || new URLSearchParams(loc
 // 2026-09-25 against the continuous frontage line it is worse on the Harlem brownstone blocks (W 122nd St: stoop contact
 // 261 -> 369 s, walker contact 148 -> 565 s: both directions converge at every flight), so it is not the default.
 const ST26 = PD26 && typeof location !== 'undefined' && new URLSearchParams(location.search).get('stoop26') === '1';
+// PS26 (owner 2026-09-26, the brownstone blocks of W 122nd St): a stoop, its areaway rails and newel posts belong to the
+// building however far out they reach (an areaway rail 1 m off the kerb had been taken for kerb furniture, putting the band
+// behind it); stoop flights are LOCAL frontage zones again (1.2 m either side of the kit), so the two lanes stay open beside
+// a stoop wherever the paving has room, and each walker takes its line past the frontage over the 4 m ahead of it (past a
+// flight before reaching it, never into an areaway gap it would have to leave at the next one); where a stoop leaves no
+// paving inside the kerb margin the line runs along the kerb edge instead of through the newel posts; and a pinch one house
+// long (a flight facing a tree guard, an areaway 1 m off the kerb) is walked ONE DIRECTION AT A TIME: a walker who finds
+// someone coming the other way in it, or waiting for it longer, waits a step short of it and goes in turn (_pinch).
+// `?pass26=0`: the PD26 behaviour; `?ps26z=0` without the local zones and the look-ahead, `?ps26p=0` without the pinches.
+const PS26 = PD26 && !ST26 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('pass26') !== '0');
+const PS26F = (k) => PS26 && (typeof location === 'undefined' || new URLSearchParams(location.search).get(k) !== '0');
+const PS26Z = PS26F('ps26z'), PS26P = PS26F('ps26p');
+// `?ps26w=1` (opt-in): a walker held in a queue behind a kerb row rates a stoop or a tree guard beside the row at twice a
+// person. Measured 2026-09-26: fewer walkers waiting inside the stoops at the corners, but more shoulder contact in the
+// corner queues (W 122nd, Amsterdam, Marcus Garvey Park), so not the default.
+const PS26W = PS26 && typeof location !== 'undefined' && new URLSearchParams(location.search).get('ps26w') === '1';
+// HP26 (opt-in, `?hop26=1`; 2026-09-26, the Marcus Garvey Park stalls): a walker held on a hop (a corner or a path end,
+// not the roadway) by people standing on its line turns round after 5 s and walks back to where it started (a walker stood
+// 40 s in the middle of a 30 m hop at the park's west side behind a kerb row). Not the default: at a busy corner the hops
+// that turned round fed the kerb queue they had left (W 122nd / Mt Morris Park West, walker contact 165 -> 554 s).
+const HP26 = PY25 && typeof location !== 'undefined' && new URLSearchParams(location.search).get('hop26') === '1';
 const PED_TARGET = Math.min(700, Number(typeof location !== 'undefined' && new URLSearchParams(location.search).get('pedtarget')) || 520); // reference-photo sidewalk density; ?pedtarget=N (film)
 // SPAWN_R0 was 40 m: an eye-level camera at 2.4 m stands in the middle of a 40 m
 // hole, which is exactly the part of the frame the photographs fill with people
@@ -696,10 +717,12 @@ export class Peds {
   _zones(e) {
     e.zGen = this._obsGen;
     e.zK = e.zF = null;
+    e.zLo = e.zHi = e.pr = e.prQ = null;
     const G = this._obsG, L = this._obsL;
     if (!G || !L || !L.length || e.campus || e.kind === 'path' || !(e.len > 0)) return;
     const n = Math.floor(e.len / 2) + 1, zK = new Float32Array(n).fill(-99), zF = new Float32Array(n).fill(99);
-    const FR = ST26 ? 1 : 3;
+    const FR = ST26 ? 1 : PS26Z ? 1.2 : 3;
+    const zLo = PS26 ? new Float32Array(n) : null, zHi = PS26 ? new Float32Array(n) : null;
     let any = false;
     for (let j = 0; j < n; j++) {
       const s = this.sample(e, Math.min(e.len, j * 2)), ob = e.side || 1;
@@ -726,6 +749,9 @@ export class Peds {
             let kerbSide = bmin < pLo + 1.2, bldgSide = bmax > bl - 1.2;
             // reaching over most of the width (a deep stoop, a shelter): it belongs to the side it stands against
             if (kerbSide && bldgSide) { if (bl - bmax <= bmin - pLo) kerbSide = false; else bldgSide = false; }
+            // PS26: a stoop, its areaway rails and newel posts belong to the building, however far out they reach (an areaway
+            // rail 1 m off the kerb was taken for kerb furniture and put the band behind it, in the areaway)
+            if (PS26 && b.n === 'stoop') { kerbSide = false; bldgSide = true; }
             if (!kerbSide && !bldgSide) continue;             // mid-pavement: the look-ahead goes round it
             // tree pits 8-9 m apart keep one furniture line (+-4.5 m); a stoop run keeps one frontage line (+-3 m).
             // ST26 (opt-in): frontage kit only where it stands (the station's own 2 m), the areaway between two flights
@@ -739,12 +765,72 @@ export class Peds {
       // a Lenox Ave footprint for a minute)
       if (PD26) for (let l = Math.max(pLo, -0.5); l <= bl + 0.3; l += 0.25) if (this._inBuilding(s.x + nx * l, s.z + nz * l, s.y)) { if (l - 0.5 < F) F = l - 0.5; break; }
       zK[j] = K; zF[j] = F;
+      if (PS26) {
+        // the band this station alone leaves (as _band computes it), for the walkers' look-ahead and the pinches
+        const pHi = Math.max(pLo, bl - 0.5);
+        let lo = Math.min(pHi, Math.max(pLo, -(s.wIn ?? e.wIn ?? 0.6))), hi = pHi;
+        if (K > lo) lo = Math.min(pHi, K);
+        if (F < hi) hi = Math.max(pLo - 0.45, F);
+        zLo[j] = lo; zHi[j] = hi;
+      }
       if (K > -99 || F < 99) any = true;
     }
     if (any) { e.zK = zK; e.zF = zF; }
+    if (PS26 && any) {
+      e.zLo = zLo; e.zHi = zHi;
+      // PINCHES: the stations with less than 0.5 m of band (two people passing need their centres 0.5 m apart), padded
+      // 1.2 m either way; two pinches under 2.5 m apart are one (no room to wait between them)
+      const R = [];
+      for (let j = 0; j < n; j++) {
+        if (zHi[j] - zLo[j] >= 0.5) continue;
+        let k = j;
+        while (k + 1 < n && zHi[k + 1] - zLo[k + 1] < 0.5) k++;
+        const a = Math.max(3, j * 2 - 1.2), b = Math.min(e.len - 3, k * 2 + 1.2);
+        if (b - a < 0.5) { j = k; continue; }
+        if (R.length && a - R[R.length - 1] < 2.5) R[R.length - 1] = b; else R.push(a, b);
+        j = k;
+      }
+      // one direction at a time only where the pinch is one house long (a flight, a guard facing a flight, an areaway 1 m
+      // off the kerb): a brownstone row whose pinches run together is walked in single file both ways, as before (one-way
+      // stretches of 10-20 m held walkers for 20 s and bunched them up)
+      for (let i = R.length - 2; i >= 0; i -= 2) if (R[i + 1] - R[i] > 9) R.splice(i, 2);
+      if (R.length) { e.pr = R; e.prQ = []; for (let i = 0; i < R.length; i += 2) e.prQ.push({ tP: -1e9, tN: -1e9, wP: 0, wN: 0, wtP: -1e9, wtN: -1e9 }); }
+    }
+  }
+  // PS26: is d on e within 1 m of one of its pinches (no random stop there)
+  _inPinch(e, d) {
+    const R = e.pr;
+    for (let i = 0; i < R.length; i += 2) if (d >= R[i] - 1 && d <= R[i + 1] + 1) return true;
+    return false;
+  }
+  // PS26: the pinch of p's sidewalk that p is in or comes to within 4 m. null: walk on (it is in it, or the way is free: the
+  // walkers going the other way wait now), else the distance ahead at which p stops, 0.8 m short of it, and waits in turn
+  _pinch(p) {
+    const R = p.e.pr, now = this._simT, pos = p.dir > 0;
+    let k = -1;
+    if (pos) { for (let i = 0; i < R.length; i += 2) if (R[i + 1] >= p.d) { k = i; break; } }
+    else for (let i = R.length - 2; i >= 0; i -= 2) if (R[i] <= p.d) { k = i; break; }
+    if (k < 0) { p._pwS = undefined; return null; }
+    const q = p.e.prQ[k >> 1], ahead = pos ? R[k] - p.d : p.d - R[k + 1];
+    if (ahead <= 0 || p._prK === q) { if (pos) q.tP = now; else q.tN = now; p._prK = q; p._pwS = undefined; return null; }
+    if (ahead > 4) { p._pwS = undefined; return null; }
+    const busy = now - (pos ? q.tN : q.tP) < 0.35;
+    // in turn: someone on the other side who has waited 3 s, and longer than anyone on this side, goes first
+    const wO = pos ? q.wN : q.wP, wOt = pos ? q.wtN : q.wtP, wM = pos ? q.wP : q.wN, wMt = pos ? q.wtP : q.wtN;
+    const mine = p._pwS ?? now, first = now - wMt < 0.35 ? Math.min(wM, mine) : mine;
+    const theirs = now - wOt < 0.35 && now - wO > 3 && (wO < first || (wO === first && !pos));
+    if (!busy && !theirs) {
+      if (ahead < 1.5) { if (pos) q.tP = now; else q.tN = now; p._prK = q; }   // committed: from now on the others wait
+      p._pwS = undefined;
+      return null;
+    }
+    if (p._pwS === undefined) p._pwS = now;
+    if (pos) { q.wP = now - q.wtP < 0.35 ? Math.min(q.wP, p._pwS) : p._pwS; q.wtP = now; }
+    else { q.wN = now - q.wtN < 0.35 ? Math.min(q.wN, p._pwS) : p._pwS; q.wtN = now; }
+    return Math.max(0, ahead - 0.8);
   }
   _band(e, s, d) {
-    const B = this._bnd || (this._bnd = { lo: 0, hi: 0, pLo: 0, pHi: 0 });
+    const B = this._bnd || (this._bnd = { lo: 0, hi: 0, pLo: 0, pHi: 0, pLo0: 0 });
     const pLo = -(s.wInP ?? s.wIn ?? e.wIn ?? 0.6), pHi = Math.max(pLo, s.wOut - 0.5);
     let lo = Math.min(pHi, Math.max(pLo, -(s.wIn ?? e.wIn ?? 0.6))), hi = pHi;
     // the zones are measured again after each new obstacle grid, a few edges per update
@@ -752,14 +838,17 @@ export class Peds {
     if (e.zK) {
       const j = Math.max(0, Math.min(e.zK.length - 1, Math.round(d / 2)));
       if (e.zK[j] > lo) lo = Math.min(pHi, e.zK[j]);
-      if (e.zF[j] < hi) hi = Math.max(pLo, e.zF[j]);
+      if (e.zF[j] < hi) hi = Math.max(PS26 ? pLo - 0.45 : pLo, e.zF[j]);   // PS26: kit out past the paving limit: the kerb edge
     }
+    let pL = pLo;
     if (hi - lo < 0.3) {
-      // no room between the kerb furniture and the frontage (a stoop run): the walk is the paving that is left
-      lo = Math.max(pLo, Math.min(lo, hi - 0.3));
+      // no room between the kerb furniture and the frontage (a stoop run): the walk is the paving that is left. PS26: down
+      // to the kerb edge itself (the paving limit stands 0.5 m in from it) where a stoop's newel posts reach that far out
+      if (PS26) pL = pLo - 0.45;
+      lo = Math.max(pL, Math.min(lo, hi - 0.3));
       if (hi < lo) hi = lo;
     }
-    B.lo = lo; B.hi = hi; B.pLo = pLo; B.pHi = pHi;
+    B.lo = lo; B.hi = hi; B.pLo = PS26 ? Math.min(pLo, lo) : pLo; B.pHi = pHi; B.pLo0 = pLo;
     return B;
   }
   // the line of a walker at place u (0 = the middle of the band, 1 = the outer edge of its half) in the half on its right
@@ -942,7 +1031,7 @@ export class Peds {
           _x: undefined, _y: undefined, _z: undefined, _vx: undefined, _vz: undefined, _latA: undefined, _latV: undefined,
           _vT: undefined, _vTh: undefined, _vBy: undefined, _sq: undefined, _avT: undefined, _bkT: undefined, _kerb: undefined,
           _obsGen: undefined, _pgT: undefined, blockT: undefined, carHold: undefined, carHoldT: undefined, carT: undefined,
-          goT: undefined, pkT: undefined, redWait: undefined, waitT: undefined, color: undefined,
+          goT: undefined, pkT: undefined, redWait: undefined, waitT: undefined, color: undefined, _pwA: undefined, _pwS: undefined, _prK: undefined,
     };
     this.peds.push(ped);
     this.mesh.setColorAt(ped.idx, c);
@@ -971,6 +1060,7 @@ export class Peds {
   update(dt, px, pz, playerVel) {
     if (this._campusTodo && ((this._campusF = (this._campusF || 0) + 1) % 20) === 0) this._buildCampus();
     this._zBud = 3;
+    this._simT = (this._simT || 0) + dt;
     // PY25: the walker hash and the obstacle grids first, so this frame's spawns already test against them
     if (PY25) {
       this._hashWalkers();
@@ -1077,7 +1167,7 @@ export class Peds {
           _x: undefined, _y: undefined, _z: undefined, _vx: undefined, _vz: undefined, _latA: undefined, _latV: undefined,
           _vT: undefined, _vTh: undefined, _vBy: undefined, _sq: undefined, _avT: undefined, _bkT: undefined, _kerb: undefined,
           _obsGen: undefined, _pgT: undefined, blockT: undefined, carHold: undefined, carHoldT: undefined, carT: undefined,
-          goT: undefined, pkT: undefined, redWait: undefined, waitT: undefined, color: undefined,
+          goT: undefined, pkT: undefined, redWait: undefined, waitT: undefined, color: undefined, _pwA: undefined, _pwS: undefined, _prK: undefined,
         };
         this.peds.push(ped);
         this.mesh.setColorAt(ped.idx, c);
@@ -1102,6 +1192,14 @@ export class Peds {
       // crosswalk band) instead of teleport-hopping between sidewalk edges
       if (p.cross) {
         const c = p.cross;
+        // HP26: held 5 s on a hop: the way back, the crossing reversed in place (before its frame is taken below)
+        if (HP26 && c.stT > 5) {
+          const x0 = c.x0, y0 = c.y0, z0 = c.z0;
+          c.x0 = c.x1; c.y0 = c.y1; c.z0 = c.z1; c.x1 = x0; c.y1 = y0; c.z1 = z0;
+          c.t = 1 - c.t; c.off = -(c.off || 0); c.stT = 0;
+          c.e2 = p.e; c.d2 = p.d; c.dir2 = -p.dir; c.lat1 = p.latS ?? p.lat ?? 0; c.lu = p.lu; c.oLo = undefined; c.oHi = undefined;
+          p._latA = undefined; p._vT = 1;
+        }
         // PY25: a walker on the crossing keeps its spacing too, by a lateral offset (<= 0.9 m) off its crossing line
         const ux = (c.x1 - c.x0) / c.len, uz = (c.z1 - c.z0) / c.len, nx = -uz, nz = ux;
         const off = PY25 ? c.off || 0 : 0;
@@ -1128,6 +1226,8 @@ export class Peds {
           // pedestrian queue at the far kerb would hold the traffic that is waiting for it
           const pv = p._vT ?? 1, vT = c.blocked ? 0 : c.road && c.t > 0.12 && c.t < 0.88 ? Math.min(p._vTh ?? 1, Math.max(0.35, pv)) : pv, vf = c.vf ?? (p.vf ?? 1);
           c.vf = vf + Math.max(-2.5 * dt, Math.min(1.2 * dt, vT - vf));
+          // HP26: held on a hop by people (a car hold is c.blocked): counted here, turned round at the next update
+          if (HP26 && !c.road && dt > 0) c.stT = !c.blocked && c.vf < 0.1 && c.t > 0.05 && c.t < 0.95 ? (c.stT || 0) + dt : 0;
           c.t += (p.v * hurry * c.vf * dt) / c.len;
         } else if (!c.blocked) c.t += (p.v * hurry * dt) / c.len;
         const offN = PY25 ? c.off : 0;
@@ -1163,7 +1263,7 @@ export class Peds {
       if (p.stand > 0) {
         p.stand -= dt;
         if (PY25 && p._obsGen !== this._obsGen) { p._obsGen = this._obsGen; if (!this._clearAt(p._x, p._z, p._y, 0.25, false)) p.stand = 0; }
-      } else if (!p.waiting && Math.random() < dt * 0.003 && (!PY25 || this._clearAt(p._x, p._z, p._y, 0.75, false)) && !(PD26 && this._softAt(p._x, p._z))) { p.stand = 5 + Math.random() * 25; p.standFace = [1, -1, 0][(Math.random() * 3) | 0]; }
+      } else if (!p.waiting && Math.random() < dt * 0.003 && (!PY25 || this._clearAt(p._x, p._z, p._y, 0.75, false)) && !(PD26 && this._softAt(p._x, p._z)) && !(PS26P && p.e.pr && this._inPinch(p.e, p.d))) { p.stand = 5 + Math.random() * 25; p.standFace = [1, -1, 0][(Math.random() * 3) | 0]; }
       if (!p.waiting && !(p.stand > 0)) p.d += p.v * (PY25 ? (p.vf ?? 1) : 1) * dt * p.dir;
       // PY25: nobody waits at a kerb for ever (a car that never leaves, a crossing that never opens): after 48 s, the
       // length of a signal cycle and then some, the walker gives up and walks back along its sidewalk
@@ -1295,7 +1395,7 @@ export class Peds {
               p.pick = null;
               p.cross = {
                 x0, y0: here.y, z0, x1, y1: best.q.y, z1, lat1, ew: roadway ? servesEW : undefined, road: roadway,
-                len, t: 0, e2: best.e2, d2: best.d2, lu: lu1, oLo: undefined, oHi: undefined, off: undefined, vf: undefined, chk: undefined, blocked: undefined, ...(LN25 ? this._crossOffRange(best.e2, best.e2.len > 12 ? Math.max(6, Math.min(best.e2.len - 6, best.d2)) : best.d2, lat1, x1 - x0, z1 - z0, len) : {}),
+                len, t: 0, e2: best.e2, d2: best.d2, lu: lu1, oLo: undefined, oHi: undefined, off: undefined, vf: undefined, chk: undefined, blocked: undefined, stT: undefined, ...(LN25 ? this._crossOffRange(best.e2, best.e2.len > 12 ? Math.max(6, Math.min(best.e2.len - 6, best.d2)) : best.d2, lat1, x1 - x0, z1 - z0, len) : {}),
                 // after the crossing, walk INTO the new block (a random direction sent half of them straight back to the corner)
                 dir2,
               };
@@ -1352,7 +1452,27 @@ export class Peds {
             const sR = this.sample(p.e, p.d < 6 ? 6 : p.e.len - 6), hR = Math.max(lo, sR.wOut - 0.5);
             if (hi > hR) { hi = hR; if (B.hi > hR) B.hi = Math.max(B.lo, hR); }
           }
+          if (PS26Z && p.e.zLo && p.e.zGen === this._obsGen) {
+            // PS26: the frontage over the 4 m ahead (and 1 m behind): past a flight before reaching it, into an areaway gap
+            // only where the gap is longer than that (the kerb side is one line already: _zones)
+            const zL = p.e.zLo, zH = p.e.zHi, jA = Math.round((p.d - p.dir) / 2), jB = Math.round((p.d + p.dir * 4) / 2);
+            let l2 = B.lo, h2 = B.hi;
+            for (let j = Math.max(0, Math.min(jA, jB)); j <= Math.min(zL.length - 1, Math.max(jA, jB)); j++) if (zH[j] < h2) h2 = zH[j];
+            l2 = Math.min(l2, B.pHi); h2 = Math.max(h2, B.pLo0 - 0.45);
+            if (h2 - l2 < 0.3) { l2 = Math.max(B.pLo0 - 0.45, Math.min(l2, h2 - 0.3)); if (h2 < l2) h2 = l2; }
+            B.lo = l2; B.hi = h2;
+            if (l2 < lo) lo = l2;
+          }
           want = Math.max(lo, Math.min(hi, this._laneLine(B, p.e, p.dir, p.lu)));
+          if (PS26) {
+            p._pwA = PS26P && p.e.pr && moving ? this._pinch(p) : null;
+            if (p._pwA !== null) {
+              // waiting a step short of the pinch, on the line it walked in its own half (out of the way of whoever comes out
+              // of it); nobody waits for ever (20 s: back along the sidewalk)
+              want = Math.max(lo, Math.min(hi, p.latS ?? want));
+              if (this._simT - p._pwS > 20) { p._pwS = undefined; p._pwA = null; p.dir = -p.dir; p.lat = this._pickLat(p.e, p.dir, p); p._latA = undefined; }
+            }
+          }
           // held at the corner for a line clear of the parked cars: edge toward the kerb (as p.lat did)
           if (p.pkT > 0) want = Math.max(lo, Math.min(want, 0.2));
           // for traffic.js's car-side pass: only a walker near the kerb (or at a corner, waiting, on a campus walkway or a
@@ -1379,11 +1499,11 @@ export class Peds {
         latT = p._latA !== undefined ? Math.max(lo, Math.min(hi, p._latA)) : want;
         p.latS = p.latS === undefined ? latT : cur + Math.max(-0.8 * dt, Math.min(0.8 * dt, (latT - cur) * Math.min(1, dt * 2.5)));
         p._latV = dt > 0 ? (p.latS - cur) / dt : p._latV || 0;   // sidestep speed, for the facing below
-        const vT = moving ? (p._vT ?? 1) : 0, vf = p.vf ?? 1;
+        const vT = moving ? (PS26 && p._pwA !== null && p._pwA !== undefined ? Math.min(p._vT ?? 1, Math.max(0, Math.min(1, (p._pwA - 0.05) / 0.7))) : p._vT ?? 1) : 0, vf = p.vf ?? 1;
         p.vf = vf + Math.max(-2.5 * dt, Math.min(1.2 * dt, vT - vf));
         // stuck on a pavement too tight to pass (face to face, or someone in the only gap): after 3-5 s the walker gives
         // way and turns back. Not behind a standing row (a kerb queue waits for the light) nor for a car.
-        if (!moving || !(p.vf < 0.1) || p._vBy === 4 || p._vBy === 3 || p._vBy < 0) p.blockT = 0;
+        if (!moving || !(p.vf < 0.1) || p._vBy === 4 || p._vBy === 3 || p._vBy < 0 || (PS26 && p._pwA !== null && p._pwA !== undefined)) p.blockT = 0;
         else if ((p.blockT = (p.blockT || 0) + dt) > (p._vBy === 5 ? 6 : 3) + (p.idx % 4) * 0.7) { p.blockT = 0; p.dir = -p.dir; p.lat = this._pickLat(p.e, p.dir, p); p._latA = undefined; }
         moving = moving && p.vf > 0.22;
         if (this.rig.setPace) this.rig.setPace(p.idx, moving ? Math.max(0.35, p.vf) : 1);
@@ -1704,7 +1824,10 @@ export class Peds {
     if (best === null) {
       // no free line. Fixed things (a stoop run facing the tree guards) leave the least-bad line, walked at pace; people
       // in the way are still waited for (below)
-      const pen = (l) => { let o = 0; for (let k = 0; k < iv.length; k += 5) if (l > iv[k] && l < iv[k + 1]) o += Math.min(l - iv[k], iv[k + 1] - l) * (iv[k + 4] === 2 ? 1 : iv[k + 4] === 3 ? 8 : 4); return o; };
+      // PS26W (opt-in): a walker held in a queue (behind a kerb row) keeps out of the ironwork: for it a stoop or a tree guard
+      // costs twice a person (walkers waited 50 s inside a stoop beside the row at Lenox); on the move, as before
+      const fw = PS26W && p._vBy === 4 && (p._vT ?? 1) < 0.3 ? 8 : 1;
+      const pen = (l) => { let o = 0; for (let k = 0; k < iv.length; k += 5) if (l > iv[k] && l < iv[k + 1]) o += Math.min(l - iv[k], iv[k + 1] - l) * (iv[k + 4] === 2 ? fw : iv[k + 4] === 3 ? 8 : 4); return o; };
       let bo = 1e9;
       const cand = [want, cur, lo, hi];
       for (let k = 0; k < iv.length; k += 5) cand.push(iv[k] - 0.01, iv[k + 1] + 0.01);

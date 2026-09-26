@@ -408,6 +408,16 @@ const LEAF25 = {
   // TC26 clump sky: x how much ambient a clump's underside loses (tops keep theirs: nothing is lifted), y the sheen's F90,
   // z the indirect gain at night (replaces bal.y as ENV.night goes 0.15 -> 0.6; golden 0.05 keeps bal.y)
   clu: { value: new THREE.Vector4(0.6, 0.5, 1.2, 0) },
+  // TC26 sun share: the SUN's reflected light (diffuse + specular) is multiplied by this on top of bal.x, and nothing else
+  // is. bal.x scales the transmission and the lamps as well, which is why raising it to deepen the lit side whitened
+  // every backlit crown; this keeps those at their calibration while the sunlit clump shells carry more of the light.
+  // y: the share of that reflection left where the camera sees a clump from its FAR side (a backlit crown seen from below):
+  // there the light arrives through the leaves (the transmission term), and lighting the far side as if its sunlit top were
+  // in view is what put cream highlights on every backlit crown
+  // z: the sun's specular on its own (1 = as bal.x gives it). Swept 2026-09-26 (lead sw8/sw9/sw11, harlemRow front-lit,
+  // columbia backlit, amst120N shade): x 1.45 gives the sunlit clumps their depth, the far-side share 0.25 takes the
+  // backlit cream (warm pale pixels 0.46 % at TC26 as shipped, 0.34 % TV25) back down, the shade crown is untouched.
+  sunK: { value: new THREE.Vector3(1.45, 0.25, 1.0) },
 };
 // TC26 (2026-09-25 night): the sunlit half of a crown read as ONE flat tone, because the only occlusion on the sun was the
 // sky AO (direction-blind) over a half-volume, half-clump normal. Now the bake carries each vertex's visibility toward any
@@ -458,7 +468,7 @@ function applyCrownShading25(m) {
     prev?.call(m, sh, r);
     sh.uniforms.uLeafGain = LEAF25.gain; sh.uniforms.uLeafLight = LEAF25.light; sh.uniforms.uLeafTrans = LEAF25.trans; sh.uniforms.uLeafBal = LEAF25.bal;
     sh.uniforms.uLeafNight = ENV.night;
-    if (TC26) { sh.uniforms.uLeafSun = LEAF25.sun; sh.uniforms.uLeafSheen = LEAF25.sheen; sh.uniforms.uLeafClu = LEAF25.clu; }
+    if (TC26) { sh.uniforms.uLeafSun = LEAF25.sun; sh.uniforms.uLeafSheen = LEAF25.sheen; sh.uniforms.uLeafClu = LEAF25.clu; sh.uniforms.uLeafSunK = LEAF25.sunK; }
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute float aAO; varying float vAO25;' + (TC26 ? '\nattribute vec4 aSun; attribute vec3 aClu; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26;' : ''))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO25 = aAO;' + (TC26 ? `
@@ -478,7 +488,7 @@ function applyCrownShading25(m) {
       }` : ''));
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform vec3 uLeafGain; uniform vec4 uLeafLight; uniform vec3 uLeafTrans; uniform vec4 uLeafBal; uniform float uLeafNight; varying float vAO25;'
-        + (TC26 ? '\nuniform vec4 uLeafSun; uniform vec4 uLeafSheen; uniform vec4 uLeafClu; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26; float leaf26Sun = 0.0;' : ''))
+        + (TC26 ? '\nuniform vec4 uLeafSun; uniform vec4 uLeafSheen; uniform vec4 uLeafClu; uniform vec3 uLeafSunK; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26; float leaf26Sun = 0.0;' : ''))
       // the prop light-trim contract (materials.js applyLightTrim), with the atlas carrying a real leaf albedo
       // (TC26: x a per-clump tone, lighter and warmer or darker and cooler, so clumps read as units)
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uLeafGain * mix(0.30, 0.88, uLeafNight)'
@@ -501,8 +511,11 @@ void RE_Direct_Leaf25( const in IncidentLight directLight, const in vec3 geometr
   float dotNL = dot( N, directLight.direction );
   float w = uLeafLight.w;
   vec3 irradiance = saturate( ( dotNL + w ) / ( 1.0 + w ) ) * col;
-  reflectedLight.directSpecular += saturate( dotNL ) * col * BRDF_GGX_Multiscatter( directLight.direction, geometryViewDir, N, material );
-  reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );
+  // the sun's reflection only (not the transmission, not the lamps), and only on the side of the clump the camera sees
+  float seen = dot( vClu26, vClu26 ) > 0.25 ? smoothstep( -0.3, 0.35, dot( vClu26, geometryViewDir ) ) : 1.0;
+  float kSun = leaf26Sun > 0.5 ? uLeafSunK.x * mix( uLeafSunK.y, 1.0, seen ) : 1.0;
+  reflectedLight.directSpecular += saturate( dotNL ) * col * BRDF_GGX_Multiscatter( directLight.direction, geometryViewDir, N, material ) * kSun * ( leaf26Sun > 0.5 ? uLeafSunK.z : 1.0 );
+  reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution ) * kSun;
   float back = pow( saturate( dot( geometryViewDir, -directLight.direction ) ), uLeafLight.y );
   float away = saturate( -dotNL );
   // (transmission takes the visibility but never the sunlit lift: a backlit crown goes darker green with glowing rims)

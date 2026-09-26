@@ -103,6 +103,11 @@ const followGap = (a, b) => (vlen(a) + vlen(b)) / 2 + 0.4;   // centre-to-centre
 const nk = (x, z) => `${Math.round(x)}_${Math.round(z)}`;
 // PY25 pedestrian yield (see _pedGap); `?py25=0` restores the straight-ahead box and the unbucketed walker check
 const PY25 = typeof location === 'undefined' || new URLSearchParams(location.search).get('py25') !== '0';
+// YD26 (2026-09-26): a car passes in front of or behind a walker on the carriageway only with room to spare (the walker may
+// stop, held by another car, where it was predicted to walk on; a creeping car pulls away), and its predicted path runs
+// where the car really is across its lane (carPath): turning cars crept into crossers standing in front of their bumpers
+// at W 122nd / Lenox and W 120th / Amsterdam. `?yield26=0`: the PY25 windows and path.
+const YD26 = PY25 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('yield26') !== '0');
 const CG = 10;   // car grid cell (m)
 
 export class Traffic {
@@ -724,10 +729,13 @@ export class Traffic {
       return push(a0 * T.p0[0] + a1 * T.c1[0] + a2 * T.c2[0] + a3 * T.p2[0], a0 * T.p0[2] + a1 * T.c1[2] + a2 * T.c2[2] + a3 * T.p2[2]);
     };
     // along edge e from d in direction dir (lane of `car`, travelling `dir`), up to dStop (the exit mouth) or Lmax
-    const edge = (e, d, dir, dStop) => {
+    // YD26: the edge the car is on at the lateral place it is really at (laneF: it eases over after a lane change and after a
+    // turn whose lane was clamped), not its lane index: right after a turn the predicted path ran up to a lane beside the
+    // car, and the car crept into a crosser standing in front of it (W 122nd / Lenox, W 120th / Amsterdam)
+    const edge = (e, d, dir, dStop, lf) => {
       if (dir > 0 ? d > dStop : d < dStop) return true;   // already past this stretch (at the mouth)
       const lp = { dir, lane: car.lane };
-      const off = this._laneOffsetAt(e, lp, Math.min(car.lane, Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1)));
+      const off = this._laneOffsetAt(e, lp, lf !== undefined ? lf : Math.min(car.lane, Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1)));
       for (let dd = d; dir > 0 ? dd <= dStop : dd >= dStop; dd += dir * 3) {   // lanes: a point every 3 m (connectors: 1.5 m)
         const s = this.sampleEdge(e, dd), hx = s.dirx * dir, hz = s.dirz * dir;
         if (!push(s.x - hz * off, s.z + hx * off)) return false;
@@ -740,12 +748,12 @@ export class Traffic {
       const T = car.turn;
       let ok = true;
       for (let s = T.s + 1.5; s < T.len && ok; s += 1.5) ok = bez(T, s);
-      if (ok && bez(T, T.len)) edge(car.e, car.d + car.dir * 1.5, car.dir, car.dir > 0 ? car.e.len - (car.e.mouthB || 0) : (car.e.mouthA || 0));
+      if (ok && bez(T, T.len)) edge(car.e, car.d + car.dir * 1.5, car.dir, car.dir > 0 ? car.e.len - (car.e.mouthB || 0) : (car.e.mouthA || 0), YD26 && car.laneF !== undefined ? car.laneF : undefined);
       return P;
     }
     const e = car.e, dir = car.dir, mEnd = dir > 0 ? e.mouthB : e.mouthA;
     const exitD = Math.max(0.2, Math.min(e.len - 0.2, dir > 0 ? e.len - (mEnd || 0) : (mEnd || 0)));
-    if (!edge(e, car.d + dir * 3, dir, exitD)) return P;
+    if (!edge(e, car.d + dir * 3, dir, exitD, YD26 && car.laneF !== undefined ? car.laneF : undefined)) return P;
     const nx = car.next;
     if (!nx || !this.edges.has(nx.ne.id)) return P;
     // the connector this car will build at the mouth (update(): mk(0.36 chord)), then the next edge
@@ -753,7 +761,7 @@ export class Traffic {
     const entryD = nd > 0 ? Math.min(mN + 1.0, ne.len * 0.5) : Math.max(ne.len - mN - 1.0, ne.len * 0.5);
     const ex = this.sampleEdge(e, exitD), en = this.sampleEdge(ne, entryD);
     const lanesN = ne.oneway !== 0 ? ne.lanes : Math.max(1, Math.floor(ne.lanes / 2));
-    const offA = this._laneOffsetAt(e, { dir, lane: car.lane }, car.lane), offB = this._laneOffsetAt(ne, { dir: nd }, Math.min(car.lane, lanesN - 1));
+    const offA = this._laneOffsetAt(e, { dir, lane: car.lane }, YD26 && car.laneF !== undefined ? car.laneF : car.lane), offB = this._laneOffsetAt(ne, { dir: nd }, Math.min(car.lane, lanesN - 1));
     const hA = [ex.dirx * dir, ex.dirz * dir], hB = [en.dirx * nd, en.dirz * nd];
     const p0 = [ex.x - hA[1] * offA, 0, ex.z + hA[0] * offA], p2 = [en.x - hB[1] * offB, 0, en.z + hB[0] * offB];
     const chord = Math.hypot(p2[0] - p0[0], p2[2] - p0[2]);
@@ -792,12 +800,23 @@ export class Traffic {
     }
     if (bs < half - 0.4 || bs >= P.s[P.n - 1] - 0.05 && Math.sqrt(bd) > hw + 0.25 + margin) return 1e9;
     const W = hw + 0.25 + margin, lat = Math.abs(bl);
-    if (lat > W + 7) return 1e9;
+    if (lat > W + (YD26 ? 7.5 : 7)) return 1e9;
     const uLat = -(vx * bnx + vz * bnz) * Math.sign(bl || 1);   // > 0: walking toward the car's path
     const v = Math.max(car.v || 0, 0.8);
     const tF = Math.max(0, bs - half) / v, tB = tF + (2 * half + 0.6) / v;
     let hit;
-    if (lat < W) {
+    if (YD26 && margin >= 0.35) {
+      // YD26 (crossers, turning cars): the corridor 0.25 m wider (0.45 m in a turn: the front corner swings out of the
+      // path of the centre); the car reaches the point no later than at 3 m/s (a creeping car pulls away); the walker must
+      // be out of the corridor 1 s before the car arrives, or reach it 1 s after the car has gone
+      const W2 = W + (car.turn ? 0.45 : 0.25), dF = Math.max(0, bs - half);
+      const tFf = dF / Math.max(car.v || 0, 3), tBs = (dF + 2 * half + 0.6) / Math.max(0.8, car.v || 0);
+      if (lat < W2) hit = !(uLat < -0.3 && (W2 - lat) / -uLat + 1.0 < tFf);
+      else if (uLat > 0.15) {
+        const tIn = (lat - W2) / uLat, tOut = (lat + W2) / uLat;
+        hit = tIn < 6 && tIn < tBs + 1.0 && tOut > tFf - 1.0;
+      } else hit = false;
+    } else if (lat < W) {
       // in the corridor now: yield, unless walking out of it well before the car gets there
       hit = !(uLat < -0.15 && (W - lat) / -uLat + 0.7 < tF);
     } else if (uLat > 0.15) {

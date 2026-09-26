@@ -161,9 +161,14 @@ export function createWeather(scene, camera, engine) {
 
   // cloud deck: one big camera-following FBM sheet — cheap overcast that the
   // sun/hemisphere dimming below stays in step with
+  // RC26 (owner 2026-09-26, the ad: CitySample-grade wet dusk): the deck is an UNLIT sheet and its colour was a fixed
+  // near-white, so a dusk or night storm drew bright daylight cumulus over a black sky (fWeather). It now takes its
+  // light from the sky it hangs in: daylight grey-white by day, the horizon / skyglow colour after dark, darker under
+  // rain, and rain closes it into a continuous overcast. `?rc26=0` restores the white deck.
+  const RC26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('rc26') === '0');
   const cloudU = {
     uTime: ENV.windT, uCover: { value: 0 }, uFlash: { value: 0 },
-    uSun: ENV.sunDir,
+    uSun: ENV.sunDir, uLit: { value: new THREE.Color(1, 1, 1) },
   };
   const cloud = new THREE.Mesh(
     new THREE.PlaneGeometry(14000, 14000, 1, 1),
@@ -171,7 +176,7 @@ export function createWeather(scene, camera, engine) {
       uniforms: cloudU, transparent: true, depthWrite: false, side: THREE.DoubleSide,
       vertexShader: 'varying vec2 vU; void main(){ vU = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
       fragmentShader: /* glsl */ `
-        uniform float uTime; uniform float uCover; uniform float uFlash;
+        uniform float uTime; uniform float uCover; uniform float uFlash; uniform vec3 uLit;
         varying vec2 vU;
         float h(vec2 p){ vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
         float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
@@ -185,7 +190,7 @@ export function createWeather(scene, camera, engine) {
           // (real overcast reads 0.5-0.9, never charcoal)
           float cov = smoothstep(1.08 - uCover * 0.95, 1.34 - uCover * 0.8, f);
           float shade = mix(0.98, 0.52, cov * (0.35 + uCover * 0.65));
-          vec3 col = vec3(1.02, 1.0, 0.975) * shade * (1.0 + uFlash * 3.0);
+          vec3 col = vec3(1.02, 1.0, 0.975) * uLit * shade * (1.0 + uFlash * 3.0);
           float edge = smoothstep(0.0, 0.12, vU.x) * smoothstep(1.0, 0.88, vU.x)
                      * smoothstep(0.0, 0.12, vU.y) * smoothstep(1.0, 0.88, vU.y);
           // fade the deck out well before the horizon line (a flat plane
@@ -235,7 +240,15 @@ export function createWeather(scene, camera, engine) {
       // black sky ... they read as lens dirt" (critic r5 11 #3, mine). Rain and
       // snow now push the DECK toward full cover without touching `cl`, which
       // also drives the sun dimming, the hemisphere and the haze.
-      cloudU.uCover.value = Math.min(1, cl + w * 0.45 + s * 0.35);
+      cloudU.uCover.value = Math.min(1, cl + w * (RC26 ? 0.9 : 0.45) + s * 0.35);
+      if (RC26) {
+        // after dark the base is lit from below by the city (the horizon colour carries that skyglow), and a storm deck
+        // is darker still; by day it stays the daylight white
+        const nt = THREE.MathUtils.clamp(ENV.night.value / 0.6, 0, 1), dk = nt * nt * (3 - 2 * nt);
+        const fc = ENV.fogColor.value;
+        const b = (1 - 0.42 * w) * (1 - dk * 0.35);
+        cloudU.uLit.value.setRGB((1 + (fc.r * 1.6 - 1) * dk) * b, (1 + (fc.g * 1.6 - 1) * dk) * b, (1 + (fc.b * 1.6 - 1) * dk) * b);
+      }
 
       // lightning: random strikes while storming — flash decays fast, kicks
       // the cloud deck, the ambient light and the bloom in the same frame

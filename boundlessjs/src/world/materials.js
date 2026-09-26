@@ -626,9 +626,15 @@ export const WR26 = !(typeof location !== 'undefined' && new URLSearchParams(loc
 // FR26 (owner 2026-09-26, "fix still open problems"): a masonry wall seen from the sidewalk read as per-pixel static with blue
 // specks (W 122nd St, 5 m away). The albedo-relief bump takes the screen derivative of the FINAL albedo, photo grain included,
 // and the grain is at full strength at sniff range: its derivative is texel noise, so the relief normal went random per pixel
-// and every pixel reflected a different patch of sky. The relief now reads the albedo with the photo grain divided back out
-// (the procedural pattern, joints and courses keep their relief; the grain stays in the colour). `?fr26=0` reverts.
+// and every pixel reflected a different patch of sky. The photo grain is now carried beside the albedo (FAC_grainV) and
+// multiplied in only AFTER the relief has read its heightfield, so the procedural pattern, joints and courses keep their
+// relief and the grain stays in the colour. (Dividing the grain back out of the final albedo did not cancel it on the
+// sunlit stone of the film's Broadway frames.) `?fr26=0` reverts.
 export const FR26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('fr26') === '0');
+// SW26 (the ad, 2026-09-26): the sidewalk's utility "locate mark" was ridged noise over its whole 4.4 m cell, i.e. a pink
+// vein network across the flags, and the hairline cracks a ridge network every ~0.3 m that read as tar snakes. A locate
+// mark is now a short sprayed stroke with a cross-tick, and a cracked flag carries one or two thin cracks. `?sw26=0` reverts.
+export const SW26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sw26') === '0');
 const STONE_SETS = {
   cgranite:   { mean: [0.3769, 0.2992, 0.1664], size: 2.17 },   // stone_wall_03: speckled, jointless (steps, walls, rims)
   climestone: { mean: [0.3772, 0.2890, 0.1764], size: 3.00 },   // sandstone_blocks_08: ashlar coursing (Low Library)
@@ -1080,14 +1086,14 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
         }
         float wlsg(float a, float b) { return wlh(a, b) * 2.0 - 1.0; }` : ''}
         ${SKYREFL_GLSL}
-        vec3 FAC_emis; float FAC_rough; vec3 FAC_nrmAdj; float FAC_dbg; vec3 FAC_dbgV; float FAC_grainL;
+        vec3 FAC_emis; float FAC_rough; vec3 FAC_nrmAdj; float FAC_dbg; vec3 FAC_dbgV; vec3 FAC_grainV;
         // per-building reflectivity FAMILY, set once in the tower block and
         // read by the glass paths: x = F0, y = plate roughness, z = aureole
         vec3 FAC_glassF; vec3 FAC_reflTint; float FAC_spand;`)
       .replace('#include <color_fragment>', `#include <color_fragment>
       {
         if (vHide > 0.5) discard;   // building rebuilt by the NYC dresser
-        FAC_emis = vec3(0.0); FAC_rough = 0.92; FAC_nrmAdj = vec3(0.0); FAC_dbg = 0.0; FAC_dbgV = vec3(0.0); FAC_spand = 0.0; FAC_grainL = 1.0;
+        FAC_emis = vec3(0.0); FAC_rough = 0.92; FAC_nrmAdj = vec3(0.0); FAC_dbg = 0.0; FAC_dbgV = vec3(0.0); FAC_spand = 0.0; FAC_grainV = vec3(1.0);
         float floorH = vAux.x, winW = vAux.y, storeH = vAux.z, style = vAux.w;
         float bldgH = vAux2.x, litAmt = vAux2.y, flags = vAux2.w;
         // seed snapped to a coarse grid: belt-and-suspenders for any geometry path
@@ -2385,8 +2391,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
                 vec3 wRatC = wLumC * mix(vec3(1.0), wHue, wStone ? 0.0 : 0.30);
                 float wFp = max(fwidth(u), fwidth(v));                // wall-meters per pixel
                 float wStr = mix(0.36, 0.05, smoothstep(0.008, 0.06, wFp));
-                albedo *= mix(vec3(1.0), wRatC, wStr);
-                ${FR26 ? 'FAC_grainL = max(mix(1.0, dot(wRatC, vec3(0.2126, 0.7152, 0.0722)), wStr), 0.2);' : ''}
+                ${FR26 ? 'FAC_grainV = mix(vec3(1.0), wRatC, wStr);' : 'albedo *= mix(vec3(1.0), wRatC, wStr);'}
                 // low-frequency hierarchy: 2-6m sun-bleach / repointing blotches so
                 // the grain reads as material inside structure, not even noise
                 float wBlotch = fbm(vec2(u, v) * 0.27 + cvar * 23.0);
@@ -3346,16 +3351,19 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
           // LARGER as the feature compresses, so the relief grew with distance.
           // Full to ~37 m (a course is 7.5 px), gone by ~100 m.
           bumpG *= smoothstep(${AAFIX ? '0.12, 0.045' : '0.4, 0.14'}, length(fwidth(vWP))); // fade before pattern gradients hit pixel scale (shimmer)
-          float bh = dot(diffuseColor.rgb, vec3(1.05)) ${FR26 ? '/ FAC_grainL ' : ''}* bumpG;
+          float bh = dot(diffuseColor.rgb, vec3(1.05)) * bumpG;
           vec3 bsx = dFdx(-vViewPosition), bsy = dFdy(-vViewPosition);
           vec3 br1 = cross(bsy, normal), br2 = cross(normal, bsx);
           float bdet = dot(bsx, br1);
           vec3 bgrad = sign(bdet) * (dFdx(bh) * br1 + dFdy(bh) * br2);
           float bgl = length(bgrad);
-          bgrad *= min(bgl, 0.55) / max(bgl, 1e-5);
-          vec3 bn = abs(bdet) * normal - bgrad * 2.0;
+          // FR26: with the photo grain out of the heightfield the joints alone drive it, and at the old gain (clamp 0.55,
+          // x2.0, set while the grain masked them) every joint's arris lit up as a white line under a grazing sun
+          bgrad *= min(bgl, ${FR26 ? '0.35' : '0.55'}) / max(bgl, 1e-5);
+          vec3 bn = abs(bdet) * normal - bgrad * ${FR26 ? '1.1' : '2.0'};
           if (dot(bn, bn) > 1e-9) normal = normalize(bn); // degenerate dets keep the geo normal
-        }`)
+        }
+        diffuseColor.rgb *= FAC_grainV;   // FR26: the photo grain joins the colour after the relief has read it`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         totalEmissiveRadiance += FAC_emis;`);
   };
@@ -3789,15 +3797,21 @@ export function makeGroundMaterial() {
               GND_rough = mix(GND_rough, 0.52, lid * 0.8);
             } else if (hr > 0.86) {
               // spray-paint locate mark: a short fat stroke, orange or pink
-              float mk2 = smoothstep(0.86, 0.995, gridge(gG * vec2(3.1, 11.0) + hid * 7.0));
+              ${SW26 ? `float ma = hash12(hid + 41.3) * 6.2832;
+              vec2 mp = (fract(hc) - vec2(hash12(hid + 2.3), hash12(hid + 6.1)) * 0.7 - 0.15) * 4.4;
+              vec2 mq = mat2(cos(ma), -sin(ma), sin(ma), cos(ma)) * mp;     // stroke frame at the cell's point
+              float mw = 0.012;                                              // fixed edge: no derivatives in this branch
+              float mk2 = smoothstep(0.045 + mw, 0.03, abs(mq.y)) * smoothstep(0.42, 0.36, abs(mq.x))   // the 0.8 m stroke
+                        + smoothstep(0.045 + mw, 0.03, abs(mq.x - 0.28)) * smoothstep(0.16, 0.12, abs(mq.y)); // its tick
+              mk2 = clamp(mk2, 0.0, 1.0) * (0.75 + 0.25 * vnoise(gG * 9.0));` : `float mk2 = smoothstep(0.86, 0.995, gridge(gG * vec2(3.1, 11.0) + hid * 7.0));`}
               vec3 lc = hash12(hid + 31.7) > 0.45 ? vec3(0.55, 0.19, 0.030) : vec3(0.53, 0.13, 0.210);
               albedo = mix(albedo, lc, mk2 * 0.30 * gNear);
             }
           }
           // hairline cracks on ~22% of flags, corner spalls on a few
           if (hash12(sid + 3.9) < 0.22 && gNear > 0.01) {
-            float rdg = gridge(gG * 3.4 + slab * 17.0);
-            albedo *= 1.0 - smoothstep(0.90, 0.99, rdg) * 0.30 * gNear;
+            float rdg = gridge(gG * ${SW26 ? '1.3' : '3.4'} + slab * 17.0);
+            albedo *= 1.0 - smoothstep(${SW26 ? '0.965, 0.995' : '0.90, 0.99'}, rdg) * ${SW26 ? '0.22' : '0.30'} * gNear;
           }
           // staining: hosing/foot-traffic blotches, dark drip runs off the
           // building line, and the sooty grey that collects along the kerb

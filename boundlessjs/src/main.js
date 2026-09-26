@@ -777,8 +777,11 @@ async function boot() {
     // install a camera path (tools/trailer/paths.json, injected by the recorder)
     window.__SET_PATH = (p) => (controller instanceof PathCam ? controller.setPath(p) : 'not a PathCam');
     // advance the world by one fixed step and resolve once that frame is up
-    window.__advance = (dt = 1 / 30) => new Promise((res) => {
+    // nodraw: step the simulation without drawing the frame (the recorder's warm-up: the sim does not need its frames
+    // drawn, and each one cost a full 1440p render)
+    window.__advance = (dt = 1 / 30, nodraw = false) => new Promise((res) => {
       pending = dt;
+      if (nodraw) engine.skipDraw = true;
       const wait = () => (pending === 0 ? requestAnimationFrame(() => res(true)) : requestAnimationFrame(wait));
       requestAnimationFrame(wait);
     });
@@ -1245,6 +1248,9 @@ window.__PICK = async (nx, ny) => {
     geoV: h.object.geometry?.attributes?.position?.count,
     inst: h.instanceId ?? null,
     mid: h.face && h.object.geometry?.attributes?.matId ? h.object.geometry.attributes.matId.getX(h.face.a) : null,
+    // facade vertex attributes at the hit (materials.js facade shader: aux = floorH, winW, storeH, style; aux2 = bldgH,
+    // litAmt, cvar, flags; aux3 = wallLen, wallSeed, faceH/door pack)
+    fac: h.face && h.object.geometry?.attributes?.aux ? ['aux', 'aux2', 'aux3'].map((k) => { const at = h.object.geometry.attributes[k]; return at ? Array.from({ length: at.itemSize }, (_, c) => +at.getComponent(h.face.a, c).toFixed(3)) : null; }) : null,
     x: +h.point.x.toFixed(1),
     y: +h.point.y.toFixed(2),
     z: +h.point.z.toFixed(1),

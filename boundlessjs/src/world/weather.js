@@ -296,7 +296,7 @@ export function createWeather(scene, camera, engine) {
       engine.expoTarget = (GFX.autoExpoTarget ?? 0.20) * (engine.expoTargetK ?? 1);   // LB13: day-only
       const autoE = 1 + ((engine.autoExpo ?? 1) - 1) * GFX.autoExposure;
       engine.renderer.toneMappingExposure = (engine.expoBase ?? 0.74) * (GFX.exposure / 0.74) * tm[1] * autoE;
-      engine.bloom.strength = (0.05 + ENV.night.value * 0.25) * GFX.bloomMul + flash * 0.9;
+      engine.bloom.strength = (0.05 + ENV.night.value * 0.25) * GFX.bloomMul * (engine.bloomDayK ?? 1) + flash * 0.9;   // BL26 (engine.setBloom)
       ENV.fogDensity.value = baseFog * (GFX.fogDensity / 0.00011) * (1 + w * 2.2 + s * 3.0 + cl * 1.2);
       engine.grade.uniforms.uVig.value = G.vignette;
       // LB14: a day-only FLOOR, like conFloor. AgX's outset matrix desaturates by construction — it is

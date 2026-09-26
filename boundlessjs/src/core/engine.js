@@ -399,6 +399,12 @@ class HazePass extends Pass {
 // the whole lower frame whenever the camera faced the sun. Now it is weighted by the air along the view ray (distance
 // from the depth buffer; the sky keeps all of it). `?gr26=0` restores the flat composite.
 const GR26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gr26') === '0');
+// BL26 (same round): the milky veil over every sun-facing daylight frame was BLOOM, not haze or shafts (columbia, one page:
+// bloom off took p5 74 -> 55 and the sub-60 share 1.6 -> 7.3 %; haze-sun, god rays: no change). The bright sky round the
+// sun crosses the 2.3 threshold and the wide mips lay it over the whole frame. At full day the radius drops 0.26 -> 0.12
+// and the strength to 0.6x (p5 74 -> 66, local contrast 14.2 -> 15.7; views away from the sun unchanged); golden (night
+// 0.05) and after dark keep their glow. `?bl26=0` restores it.
+const BL26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('bl26') === '0');
 // Screen-space god rays: quarter-res sky/sun occlusion mask -> 48-tap radial
 // march toward the projected sun -> additive composite. Sun screen position
 // and off-screen/behind-camera fade are computed CPU-side each frame.
@@ -1329,7 +1335,9 @@ export class Engine {
     // the radius is tight enough that the halo stays on the object.
     this.bloom.strength = 0.09 + night * 0.20;
     this.bloom.threshold = 2.30 - night * 1.45;
-    this.bloom.radius = 0.26 + night * 0.10;
+    const dayW = BL26 ? Math.max(0, 1 - night / 0.05) : 0;   // BL26: 1 at full day, 0 from golden on
+    this.bloom.radius = 0.26 + night * 0.10 - 0.14 * dayW;
+    this.bloomDayK = 1 - 0.4 * dayW;
   }
   // shadow frustum follows the player, snapped to the texel grid IN LIGHT SPACE —
   // world-space snapping leaves subpixel drift, which makes acne crawl during movement

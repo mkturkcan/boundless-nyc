@@ -145,6 +145,17 @@ const DL27 = typeof location === 'undefined' || new URLSearchParams(location.sea
 // while any crossing car's body (its oriented box, rear included, up to its half length past its connector's end) lies
 // across the path it will drive through the box. `?bx27=0`: the old test only.
 const BX27 = typeof location === 'undefined' || new URLSearchParams(location.search).get('bx27') !== '0';
+// VT28 (owner 2026-09-27 on film 11: "vehicles are waiting at lanes at an angle unnaturally and in the queues as well ...
+// I just want Carla style intelligent vehicles that smoothly and realistically turn"): the TW26 lane spring slid a car
+// sideways at up to 1.5 m/s whatever its speed, a standing car included, and VT27 took the heading from a point dragged
+// behind the car, which turned every sideways slide into a body angle (tens of degrees in a queue) that a stopped car then
+// kept. Sideways motion now needs forward motion, as a car's does: the spring's lateral speed is capped at v tan(8 deg), so
+// a standing car does not move sideways and a lane change takes ~23 m of road. The body points along its real motion (the
+// lane's chord over the wheelbase, turned by atan(lateral / forward) <= 8 deg during a lane change), the dragged point is
+// gone, and a kinematic yaw-rate cap (v / 4.5 m + 0.2 rad/s, nothing in a dt = 0 update) smooths the steps that remain
+// (edge <-> connector hand-overs, a swung connector's handles). A connector's speed cap follows its tightest bend (2.5 m/s2
+// sideways), reached by braking, not in one frame. A car straddling two lanes is a leader in both. `?vt28=0`: VT27.
+const VT28 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vt28') !== '0';
 const CG = 10;   // car grid cell (m)
 
 export class Traffic {
@@ -1017,10 +1028,12 @@ export class Traffic {
         // drove followers into the car ahead on 10 m connectors); without: the old behaviour
         const pgT = this._pedGap(car);
         if (pgT < gapT) { gapT = pgT; car._pyHold = true; }
-        if (gapT < 1e8) car.v = gapT < 0.6 ? 0 : Math.min(car.v + IDM.a * dt, T.vCap, Math.sqrt(Math.max(0, gapT - 0.6) * IDM.b));
+        // VT28: the connector's cap is met braking at up to 4.5 m/s2 (a tight bend used to cut the speed in one frame)
+        const capT = VT28 ? Math.max(T.vCap, car.v - 4.5 * dt) : T.vCap;
+        if (gapT < 1e8) car.v = gapT < 0.6 ? 0 : Math.min(car.v + IDM.a * dt, capT, Math.sqrt(Math.max(0, gapT - 0.6) * IDM.b));
         // PY25: a car that slowed in the box for a walker pulls away (IDM a), it does not jump back to 3.5 m/s in one frame
-        else if (car._pyHold && car.v < 3.5) car.v = Math.min(T.vCap, car.v + IDM.a * dt);
-        else { car._pyHold = false; car.v = Math.max(3.5, Math.min(car.v, T.vCap)); }
+        else if (car._pyHold && car.v < 3.5) car.v = Math.min(capT, car.v + IDM.a * dt);
+        else { car._pyHold = false; car.v = Math.max(VT28 ? Math.min(3.5, T.vCap) : 3.5, Math.min(car.v, capT)); }
         T.s = Math.min(T.len, T.s + car.v * dt);
         const t = TW26 && T.lut ? this._turnT(T, T.s) : T.s / T.len;
         const omt = 1 - t;
@@ -1089,8 +1102,11 @@ export class Traffic {
         v0 = Math.min(v0, Math.sqrt(vTurn * vTurn + 4.4 * dM));
       }
       let gap = 1e9, leadV = v0;
+      const myLf = VT28 && car.laneF !== undefined ? car.laneF : car.lane;
       for (const o of e.cars) {
-        if (o === car || o.dir !== car.dir || o.lane !== car.lane) continue;
+        if (o === car || o.dir !== car.dir) continue;
+        // VT28: my lane, or a body across it (a lane change under way on either side)
+        if (o.lane !== car.lane && !(VT28 && Math.abs((o.laneF ?? o.lane) - myLf) < 0.62)) continue;
         const g = (o.d - car.d) * car.dir - followGap(o, car);
         if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = o.v; }
       }
@@ -1334,10 +1350,15 @@ export class Traffic {
         if (Math.abs(gap) < 0.002 && Math.abs(car._lfv) < 0.002) { car.laneF = car.lane; car._lfv = 0; }
         else {
           car._lfv += (1.6 * gap - 2.53 * car._lfv) * dt;
+          const lw = this._laneOffsetAt(e, car, car.laneF + 1) - this._laneOffsetAt(e, car, car.laneF);
+          if (VT28) {
+            // sideways only while going forward: lateral <= v tan(8 deg)
+            const vf = Math.max(0, car.v || 0), cap = (vf * 0.1405) / Math.max(0.5, Math.abs(lw));
+            if (car._lfv > cap) car._lfv = cap; else if (car._lfv < -cap) car._lfv = -cap;
+          }
           car.laneF += car._lfv * dt;
           // the body points along its path: lateral m/s over forward m/s
-          const lw = this._laneOffsetAt(e, car, car.laneF + 1) - this._laneOffsetAt(e, car, car.laneF);
-          const lat = car._lfv * lw, fw = Math.max(car.v || 0, 1.5);
+          const lat = car._lfv * lw, fw = VT28 ? Math.max(car.v || 0, 0.05) : Math.max(car.v || 0, 1.5);
           yawT = Math.atan2(hx * fw - hz * lat, hz * fw + hx * lat);
         }
       }
@@ -1595,6 +1616,18 @@ export class Traffic {
       acc += Math.hypot(x - px, z - pz); L[i] = acc; px = x; pz = z;
     }
     T.lut = L; T.len = Math.max(acc, 0.5);
+    if (VT28) {
+      // VT28: the tightest bend (tangent turn between neighbouring 1/16 pieces over their mean length) sets the speed cap
+      let rMin = 1e9, pa = null;
+      for (let i = 0; i < 16; i++) {
+        const t0 = i / 16, t1 = (i + 1) / 16, pt = (t) => { const u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t; return [a0 * T.p0[0] + a1 * T.c1[0] + a2 * T.c2[0] + a3 * T.p2[0], a0 * T.p0[2] + a1 * T.c1[2] + a2 * T.c2[2] + a3 * T.p2[2]]; };
+        const A = pt(t0), B = pt(t1), ang = Math.atan2(B[0] - A[0], B[1] - A[1]), sl = Math.hypot(B[0] - A[0], B[1] - A[1]);
+        if (pa && sl > 0.02) { let da = ang - pa.ang; da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI; if (Math.abs(da) > 1e-4) rMin = Math.min(rMin, (0.5 * (sl + pa.sl)) / Math.abs(da)); }
+        if (sl > 0.02) pa = { ang, sl };
+      }
+      T.rMin = rMin;
+      T.vCap = Math.min(T.vCap ?? 12, Math.max(1.8, Math.sqrt(2.5 * rMin)));
+    }
     return T;
   }
   _turnT(T, s) {
@@ -1622,7 +1655,18 @@ export class Traffic {
   _placeCar(car, x, y, z, yaw, dt) {
     // VT27: the heading from the dragged rear point (see VT27); a jump of more than three drag lengths (a spawn, a
     // recycled car) starts it again behind the car along the path heading
-    if (VT27 && !car.api) {
+    if (VT28 && !car.api) {
+      // VT28: the heading given (lane chord + lane-change angle, or the connector's tangent), at most v / 4.5 m + 0.2 rad/s
+      // of turn; a placement 3 m or more from the last one (a spawn, a recycled car) starts again
+      const q = car._pose;
+      if (q && car._yawL !== undefined && Math.hypot(x - q[0], z - q[2]) < 3) {
+        let dy = yaw - car._yawL;
+        dy -= Math.round(dy / (2 * Math.PI)) * 2 * Math.PI;
+        const m = ((car.v || 0) / 4.5 + 0.2) * Math.max(0, dt || 0);   // no turning in a dt = 0 update (a settle, a redraw)
+        yaw = car._yawL + (dy > m ? m : dy < -m ? -m : dy);
+      }
+      car._yawL = yaw;
+    } else if (VT27 && !car.api) {
       const Lb = car._wb2 || (car._wb2 = Math.max(1.2, Math.min(3.2, this.carHalf(car)[1] * 0.6)));
       let r = car._rear;
       if (!r || Math.hypot(x - r[0], z - r[1]) > Lb * 3) r = car._rear = [x - Math.sin(yaw) * Lb, z - Math.cos(yaw) * Lb];

@@ -864,6 +864,87 @@ async function boot() {
     // tear-proof frame capture for the recorder (engine.capture: canvas read back in the render's own task);
     // resolves with a data URL of the NEXT rendered frame — the sim does not advance (pending stays 0)
     window.__capture = (type = 'image/jpeg', q = 0.95) => engine.capture(type, q);
+    // FR28 (owner 2026-09-27: "we need to find a faster way to render at high quality ... near real time with proper
+    // instrumentation"): ONE call per captured frame for tools/ad/record.mjs --fast. The classic path spends ~12 page calls,
+    // two requestAnimationFrame turns per __advance and a synchronous toDataURL whose base64 crosses the debugger pipe, and
+    // the idle loop keeps drawing unrequested frames between them. Here the engine's own frame body runs on demand
+    // (engine.externalDrive parks the idle loop): the stepped frame; while tiles or the dresser are still busy, still frames
+    // with a yield between them so their fetches and workers can land (the classic path's settle wait); then `acc` more
+    // still frames back to back, which the AC26 mean takes as its jittered samples; the lens and car checks; and toBlob in
+    // the same task as the last draw (tear-proof like engine.capture; the JPEG is encoded off the main thread), POSTed to
+    // the recorder's frame sink while the next frame renders. o.prof: a 1x1 readback after each phase, so the times are the
+    // GPU's and not just the CPU's submit.
+    let frPend = 0;
+    const gpuSync = () => {
+      const gl = engine.renderer.getContext(), px = new Uint8Array(4);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    };
+    const settledNow = () => streamer.idle() && !engine.holdDraw && (!dresser || dresser.queue.length === 0);
+    const yieldT = () => new Promise((r) => setTimeout(r, 0));
+    window.__REC_FRAME = async (o) => {
+      const T0 = performance.now();
+      engine.externalDrive = true;
+      while (frPend >= 4) await new Promise((r) => setTimeout(r, 2));   // at most 4 frames (~6 MB) in flight
+      const T1 = performance.now();
+      let pumped = 0, err = null;
+      try {
+        if (o.dt > 0) pending = o.dt;
+        engine.frameBody();                                               // the stepped frame (a still one at dt = 0)
+        if (o.prof) gpuSync();
+        const T2 = performance.now();
+        if (o.settle > 0 && !settledNow()) {
+          do { await yieldT(); engine.frameBody(); pumped++; } while (!settledNow() && performance.now() - T2 < o.settle);
+        }
+        if (o.prof) gpuSync();
+        const T3 = performance.now();
+        {
+          // o.freezeShadow: the samples reuse the stepped frame's sun shadow map (the world and the lens are frozen, the
+          // casters would draw the same depth again; the far cascade only re-renders on a move anyway)
+          const sh = engine.sun.shadow, fz = !!o.freezeShadow && sh.autoUpdate;
+          if (fz) sh.autoUpdate = false;
+          try { for (let k = 0; k < (o.acc | 0); k++) engine.frameBody(); }   // the accumulation samples of the frozen frame
+          finally { if (fz) { sh.autoUpdate = true; sh.needsUpdate = true; } }
+        }
+        if (o.prof) gpuSync();
+        const T4 = performance.now();
+        const lens = o.checks ? window.__LENS_HIT() : null;
+        const jumps = o.checks && o.dt > 0 ? window.__CAR_JUMPS(o.dt) : null;
+        frPend++;
+        engine.renderer.domElement.toBlob((blob) => {
+          if (!blob) { frPend--; console.warn('[fr28] toBlob gave nothing for', o.name); return; }
+          fetch(o.sink + '/' + encodeURIComponent(o.name), { method: 'POST', body: blob })
+            .catch((e) => console.warn('[fr28] sink', o.name, e.message)).finally(() => { frPend--; });
+        }, o.type || 'image/jpeg', o.q ?? 0.95);
+        const T5 = performance.now();
+        return { lens, jumps, pumped, frames: engine.frames, threw,
+          t: { wait: +(T1 - T0).toFixed(1), step: +(T2 - T1).toFixed(1), settle: +(T3 - T2).toFixed(1), acc: +(T4 - T3).toFixed(1), cap: +(T5 - T4).toFixed(1) } };
+      } catch (e) {
+        err = String(e && e.stack || e).slice(0, 400);
+        console.warn('[fr28] frame failed', err);
+        return { err, pumped, frames: engine.frames, threw };
+      }
+    };
+    // the recorder hands the loop back (and waits for the uploads) between takes
+    window.__REC_DRIVE = (on) => { engine.externalDrive = !!on; return frPend; };
+    // FR28: the warm-up in one call. The classic warm-up is a page call and two requestAnimationFrame turns per step, and
+    // the second turn draws a still frame even for a draw-free step: 450 steps cost ~100 s, nearly all of it pictures
+    // nobody keeps. Here the sim steps back to back (a yield every few steps so a fetch or a worker can land), and only
+    // the last `drawLast` steps are drawn, for the light probe, the exposure and the temporal histories.
+    window.__REC_WARM = async (o) => {
+      const T0 = performance.now();
+      engine.externalDrive = true;
+      let drawn = 0;
+      try {
+        for (let i = 0; i < o.n; i++) {
+          pending = o.dt || 1 / 30;
+          if (i < o.n - (o.drawLast ?? 60)) engine.skipDraw = true; else drawn++;
+          engine.frameBody();
+          if (i % 4 === 3) await yieldT();
+        }
+      } finally { engine.externalDrive = false; }
+      return { ms: +(performance.now() - T0).toFixed(0), drawn, threw };
+    };
     // everything the recorder needs to decide whether the frame is settled
     window.__RECSTAT = () => ({
       ready: !!window.__READY,

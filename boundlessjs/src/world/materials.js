@@ -635,6 +635,21 @@ export const FR26 = !(typeof location !== 'undefined' && new URLSearchParams(loc
 // vein network across the flags, and the hairline cracks a ridge network every ~0.3 m that read as tar snakes. A locate
 // mark is now a short sprayed stroke with a cross-tick, and a cracked flag carries one or two thin cracks. `?sw26=0` reverts.
 export const SW26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sw26') === '0');
+// GM28 (owner 2026-09-27, with stills of a street-level NYC game as the bar: "Add proper modern 2026 asphalt and sidewalk
+// materials with proper layering - right now all materials look flat"): the grain of the 4K asphalt and concrete sets was
+// multiplied in at 30-45 % and faded out by a 0.3-1 m pixel footprint, so a road read as one smooth grey sheet at every
+// distance a street shot has; the normal map was flattened (z x1.6) and blended at 85 %, and the roughness map moved the
+// asphalt by +-15 %, so nothing caught the sun. GM28: the photo grain near full strength out to a 2.4 m footprint (the
+// maps are mip-filtered and the detail multiply is mean-preserving, so the far field keeps its calibrated tone), the
+// relief unflattened, the roughness map at +-30 % (aggregate glints, binder stays matte), and new layers on the asphalt:
+// rubber skid pairs, oil and damp blotches; the concrete's grain, joints and stains deeper. `?gm28=0` restores.
+export const GM28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gm28') === '0');
+// BW28 (2026-09-27, the same review): a face the compiler marks blind (a lot-line wall) was painted with one fbm and
+// nothing else, and on the towers over 125th & Lenox (the State Office Building, the glass tower east of it) those
+// faces are most of what a street shot sees above the low buildings: flat beige and navy boxes. A neighbour in Harlem
+// rarely rises past 26 m, so on a building over 36 m the wall above 26 m is exposed and is drawn as the building's own
+// windowed facade; below it, and on everything lower, the blind wall stays. `?bw28=0` restores.
+export const BW28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('bw28') === '0');
 const STONE_SETS = {
   cgranite:   { mean: [0.3769, 0.2992, 0.1664], size: 2.17 },   // stone_wall_03: speckled, jointless (steps, walls, rims)
   climestone: { mean: [0.3772, 0.2890, 0.1764], size: 3.00 },   // sandstone_blocks_08: ashlar coursing (Low Library)
@@ -799,6 +814,10 @@ const TEX_GLSL = /* glsl */ `
   // anti-tiled lookup: two rotated/offset taps blended by a low-frequency mask
   vec4 atex(sampler2D t, vec2 uv, float mk) {
     return mix(texture2D(t, uv), texture2D(t, rot2(uv, 2.03) + vec2(0.37, 0.71)), mk);
+  }
+  // the same two taps with explicit gradients (parallax: the mip is picked from the unshifted uv, not the shifted one)
+  vec4 atexG(sampler2D t, vec2 uv, float mk, vec2 gx, vec2 gy) {
+    return mix(textureGrad(t, uv, gx, gy), textureGrad(t, rot2(uv, 2.03) + vec2(0.37, 0.71), rot2(gx, 2.03), rot2(gy, 2.03)), mk);
   }
 `;
 
@@ -1101,6 +1120,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
         float cvar = floor(vAux2.z * 1024.0 + 0.5) * (1.0 / 1024.0);
         bool cornice = mod(flags, 2.0) >= 1.0;
         bool blind = mod(floor(flags / 2.0), 2.0) >= 1.0;
+        ${BW28 ? 'if (blind && vAux2.x > 36.0 && vFUv.y > 26.0) blind = false;   // BW28: an exposed upper lot-line wall' : ''}
         bool isRoof = mod(floor(flags / 4.0), 2.0) >= 1.0;
         bool store = mod(floor(flags / 8.0), 2.0) >= 1.0;
         // ---- SKYSCRAPER PASS (docs/notes/skyscrapers.md, world/towers.js) ----
@@ -3565,7 +3585,7 @@ export function makeGroundMaterial() {
           // asphalt is one of the roughest surfaces in a city: a low value here
           // lets the grazing sky specular sheet the road over as a wet look
           GND_rough = 0.92 + lotAge * 0.05;
-          GND_spec = 0.50;
+          GND_spec = ${GM28 ? '0.62' : '0.50'};
           // lot seam: the cold joint where a new pass met the old surface
           {
             vec2 lf = abs(fract(lotQ) - 0.5);
@@ -3704,6 +3724,36 @@ export function makeGroundMaterial() {
             }
           }
           #endif
+          ${GM28 ? `#ifndef GNDCHEAP
+          // GM28: rubber skid pairs, two dark tyre streaks 1.6 m apart, 4-14 m long, drifting a little across the lane,
+          // where a car braked hard: black-brown rubber over the aggregate, a touch glossier. About 1 in 6 cells of
+          // 26 x 9 m, on the street's own bearing (the block mask gstreak picks it with).
+          {
+            vec2 q = smoothstep(0.38, 0.62, vnoise(gG * 0.0075 + 41.0)) > 0.5 ? gG.yx : gG;   // q.x along the street
+            vec2 sc = floor(q / vec2(26.0, 9.0)), sf = q - sc * vec2(26.0, 9.0);
+            float aaY = fwidth(q.y) + 1e-3;                                   // outside the branch: derivatives need all 4 pixels
+            float sh = hash12(sc + 71.3);
+            if (sh < 0.17 && gMid > 0.02) {
+              float L = 4.0 + 10.0 * hash12(sc + 3.7), x0 = hash12(sc + 9.1) * (26.0 - L);
+              float t = clamp((sf.x - x0) / L, 0.0, 1.0);
+              float inL = smoothstep(0.0, 0.06, t) * smoothstep(1.0, 0.65, t) * step(x0, sf.x) * step(sf.x, x0 + L);
+              float y0 = 1.6 + hash12(sc + 13.3) * 5.0 + (hash12(sc + 5.5) - 0.5) * 1.4 * t * t;
+              float w = 0.10 + 0.05 * hash12(sc + 17.7);
+              float tyre = max(smoothstep(w + aaY, w - aaY, abs(sf.y - y0)), smoothstep(w + aaY, w - aaY, abs(sf.y - y0 - 1.6)));
+              float skid = tyre * inL * (0.55 + 0.45 * vnoise(q * vec2(0.9, 4.0) + 7.0)) * gMid;
+              albedo = mix(albedo, albedo * vec3(0.40, 0.38, 0.37), skid * 0.78);
+              GND_rough = mix(GND_rough, 0.72, skid * 0.6);
+            }
+          }
+          // GM28: oil and damp blotches (0.4-2 m, soft, aperiodic): parked and idling cars, a dried puddle's darker
+          // bed; a little glossier than the binder around them
+          {
+            float ob = fbm(vWPos.xz * 0.55 + 13.0) * 0.65 + vnoise(vWPos.xz * 1.9 + 5.0) * 0.35;
+            float blot = smoothstep(0.70, 0.84, ob) * gMid;
+            albedo *= 1.0 - blot * 0.30;
+            GND_rough = mix(GND_rough, 0.68, blot * 0.45);
+          }
+          #endif` : ''}
         } else if (m == 1) {
           // ---- NYC sidewalk: 5 ft (1.524 m) concrete flags on a 4-flag,
           // 20 ft expansion-joint panel (DOT Street Works Manual 4.4). The
@@ -3731,11 +3781,11 @@ export function makeGroundMaterial() {
           vec2 jW = vec2(mix(1.0, 0.42, swAx), mix(0.42, 1.0, swAx));
           // tooled joint: a hand-run groove with a LIGHTER trowelled bevel each
           // side. The bevel is the tell that reads "sidewalk" and not "tiles".
-          float joint = max((1.0 - smoothstep(0.0, jAA.x * 1.7 + 0.008, j.x)) * jW.x,
-                            (1.0 - smoothstep(0.0, jAA.y * 1.7 + 0.008, j.y)) * jW.y);
+          float joint = max((1.0 - smoothstep(0.0, jAA.x * 1.7 + ${GM28 ? '0.014' : '0.008'}, j.x)) * jW.x,
+                            (1.0 - smoothstep(0.0, jAA.y * 1.7 + ${GM28 ? '0.014' : '0.008'}, j.y)) * jW.y);
           float bevel = max(smoothstep(jAA.x * 1.4 + 0.028, jAA.x + 0.011, j.x) * jW.x,
                             smoothstep(jAA.y * 1.4 + 0.028, jAA.y + 0.011, j.y) * jW.y) - joint;
-          albedo *= 1.0 - joint * 0.24;
+          albedo *= 1.0 - joint * ${GM28 ? '0.46' : '0.24'};
           albedo *= 1.0 + max(bevel, 0.0) * 0.12 * gNear;
           // expansion joints every 4th flag (20 ft): a wider, darker bitumen
           // recess — the long rhythm a plain 1.5 m checker lacks. It is a THIN
@@ -3749,7 +3799,7 @@ export function makeGroundMaterial() {
           // +-8 % value and +-4 % hue the top-down read as a random light/dark
           // checkerboard, where a real walk is nearly uniform with the odd
           // obviously-new flag (kept below as the 7 % replacement case).
-          albedo *= 0.952 + 0.078 * slab;
+          albedo *= ${GM28 ? '0.925 + 0.13 * slab' : '0.952 + 0.078 * slab'};
           albedo *= mix(vec3(1.016, 0.998, 0.972), vec3(0.978, 0.992, 1.018), hash12(sid + 11.7));
           GND_rough = 0.86 + 0.08 * slab; GND_spec = 0.72;
           // replacements: ~7% fresh flags (lighter, smoother, sharper joints),
@@ -3815,8 +3865,8 @@ export function makeGroundMaterial() {
           }
           // staining: hosing/foot-traffic blotches, dark drip runs off the
           // building line, and the sooty grey that collects along the kerb
-          albedo *= 1.0 - smoothstep(0.46, 0.9, fbm(vWPos.xz * 0.14 + 23.0)) * 0.13;
-          albedo *= 1.0 - smoothstep(0.5, 0.9, fbm(vWPos.xz * 0.05 + 4.2)) * 0.17;
+          albedo *= 1.0 - smoothstep(0.46, 0.9, fbm(vWPos.xz * 0.14 + 23.0)) * ${GM28 ? '0.20' : '0.13'};
+          albedo *= 1.0 - smoothstep(0.5, 0.9, fbm(vWPos.xz * 0.05 + 4.2)) * ${GM28 ? '0.24' : '0.17'};
           // tree-pit / scaffold rust and grease haloes: warm dark, ~8 m apart
           {
             float halo = smoothstep(0.72, 0.97, fbm(vWPos.xz * 0.09 + 55.0));
@@ -4406,7 +4456,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
         // average of the source jpg) are in docs/notes/surfaces.md.
         {
           float fw = length(fwidth(vWPos.xz));
-          float det = smoothstep(1.0, 0.3, fw);
+          float det = ${GM28 ? 'smoothstep(2.4, 0.45, fw)' : 'smoothstep(1.0, 0.3, fw)'};
           if (det > 0.02) {
             float mk = smoothstep(0.35, 0.65, vnoise(vWPos.xz * 0.017));
             vec3 wV = normalize(vWPos - cameraPosition);
@@ -4427,17 +4477,45 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
               // is gone beyond it. The DISPLACEMENT is still read for crevice
               // grime, which is a scalar multiply and cannot destabilise a mip.
               float pxDet = det * ${AAFIX ? 'smoothstep(0.26, 0.05, fw)' : '1.0'};
+              ${GM28 ? `
+              // GM28: parallax OCCLUSION instead of the single tap: 10 steps down a 1.8 cm relief and a secant refine,
+              // inside ~7 m (footprint under 8 cm), every tap on the flat uv's gradients (one mip per pixel, no LOD
+              // jitter). The eye ray walks down from the surface; the lookup moves away from the eye as it goes deeper.
+              vec2 gdx = dFdx(uv), gdy = dFdy(uv);
+              float pom = det * smoothstep(0.08, 0.02, fw) * (1.0 - GND_paint);
+              if (pom > 0.02) {
+                vec3 toE = -wV;
+                vec2 dUV = toE.xz / max(toE.y, 0.12) * (0.018 * 0.16) * pom * 0.1;   // one of 10 layers
+                vec2 cu = uv; float lay = 0.0, dep = 1.0 - hgt;
+                for (int k = 0; k < 10; k++) {
+                  if (lay >= dep) break;
+                  cu -= dUV; lay += 0.1;
+                  dep = 1.0 - atexG(t_asD, cu, mk, gdx, gdy).x;
+                }
+                vec2 pu = cu + dUV;
+                float aft = dep - lay, bef = (1.0 - atexG(t_asD, pu, mk, gdx, gdy).x) - lay + 0.1;
+                uv = mix(cu, pu, clamp(aft / min(aft - bef, -1e-4), 0.0, 1.0));
+                hgt = atexG(t_asD, uv, mk, gdx, gdy).x;
+              }
+              vec3 tc = atexG(t_asC, uv, mk, gdx, gdy).rgb;` : `
               uv -= wV.xz / max(-wV.y, 0.3) * 0.03 * (1.0 - hgt) * pxDet * (1.0 - GND_paint);
-              vec3 tc = atex(t_asC, uv, mk).rgb;
+              vec3 tc = atex(t_asC, uv, mk).rgb;`}
               // thermoplastic is a 2-3 mm film: it FILLS the aggregate, so the
               // grain, the crevice grime and the normal relief all fade out
               // with paint coverage and come back exactly where it has worn.
               float bare = 1.0 - GND_paint;
               float agg = 0.55 + 0.85 * vnoise(vWPos.xz * 0.62 + 3.0);
-              albedo *= gdet(tc, vec3(43.5, 43.5, 50.0), 0.30 * agg * mix(1.0, 0.30, GND_paint), det);
-              albedo *= 1.0 - (1.0 - hgt) * 0.22 * det * bare;   // crevice grime
-              GND_tn = atex(t_asN, uv, mk).xyz * 2.0 - 1.0; GND_tnW = det * 0.85 * mix(1.0, 0.22, GND_paint);
-              if (m == 0) GND_rough = mix(GND_rough, GND_rough * (0.82 + atex(t_asR, uv, mk).x * 0.30), det * 0.8);
+              albedo *= gdet(tc, vec3(43.5, 43.5, 50.0), ${GM28 ? '0.80 * agg * mix(1.0, 0.36, GND_paint)' : '0.30 * agg * mix(1.0, 0.30, GND_paint)'}, det);
+              ${GM28 ? `{
+                // GM28: the coarse chip layer (the set again at 1/4.8 the frequency, rotated), strongest where the fine
+                // grain has already gone sub-pixel, and a little of its relief into the normal
+                vec2 uvC = rot2(vWPos.xz * 0.0333, 0.61) + 0.29;
+                float detK = smoothstep(4.5, 0.9, fw);
+                albedo *= gdet(atex(t_asC, uvC, 1.0 - mk).rgb, vec3(43.5, 43.5, 50.0), 0.62 * mix(1.0, 0.40, GND_paint), detK);
+              }` : ''}
+              albedo *= 1.0 - (1.0 - hgt) * ${GM28 ? '0.36' : '0.22'} * det * bare;   // crevice grime
+              GND_tn = ${GM28 ? 'atexG(t_asN, uv, mk, gdx, gdy)' : 'atex(t_asN, uv, mk)'}.xyz * 2.0 - 1.0; GND_tnW = det * ${GM28 ? '1.0 * mix(1.0, 0.30, GND_paint)' : '0.85 * mix(1.0, 0.22, GND_paint)'};
+              if (m == 0) GND_rough = mix(GND_rough, GND_rough * ${GM28 ? '(0.64 + atexG(t_asR, uv, mk, gdx, gdy).x * 0.60)' : '(0.82 + atex(t_asR, uv, mk).x * 0.30)'}, det * 0.8);
             } else if (m == 1 || m == 2 || m == 6) {             // concrete sidewalk/curb/path
               // the kerb face is vertical: an XZ lookup smears it into vertical
               // stripes and lifted it to near-white. Sample it in the
@@ -4446,9 +4524,10 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
               vec2 uvW = vec2(dot(vWPos.xz, normalize(vec2(-GND_wn.z, GND_wn.x) + 1e-5)), vWPos.y) * 1.1;
               vec2 uv = mix(uvF, uvW, GND_wall);
               vec3 tc = atex(t_coC, uv, mk).rgb;
-              float detC = det * smoothstep(0.55, 0.2, fw);      // fade earlier: minified concrete = static
-              albedo *= gdet(tc, vec3(5.50, 6.02, 7.40), 0.45, detC);
-              GND_tn = atex(t_coN, uv, mk).xyz * 2.0 - 1.0; GND_tnW = detC * 0.6 * (1.0 - GND_wall);
+              float detC = det * ${GM28 ? 'smoothstep(1.5, 0.35, fw)' : 'smoothstep(0.55, 0.2, fw)'};      // fade earlier: minified concrete = static
+              albedo *= gdet(tc, vec3(5.50, 6.02, 7.40), ${GM28 ? '0.82' : '0.45'}, detC);
+              ${GM28 ? 'albedo *= gdet(atex(t_coC, rot2(uv * 0.25, 1.13) + 0.41, 1.0 - mk).rgb, vec3(5.50, 6.02, 7.40), 0.55, det * smoothstep(3.5, 0.8, fw) * (1.0 - GND_wall));' : ''}
+              GND_tn = atex(t_coN, uv, mk).xyz * 2.0 - 1.0; GND_tnW = detC * ${GM28 ? '0.95' : '0.6'} * (1.0 - GND_wall);
               // gum specks: ~7% of 0.55m sidewalk cells carry a trodden-flat dark dot
               if (m == 1) {
                 vec2 gc = vWPos.xz / 0.55;
@@ -4656,9 +4735,9 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
         if (GND_tnW > 0.003) { // texture normal map, ground tangent frame (T=+x, B=+z)
           vec3 tn2 = normalize(vec3(GND_tn.xy, max(GND_tn.z, 0.3)));
-          vec3 wN = normalize(vec3(tn2.x, tn2.z * 1.6, tn2.y));
+          vec3 wN = normalize(vec3(tn2.x, tn2.z * ${GM28 ? '1.0' : '1.6'}, tn2.y));
           vec3 vN = normalize((viewMatrix * vec4(wN, 0.0)).xyz);
-          normal = normalize(mix(normal, vN, GND_tnW * 0.85));
+          normal = normalize(mix(normal, vN, GND_tnW * ${GM28 ? '1.0' : '0.85'}));
         }
         // rain rings on standing water — same clock (windT) as the falling rain
         if (wet > 0.003) {

@@ -527,6 +527,11 @@ class GodraysPass extends Pass {
 // the depth buffer, blur along the screen-space velocity. Sells swing speed
 // (this is a grapple game) at 8 taps; object motion isn't tracked — camera
 // motion dominates traversal anyway.
+// MB28 (2026-09-27, the teaser's fast moves): in record mode a captured frame is the mean of N renders of ONE frozen pose
+// (AC26), so "last frame" was the same pose and the streak was zero. While recordHold() says so, the streak spans the
+// move from the previous captured POSE (camera world matrix changed), which is a 360-degree shutter scaled by uAmt.
+// `?mb28=0` restores the per-render reprojection.
+const MB28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('mb28') === '0');
 class MotionBlurPass extends Pass {
   constructor(camera, depthTexture) {
     super();
@@ -581,14 +586,25 @@ class MotionBlurPass extends Pass {
     this._camP = this._camP || new THREE.Vector3(1e9, 0, 0);
     if (this._camP.distanceToSquared(this.camera.position) > 900) this._first = true;
     this._camP.copy(this.camera.position);
-    if (this._first) { this.prevVP.copy(this._curVP); this._first = false; }
+    let cut = false;
+    if (this._first) { this.prevVP.copy(this._curVP); this._first = false; cut = true; }
+    const hold = MB28 && typeof this.recordHold === 'function' && this.recordHold();
+    if (hold) {
+      this._lw = this._lw || new THREE.Matrix4().set(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+      this._lvp = this._lvp || new THREE.Matrix4().copy(this._curVP);
+      if (cut) { this._lw.copy(this.camera.matrixWorld); this._lvp.copy(this._curVP); }
+      else if (!this._lw.equals(this.camera.matrixWorld)) {
+        this.prevVP.copy(this._lvp);   // the pose before this one
+        this._lw.copy(this.camera.matrixWorld); this._lvp.copy(this._curVP);
+      }
+    }
     this.uniforms.tDiffuse.value = readBuffer.texture;
     this.uniforms.uInvProj.value.copy(this.camera.projectionMatrixInverse);
     this.uniforms.uCamMat.value.copy(this.camera.matrixWorld);
     this.uniforms.uPrevVP.value.copy(this.prevVP);
     renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
     this._quad.render(renderer);
-    this.prevVP.copy(this._curVP);
+    if (!hold) this.prevVP.copy(this._curVP);
   }
 }
 
@@ -1063,6 +1079,7 @@ export class Engine {
     this.taa = new TAAPass(this.camera, this.prepass.rt.depthTexture, innerWidth, innerHeight);
     this.composer.addPass(this.taa);
     this.moblur = new MotionBlurPass(this.camera, this.prepass.rt.depthTexture);
+    this.moblur.recordHold = () => !!this.recordMode;   // MB28
     this.composer.addPass(this.moblur);
     this.bokeh = new BokehPass(this.scene, this.camera, { focus: 28, aperture: 0.00004, maxblur: 0.008 });
     this.bokeh.enabled = false; // cinematic DoF — editor toggle
@@ -1136,6 +1153,13 @@ export class Engine {
       const nap = this.idleNap ? this.idleNap() : 0;
       if (nap > 0) napT = setTimeout(arm, nap);
       else requestAnimationFrame(loop);
+      // FR28: a recorder that drives the frames itself (main.js __REC_FRAME) keeps this loop alive but draws nothing here,
+      // so no idle frame competes with its own on the GPU
+      if (this.externalDrive) return;
+      frameBody();
+    };
+    // one frame: the sim hook, the temporal bookkeeping, the render, the capture/grab, the exposure meter
+    const frameBody = () => {
       const now = performance.now();
       const rawDt = (now - this._lastT) / 1000; // unclamped: fps/profiling must see real frame time
       const dt = Math.min(0.05, rawDt);
@@ -1248,6 +1272,7 @@ export class Engine {
       if (this.frames % 8 === 3 && !this._meterBusy) this._meterExposure(dt);
       this.frames++;
     };
+    this.frameBody = frameBody;   // FR28
     loop();
     // see the capture block in the frame loop: one pending request, served by the next rendered frame
     this.capture = (type = 'image/jpeg', q = 0.95) => new Promise((res, rej) => { this._cap = { type, q, res, rej }; });

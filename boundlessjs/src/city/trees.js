@@ -394,6 +394,10 @@ function applyEdgeFade(instancer) {
 const T25Q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
 const T25 = { NC: ATLAS.NC, CS: ATLAS.CS, ALPHA: 0.42, LOD: Number(T25Q?.get('treelod')) || (T25Q?.get('filmlod') === '1' ? 1e4 : 90) };
 // calibration uniforms, live-tunable from a measurement page (window.__TREE25)
+// FL28 (2026-09-27, the teaser; the owner's reference stills are autumn, "more colorful"): `?fall=0..1` turns the
+// crowns: per tree one of yellow, orange, red or a yellow-green, 16 % stay green, at the leaf's own luminance (so the
+// calibrated brightness holds), and the transmitted light warms with it. Off (0) by default: the sim and the ad are summer.
+const FALL28 = { value: T25Q ? Math.min(1, Math.max(0, +(T25Q.get('fall') || 0))) : 0 };
 const LEAF25 = {
   gain: { value: new THREE.Vector3(1.75, 1.75, 1.55) },       // x mix(0.30, 0.88, night): the prop light-trim contract
   light: { value: new THREE.Vector4(0.4, 4.0, 0.45, 0.3) },  // x transmission, y its view exponent, z AO on direct, w wrap
@@ -472,10 +476,11 @@ function applyCrownShading25(m) {
     prev?.call(m, sh, r);
     sh.uniforms.uLeafGain = LEAF25.gain; sh.uniforms.uLeafLight = LEAF25.light; sh.uniforms.uLeafTrans = LEAF25.trans; sh.uniforms.uLeafBal = LEAF25.bal;
     sh.uniforms.uLeafNight = ENV.night;
+    sh.uniforms.uFall28 = FALL28;
     if (TC26) { sh.uniforms.uLeafSun = LEAF25.sun; sh.uniforms.uLeafSheen = LEAF25.sheen; sh.uniforms.uLeafClu = LEAF25.clu; sh.uniforms.uLeafSunK = LEAF25.sunK; }
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aAO; varying float vAO25;' + (TC26 ? '\nattribute vec4 aSun; attribute vec3 aClu; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26;' : ''))
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO25 = aAO;' + (TC26 ? `
+      .replace('#include <common>', '#include <common>\nattribute float aAO; varying float vAO25; varying float vFall28;' + (TC26 ? '\nattribute vec4 aSun; attribute vec3 aClu; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26;' : ''))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAO25 = aAO;\n#ifdef USE_INSTANCING\nvec3 ip28 = instanceMatrix[3].xyz;\n#else\nvec3 ip28 = vec3(0.0);\n#endif\nvFall28 = fract(sin(dot(floor(ip28.xz * 0.5) + 0.37, vec2(12.9898, 78.233))) * 43758.5453);' + (TC26 ? `
       {
         // TC26: the sun visibility gradient, the clump normal and the card facing into view space (a missing attribute
         // reads (0,0,0,1): fully visible, no clump, no facing)
@@ -491,12 +496,22 @@ function applyCrownShading25(m) {
         vFace26 = length( f26 ) > 1e-3 ? normalize( f26 ) : vec3( 0.0 );
       }` : ''));
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform vec3 uLeafGain; uniform vec4 uLeafLight; uniform vec3 uLeafTrans; uniform vec4 uLeafBal; uniform float uLeafNight; varying float vAO25;'
+      .replace('#include <common>', '#include <common>\nuniform vec3 uLeafGain; uniform vec4 uLeafLight; uniform vec3 uLeafTrans; uniform vec4 uLeafBal; uniform float uLeafNight; varying float vAO25; uniform float uFall28; varying float vFall28; float leaf28Fall = 0.0;'
         + (TC26 ? '\nuniform vec4 uLeafSun; uniform vec4 uLeafSheen; uniform vec4 uLeafClu; uniform vec3 uLeafSunK; varying vec4 vSun26; varying vec3 vClu26; varying vec3 vFace26; varying float vTone26; float leaf26Sun = 0.0;' : ''))
       // the prop light-trim contract (materials.js applyLightTrim), with the atlas carrying a real leaf albedo
       // (TC26: x a per-clump tone, lighter and warmer or darker and cooler, so clumps read as units)
       .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= uLeafGain * mix(0.30, 0.88, uLeafNight)'
-        + (TC26 ? ' * ( 1.0 + uLeafSheen.w * vTone26 * vec3( 1.3, 1.0, 0.45 ) );' : ';'))
+        + (TC26 ? ' * ( 1.0 + uLeafSheen.w * vTone26 * vec3( 1.3, 1.0, 0.45 ) );' : ';')
+        // FL28: autumn, at the leaf's own luminance
+        + `\nif ( uFall28 > 0.001 ) {
+  float hf28 = vFall28;
+  vec3 fc28 = hf28 < 0.28 ? vec3( 1.00, 0.66, 0.12 ) : hf28 < 0.52 ? vec3( 1.00, 0.42, 0.08 ) : hf28 < 0.68 ? vec3( 0.74, 0.19, 0.07 ) : hf28 < 0.84 ? vec3( 0.82, 0.76, 0.22 ) : vec3( -1.0 );
+  if ( fc28.x >= 0.0 ) {
+    float L28 = dot( diffuseColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) );
+    leaf28Fall = uFall28 * ( 0.80 + 0.20 * fract( hf28 * 71.0 ) );
+    diffuseColor.rgb = mix( diffuseColor.rgb, fc28 * ( L28 / max( 1e-3, dot( fc28, vec3( 0.2126, 0.7152, 0.0722 ) ) ) ) * 1.12, leaf28Fall );
+  }
+}`)
       // both faces of a card take the OUTWARD crown-volume normal (three flips it on back faces)
       .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n#ifdef DOUBLE_SIDED\nnormal *= faceDirection;\n#endif')
       // wrap + transmission: thin leaves light around the terminator, and a backlit crown rim glows
@@ -523,7 +538,7 @@ void RE_Direct_Leaf25( const in IncidentLight directLight, const in vec3 geometr
   float back = pow( saturate( dot( geometryViewDir, -directLight.direction ) ), uLeafLight.y );
   float away = saturate( -dotNL );
   // (transmission takes the visibility but never the sunlit lift: a backlit crown goes darker green with glowing rims)
-  reflectedLight.directDiffuse += directLight.color * min( occ, 1.0 ) * material.diffuseContribution * uLeafTrans * ( 0.3 * away + back ) * uLeafLight.x * RECIPROCAL_PI;
+  reflectedLight.directDiffuse += directLight.color * min( occ, 1.0 ) * material.diffuseContribution * mix( uLeafTrans, vec3( 1.35, 0.72, 0.22 ), leaf28Fall ) * ( 0.3 * away + back ) * uLeafLight.x * RECIPROCAL_PI;
   if ( leaf26Sun > 0.5 && uLeafSheen.y > 0.0 ) {
     // waxy cuticle sheen: a rougher lobe on a normal between the clump's and the card's own (turned to the viewer)
     vec3 F = vFace26 * ( dot( vFace26, geometryViewDir ) < 0.0 ? -1.0 : 1.0 );

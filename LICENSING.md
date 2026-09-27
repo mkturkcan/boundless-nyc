@@ -12,6 +12,7 @@ photoreal pedestrians additionally fall under Epic Games' MetaHuman terms (see t
 | Compiled city: tiles, derived data and the sky-occlusion bake | dataset `Content/tiles/`, `Content/data/`, `Content/textures/cityao.*`; `boundlessjs/public/data/` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
 | Vehicle and prop models | dataset `Content/models/fleet24/`, `Content/models/carla/` | CC BY 4.0, CARLA Simulator |
 | Pedestrian models | dataset `Content/models/peds24/` | CC BY 4.0, CARLA Simulator, **and Epic Games' MetaHuman terms** |
+| Pedestrian models, Rocketbox set | dataset `Content/models/peds24/rb27/` | MIT, Microsoft Rocketbox Avatar Library (`rb27/NOTICE.md`) |
 | Pedestrian motion clips | dataset `Content/models/peds24/clips_*.bin` | CC BY 4.0, 100STYLE |
 | Bag and backpack models | baked into `Content/models/peds24/` | CC BY 4.0, individual authors ([ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)) |
 | Textures and sky HDRIs | dataset `Content/textures/` (except `cityao.*`) | CC0 1.0, Poly Haven and ambientCG |

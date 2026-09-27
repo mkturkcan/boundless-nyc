@@ -87,6 +87,10 @@ cached files are skipped). Compiled output: `public/tiles/`.
   Further NYC edits: CARLA's "California CARLA" plate sheet -> New York Empire Gold (livery_plate.mjs) and a runtime atlas of
   64 NY / TLC plates per instance (fleet24.js plateAtlas); the CarlaCola box truck's Coca-Cola-parody box livery -> plain
   white aluminium (livery_boxtruck.mjs); a modern TLC cab (taxi2) derived at runtime from the Lincoln MKZ 2024 body.
+  FLEET27 (2026-09-26): three older cars from the same CARLA 0.10.0 package added by build_vehicle.mjs, Tesla Model 3
+  (SM_Tesla + its parked mesh), Audi TT and Ford Mustang 1966 (parked only); same CC-BY 4.0 attribution. NYC edits
+  (livery_fleet27.mjs): the CARLA roundel and badges painted out of the Mustang's detail atlas (albedo and normal map)
+  and the "California CARLA" plate on the Tesla's parked-mesh atlas repainted as a New York plate.
 - **100STYLE locomotion dataset** (Ian Mason, Sebastian Starke, Taku Komura, "Real-Time Style Modelling of Human
   Locomotion via Feature-Wise Transformations and Local Motion Phases", 2022; Zenodo record 8127870; **CC-BY 4.0** —
   attribution required). 16 styles (walk + idle) and the rushed / old / neutral-fast / neutral-slow walks, read out of the
@@ -98,4 +102,11 @@ cached files are skipped). Compiled output: `public/tiles/`.
   "Kanken backpack" by Modelified (recoloured dark navy); "Sling Bag" by Hydro3D Solution; "Feuerwear Shoulder Bag Walter
   UK" by Feuerwear; "Worn leather handbag" by Lassi Kaukonen. Normalised by tools/assets/build_props.mjs, fitted per body
   and baked into the walker meshes by build_peds.mjs (lib/propfit.mjs); textures are layers of the peds24 arrays.
+- **Microsoft Rocketbox Avatar Library** (github.com/microsoft/Microsoft-Rocketbox, **MIT licence, "Copyright (c) 2020
+  Microsoft"** — keep the licence text with the files; Gonzalez-Franco et al., "The Rocketbox library and the utility of
+  freely available rigged avatars", Frontiers in Virtual Reality 2020, doi:10.3389/frvir.2020.561558). RB27: adult
+  everyday / office / delivery avatars (no uniforms, costumes or swimwear), fetched by tools/assets/rocketbox_fetch.mjs
+  (FBX + colour / normal / specular TGAs), converted with FBX2glTF 0.13.1, re-bound from the 3ds Max Biped skeleton to the
+  CARLA GEN2 walker skeleton and packed by tools/assets/build_rocketbox.mjs into public/models/peds24/rb27/ (bodies, KTX2
+  arrays, manifest.json, NOTICE.md with the MIT text). The crowd plays the peds24 clips on them; `?rb27=0` leaves them out.
 - **CARLA vehicle models** (carla.org, **CC-BY 4.0** — attribution required in credits): 29 cars, FusoRosa bus, 8 trucks (Sprinter/CarlaCola/Ambulance/Firetruck/HGV/VW T2...) and ~180 street/construction/trash props (Static/Dynamic trees), converted from the CARLA 0.9.15 Windows release to glTF with a CUE4Parse-based converter (not included; exporter outputs metres). GLBs + manifest in public/models/carla/. Material slots are named, textures not baked — assign PBR by slot name (Bodywork/glass/wheel/light).

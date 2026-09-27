@@ -125,6 +125,26 @@ const TW26 = typeof location === 'undefined' || new URLSearchParams(location.sea
 // the car is, the car is placed on it at once, and a short one is driven as a straight connector (probe, 600 steps at
 // 125th & Lenox: jump events 410 -> 0, traffic flow unchanged). `?tw27=0` restores the old junction entry.
 const TW27 = TW26 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('tw27') !== '0');
+// VT27 (owner 2026-09-26: "Vehicle turns are robotic ... vehicles moving in impossible ways, such as moving by 15 degrees
+// or so in between frames non-smoothly"): the body took the heading of the path under it, which steps at every polyline
+// vertex, connector end and lane change. It now follows its own motion the way a car's rear axle does: a point dragged at
+// about half the wheelbase behind the body centre (a tractrix, the rear axle of the kinematic bicycle model), heading =
+// rear -> centre. Turns ease in and out, the body sits a few degrees inside the tangent in a tight corner (the sideslip a
+// car's centre has), and a car that is not moving cannot rotate. `?vt27=0` restores the path heading.
+const VT27 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vt27') !== '0';
+// DL27 (film 11 fTraffic: nothing moved at 125th & Lenox for a whole green): at a divided avenue a car whose next edge is
+// the short link across the median waits at its stop bar while the FAR node shows red to the link's heading. That is right
+// for a car crossing the avenue straight on from the cross street, but a car TURNING onto the link from the avenue (a
+// left across the median) sees red there for the whole of its own green and its own red for the rest: it waited for ever
+// and held its lane. It now goes on its own green like any unprotected left (_boxBlocked holds it while the oncoming
+// carriageway is busy). `?dl27=0` restores the old wait.
+const DL27 = typeof location === 'undefined' || new URLSearchParams(location.search).get('dl27') !== '0';
+// BX27 (film 11 fTraffic re-shoot: a sedan drove through the rear of an SUV standing at the end of its turn, yielding to the
+// walkers on the crossing): a car counted as out of the junction box 4 m before the end of its connector, whatever its
+// length, and not at all once the connector had ended with its rear still in the box. A car at the stop bar now also holds
+// while any crossing car's body (its oriented box, rear included, up to its half length past its connector's end) lies
+// across the path it will drive through the box. `?bx27=0`: the old test only.
+const BX27 = typeof location === 'undefined' || new URLSearchParams(location.search).get('bx27') !== '0';
 const CG = 10;   // car grid cell (m)
 
 export class Traffic {
@@ -1015,7 +1035,7 @@ export class Traffic {
         if (Math.abs(tx2) + Math.abs(tz2) < 1e-6) { tx2 = T.p2[0] - T.p0[0]; tz2 = T.p2[2] - T.p0[2]; } // degenerate (straight chord, k = 0) endpoints
         const yaw = Math.atan2(tx2, tz2);
         this._placeCar(car, bx, by, bz, yaw, dt);
-        if (T.s >= T.len) { car.turn = null; }
+        if (T.s >= T.len) { car.turn = null; if (BX27) car._tail = this.carHalf(car)[1] + 0.6; }   // BX27: its rear is still in the box
         continue;
       }
       const s = this.sampleEdge(e, car.d);
@@ -1061,7 +1081,13 @@ export class Traffic {
         else if (endD < 16) car.v = Math.min(car.v, 2.5);   // could not get over: creep and wait for a gap
       }
       // ---- IDM longitudinal control: leader on my edge/lane
-      const v0 = e.speed * (0.85 + ((car.idx * 37) % 10) / 40);
+      let v0 = e.speed * (0.85 + ((car.idx * 37) % 10) / 40);
+      // VT27: a car slows for the turn ahead the way a driver does: its desired speed follows a 2.2 m/s2 braking curve down
+      // to the connector's cap at the mouth (6 m/s round a corner, 3.2 for a U-turn); it used to meet the cap in one frame
+      if (VT27 && car.next && car.next.turn && car.next.turn !== 'straight') {
+        const vTurn = car.next.turn === 'uturn' ? 3.2 : 6.0, dM = Math.max(0, endD - Math.max(0, mEnd || 0));
+        v0 = Math.min(v0, Math.sqrt(vTurn * vTurn + 4.4 * dM));
+      }
       let gap = 1e9, leadV = v0;
       for (const o of e.cars) {
         if (o === car || o.dir !== car.dir || o.lane !== car.lane) continue;
@@ -1144,7 +1170,8 @@ export class Traffic {
       if (!hold && car.next && car.next.ne.len < 26) {
         const ne2 = car.next.ne, nd2 = car.next.o.dir;
         const hd = this.dirAt(ne2, nd2 > 0 ? ne2.len - 0.5 : 0.5, nd2);
-        if (this.stateFor(nd2 > 0 ? ne2.b : ne2.a, hd[0], hd[1]) === 'R') hold = true;
+        const onto = DL27 && Math.abs(s.dirx * car.dir * hd[1] - s.dirz * car.dir * hd[0]) > 0.5;   // DL27: turning onto the link
+        if (!onto && this.stateFor(nd2 > 0 ? ne2.b : ne2.a, hd[0], hd[1]) === 'R') hold = true;
       }
       if (hold && endD - stopD < gap) { gap = Math.max(0.1, endD - stopD); leadV = 0; }
       { const pg = this._pedGap(car); if (pg < gap) { gap = Math.max(0.05, pg); leadV = 0; } }
@@ -1153,12 +1180,17 @@ export class Traffic {
       const acc = IDM.a * (1 - Math.pow(car.v / Math.max(1, v0), IDM.delta) - (gap < 1e8 ? (sStar / Math.max(0.5, gap)) ** 2 : 0));
       car.v = Math.max(0, car.v + acc * dt);
       car.d += car.v * dt * car.dir;
+      if (car._tail > 0) car._tail -= car.v * dt;
       // ---- transition at the junction boundary (mouth), not the node center
       if (endD <= (mEnd > 0 ? mEnd + 0.6 : 0.12) || car.d >= e.len - 0.05 || car.d <= 0.05) {
         let pick = car.next && this.edges.has(car.next.ne.id) ? car.next : (() => {
           const ex = this.dirAt(e, car.dir > 0 ? e.len - 0.5 : 0.5, car.dir);
           return this._pickNext(car, nodeKey, ex[0], ex[1]);
         })();
+        if (TW27 && pick && car._badNe !== undefined && pick.ne.id === car._badNe) {
+          const exB = this.dirAt(e, car.dir > 0 ? e.len - 0.5 : 0.5, car.dir);
+          for (let k = 0; k < 4 && pick && pick.ne.id === car._badNe; k++) pick = this._pickNext(car, nodeKey, exB[0], exB[1]) || pick;
+        }
         // could not reach the turn lane in time (traffic beside it): do not cut across the
         // neighbours — take the straight continuation when there is one
         if (pick && car.turnLaneWant >= 0 && car.lane !== car.turnLaneWant && Math.abs(this._turnCross(car, e, pick)) > 0.4) {
@@ -1209,6 +1241,7 @@ export class Traffic {
         car.dir = pick.o.dir;
         const lanesDir = ne.oneway !== 0 ? ne.lanes : Math.max(1, Math.floor(ne.lanes / 2));
         car.lane = Math.min(car.lane, Math.max(0, lanesDir - 1));
+        const lf0 = car.laneF, lfv0 = car._lfv;   // TW27: kept for a refused connector (the car stays on its edge and lane)
         if (TW26 && car.laneF !== undefined) { car.laneF = Math.min(car.laneF, Math.max(0, lanesDir - 1)); car._lfv = 0; }
         car.d = entryD;
         ne.cars.add(car);
@@ -1261,6 +1294,16 @@ export class Traffic {
             if (!best) for (const kf of [0.36, 0.5, 0.64]) { const Tk = TW26 ? mkW(kf * chord) : mk(kf * chord, p0w, p2w); if (!offRoad(Tk)) { best = Tk; break; } }
             T = best || (TW26 ? mkW(0.5 * chord) : mk(0.5 * chord, p0w, p2w));
           }
+          // TW27: a connector that doubles back (its end behind its start, or handles pointing apart: a cusp) drove the car
+          // out, reversed it along the curve and brought it back, the body spinning (yaw probe: up to 149 deg in a frame).
+          // The car stays on its edge instead: a two-way edge U-turns there properly, a one-way edge picks another
+          // continuation on the next frame (a stopped, recycled car would hold the lane behind it).
+          if (TW27 && this._turnCusp(T)) {
+            ne.cars.delete(car); car.e = e; car.dir = dir0; car.lane = exLane; car.laneF = lf0; car._lfv = lfv0; car.d = exitD; e.cars.add(car);
+            if (e.oneway === 0) { this._uTurn(car, e, mEnd); continue; }
+            car._badNe = ne.id; car.next = null; car.v = Math.min(car.v, 2); continue;
+          }
+          car._badNe = undefined;
           car.turn = { ...T, len: chord * (1 + bend * 0.3), s: 0, vCap: bend > 0.4 ? 6.0 : 12 };
           if (TW26) this._turnLUT(car.turn);
           car.turnNode = this.junction?.get(nodeKey) || nodeKey; car.turnLane = car.lane; car.turnHead = hA; car.turnCr = myCr;   // for the junction-box occupancy test
@@ -1394,11 +1437,19 @@ export class Traffic {
     const myCr = hx0[0] * hBP[1] - hx0[1] * hBP[0];
     const laneP = Math.min(car.lane, Math.max(0, (neP.oneway !== 0 ? neP.lanes : Math.max(1, Math.floor(neP.lanes / 2))) - 1));
     const jg = this.junction?.get(nodeKey) || nodeKey;   // cluster identity: divided-avenue twin nodes share one box
+    let BP = null;   // BX27: the path this car will drive through the box, built at the first crossing car met
     for (const oc of this.cars) {
-      if (oc === car || !oc.turn || oc.turnNode !== jg) continue;
+      if (oc === car || oc.turnNode !== jg) continue;
+      const tail = BX27 && !oc.turn && oc._tail > 0;
+      if (!oc.turn && !tail) continue;
+      const cross = Math.abs(hx0[0] * oc.turnHead[1] - hx0[1] * oc.turnHead[0]);
+      if (BX27 && cross > 0.5) {
+        if (!BP) BP = this._boxPath(car, e, neP, ndP, laneP);
+        if (this._bodyOnPath(BP, car, oc)) return true;                             // BX27: its body lies across my path
+      }
+      if (tail) continue;
       if (oc.e === neP && oc.turnLane === laneP) return true;                       // (a)
       if (oc.turn.s >= oc.turn.len - 4) continue;                                  // cleared the box
-      const cross = Math.abs(hx0[0] * oc.turnHead[1] - hx0[1] * oc.turnHead[0]);
       const dot = hx0[0] * oc.turnHead[0] + hx0[1] * oc.turnHead[1];
       if (cross > 0.5 && (oc.turn.s < oc.turn.len * 0.6 || oc.e === neP)) return true;   // (b)
       if (myCr < -0.4 && dot < -0.5) return true;                                  // (c) oncoming in the box
@@ -1421,6 +1472,41 @@ export class Traffic {
       if (oc === car || oc.turn || oc.dir !== ndP || oc.lane !== laneP) continue;
       const behind = (entry0 - oc.d) * ndP;     // > 0: has not reached the entry point yet
       if (behind > -2 && behind < 6 + oc.v * 2.0) return true;
+    }
+    return false;
+  }
+  // BX27: points (x, z pairs) along the path `car` will drive from where it is through the box: its lane to the mouth, then
+  // the connector update() builds there (k = 0.36 chord cubic), 1.5 m apart
+  _boxPath(car, e, neP, ndP, laneP) {
+    const P = [], dir = car.dir, mE = dir > 0 ? e.mouthB : e.mouthA;
+    const exitD = Math.max(0.2, Math.min(e.len - 0.2, dir > 0 ? e.len - (mE || 0) : (mE || 0)));
+    const offA = this._laneOffset(e, car);
+    for (let dd = car.d; dir > 0 ? dd < exitD : dd > exitD; dd += dir * 1.5) {
+      const q = this.sampleEdge(e, dd);
+      P.push(q.x - q.dirz * dir * offA, q.z + q.dirx * dir * offA);
+    }
+    const ex = this.sampleEdge(e, exitD), mN = ndP > 0 ? neP.mouthA : neP.mouthB;
+    const en = this.sampleEdge(neP, ndP > 0 ? Math.min(mN + 1.0, neP.len * 0.5) : Math.max(neP.len - mN - 1.0, neP.len * 0.5));
+    const offB = this._laneOffsetAt(neP, { dir: ndP }, laneP);
+    const ax = ex.dirx * dir, az = ex.dirz * dir, bx = en.dirx * ndP, bz = en.dirz * ndP;
+    const p0x = ex.x - az * offA, p0z = ex.z + ax * offA, p2x = en.x - bz * offB, p2z = en.z + bx * offB;
+    const ch = Math.hypot(p2x - p0x, p2z - p0z), k = 0.36 * ch, n = Math.max(2, Math.min(40, Math.ceil(ch / 1.5)));
+    const c1x = p0x + ax * k, c1z = p0z + az * k, c2x = p2x - bx * k, c2z = p2z - bz * k;
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
+      P.push(a0 * p0x + a1 * c1x + a2 * c2x + a3 * p2x, a0 * p0z + a1 * c1z + a2 * c2z + a3 * p2z);
+    }
+    return P;
+  }
+  // BX27: does the body of `oc` (its oriented box grown by car's half width + 0.3 m) cover a point of path P?
+  _bodyOnPath(P, car, oc) {
+    const q = oc._pose;
+    if (!q) return false;
+    const hwA = this.carHalf(car)[0] + 0.3, hB = this.carHalf(oc), fx = Math.sin(q[3]), fz = Math.cos(q[3]);
+    const LX = hB[1] + hwA, LY = hB[0] + hwA;
+    for (let i = 0; i < P.length; i += 2) {
+      const dx = P[i] - q[0], dz = P[i + 1] - q[2];
+      if (Math.abs(dx * fx + dz * fz) < LX && Math.abs(dx * fz - dz * fx) < LY) return true;
     }
     return false;
   }
@@ -1483,6 +1569,22 @@ export class Traffic {
     car.turn = { p0, c1, c2, p2, len, s: 0, vCap: 3.2 };
     if (TW26) this._turnLUT(car.turn);
   }
+  // TW27: does this cubic double back? Consecutive tangents more than 100 deg apart (a cusp), or the tangent turning more
+  // than 200 deg in all (a loop). A clean corner turns by its bend angle, a few degrees per sample.
+  _turnCusp(T) {
+    let px = 0, pz = 0, tot = 0;
+    for (let i = 0; i <= 24; i++) {
+      const t = 0.02 + (0.96 * i) / 24, u = 1 - t;
+      const tx = 3 * u * u * (T.c1[0] - T.p0[0]) + 6 * u * t * (T.c2[0] - T.c1[0]) + 3 * t * t * (T.p2[0] - T.c2[0]);
+      const tz = 3 * u * u * (T.c1[2] - T.p0[2]) + 6 * u * t * (T.c2[2] - T.c1[2]) + 3 * t * t * (T.p2[2] - T.c2[2]);
+      const L = Math.hypot(tx, tz);
+      if (L < 1e-6) return true;
+      const x = tx / L, z = tz / L;
+      if (i > 0) { const d = Math.max(-1, Math.min(1, x * px + z * pz)); if (d < -0.17) return true; tot += Math.acos(d); }
+      px = x; pz = z;
+    }
+    return tot > 3.5;
+  }
   // TW26: an arc-length table for a turn's cubic (17 samples), so its s runs in metres along the curve
   _turnLUT(T) {
     const L = new Float32Array(17);
@@ -1518,6 +1620,18 @@ export class Traffic {
     return off;
   }
   _placeCar(car, x, y, z, yaw, dt) {
+    // VT27: the heading from the dragged rear point (see VT27); a jump of more than three drag lengths (a spawn, a
+    // recycled car) starts it again behind the car along the path heading
+    if (VT27 && !car.api) {
+      const Lb = car._wb2 || (car._wb2 = Math.max(1.2, Math.min(3.2, this.carHalf(car)[1] * 0.6)));
+      let r = car._rear;
+      if (!r || Math.hypot(x - r[0], z - r[1]) > Lb * 3) r = car._rear = [x - Math.sin(yaw) * Lb, z - Math.cos(yaw) * Lb];
+      else if (dt > 0) {
+        const dx = x - r[0], dz = z - r[1], d = Math.hypot(dx, dz);
+        if (d > Lb) { r[0] = x - (dx / d) * Lb; r[1] = z - (dz / d) * Lb; }   // pulled along, never pushed
+      }
+      yaw = Math.atan2(x - r[0], z - r[1]);
+    }
     // GTA-style body dynamics: pitch under accel/brake, roll in corners
     const dv = (car.v - (car._pv ?? car.v)) / Math.max(dt, 1e-3);
     // VH13 — BRAKE LIGHTS. carlights.js tested `(car._pv ?? car.v) - car.v > 0.02`,

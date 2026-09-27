@@ -14,11 +14,12 @@ import { ALL_EXTENSIONS, KHRMaterialsClearcoat, KHRTextureBasisu } from '@gltf-t
 import { weld, simplifyPrimitive, meshopt, prune, dedup } from '@gltf-transform/functions';
 import { MeshoptSimplifier, MeshoptEncoder } from 'meshoptimizer';
 import { mul, applyPoint, applyDir, normalMatrix, det3 } from './lib/mat4.mjs';
-import { readBlueprint, componentWorlds, readMaterial, findTexture, EXPORT_ROOT, JSON_ROOT } from './lib/ue.mjs';
+import { readBlueprint, componentWorlds, readMaterial, findTexture, findMaterialJson, EXPORT_ROOT, JSON_ROOT } from './lib/ue.mjs';
 import { makeTexture, sampler } from './lib/tex.mjs';
 import { TAXI_OUT } from './livery_taxi.mjs';
 import { PLATE_OUT } from './livery_plate.mjs';
 import { BOXTRUCK_SRC, BOXTRUCK_OUT } from './livery_boxtruck.mjs';
+import { FLEET27_TEX } from './livery_fleet27.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../..');
 const args = process.argv.slice(2);
@@ -28,7 +29,7 @@ const NOTEX = !!opt('notex', false);
 
 const S = 'CarlaUnreal/Content/Carla/Static/';
 // NYC liveries painted over CARLA's decal sheets (livery_*.mjs writes them; missing file = CARLA original)
-const TEX_OVERRIDE = { T_FordCrown2024_Bodywork_BaseColor: TAXI_OUT, T_LicensePlate_d: PLATE_OUT, [BOXTRUCK_SRC]: BOXTRUCK_OUT };   // plate: CARLA's "California CARLA" -> NY Empire Gold
+const TEX_OVERRIDE = { T_FordCrown2024_Bodywork_BaseColor: TAXI_OUT, T_LicensePlate_d: PLATE_OUT, [BOXTRUCK_SRC]: BOXTRUCK_OUT, ...FLEET27_TEX };   // plate: CARLA's "California CARLA" -> NY Empire Gold
 // kind -> blueprint, parked (LOD1) mesh + its glass, paint handling
 export const KINDS = {
   taxi: { bp: 'BP_Ford_Crown2024', parked: S + 'Car/4Wheeled/FordCrown2024/Parked/SM_FordCrown2024_Parked', parkedGlass: S + 'Car/4Wheeled/FordCrown2024/Parked/SM_FordCrown2024_Parked_Glass', livery: true },
@@ -44,11 +45,35 @@ export const KINDS = {
   boxtruck: { bp: 'BP_CarlaCola2024', parked: S + 'Truck/CarlaCola2024/SM_CarlaCola2024Parked', parkedGlass: S + 'Truck/CarlaCola2024/SM_CarlaCola2024Parked_Glasses', livery: true },
   minibus: { scale: 0.645, bp: 'BP_FusoRosa2024', parked: S + 'Bus/Mitsubishi_FusoRosa2024/Parked/SM_FusoRosa2024Parked', parkedGlass: S + 'Bus/Mitsubishi_FusoRosa2024/Parked/SM_FusoRosa2024Parked_glass' },
   firetruck: { bp: 'BP_FireTruck2024', livery: true },
-  // older CARLA content still in the 0.10 package (PV2 variety pass: NYC traffic is mostly US sedans and SUVs). The BMW
-  // Gran Turismo is left out: its body material was never exported and its lamps use names classify() does not know.
+  // older CARLA content still in the 0.10 package (PV2 variety pass: NYC traffic is mostly US sedans and SUVs)
   impala: { bp: 'BP_ChevroletImpala' },
-  mercedes: { bp: 'BP_MercedesCCC', parked: S + 'Car/4Wheeled/ParkedVehicles/MercedesCCC/SM_MercedesCCC_Parked', parkedGlass: S + 'Car/4Wheeled/ParkedVehicles/MercedesCCC/SM_MercedesCCC_Parked_glass' },
+  // localMats (FLEET27 fix): the parked MI_Interior_MercedesCCC (a re-bake of the atlas carrying a 'California CARLA' plate)
+  // shadowed the drivable one by name, so LOD0 was textured with the parked sheet
+  mercedes: { localMats: true, bp: 'BP_MercedesCCC', parked: S + 'Car/4Wheeled/ParkedVehicles/MercedesCCC/SM_MercedesCCC_Parked', parkedGlass: S + 'Car/4Wheeled/ParkedVehicles/MercedesCCC/SM_MercedesCCC_Parked_glass' },
+  // FLEET27 (2026-09-26): the rest of the older CARLA cars in the 0.10 package. Options:
+  //   mesh       build from ONE static mesh (no blueprint, no skeleton): hubs from the four clusters of the wheel
+  //              material, wheel vertices tagged by the hub cylinders
+  //   paintMats  material names that are bodywork although classify() does not know them
+  //   paintMask  paint diffuse whose ALPHA marks paint: RGB -> white where A = 1 (the runtime tints it), kept where A = 0
+  //   lampAtlas  materials whose atlas also holds the lamp lenses: triangles move to the lamp class by atlas colour
+  //   localMats  resolve each mesh's materials from its own folder first (MI names repeat between parked and drivable)
+  //   overrides  blueprint OverrideMaterials replace a WorldGridMaterial slot (the Audi's lamp shell)
+  //   headBand   [y0, y1, depth] head lamps of a lampAtlas kind by position; lensBelow: lamp covers inside the body glass
+  // CARLA 0.10 ships the Tesla Model 3 only as static meshes (SM_Tesla and the parked LOD): real car 4.694 x 1.849 x
+  // 1.443 m, wheelbase 2.875 m; SM_Tesla is 4.79 m long with a 2.93 m wheelbase -> 0.98
+  model3: { scale: 0.98, mesh: S + 'Car/4Wheeled/Tesla/SM_Tesla', parked: S + 'Car/4Wheeled/ParkedVehicles/TeslaM3/SM_TeslaM3_parked', parkedGlass: S + 'Car/4Wheeled/ParkedVehicles/TeslaM3/SM_TeslaM3_parked_glass',
+    paintMats: /^MI_CarExterior_TeslaM3$/, paintMask: 'M_Tesla_Bodywork_d_a', lampAtlas: /^MI_Interior_TeslaM3$/, headBand: [0.58, 0.9, 0.38], lensBelow: 1.0, localMats: true, f27: true },
+  auditt: { bp: 'BP_AudiTT', headMinY: 0.5, overrides: true, localMats: true, f27: true },
+  // BP_Mustang66 is the 1966 convertible: real 4.613 m long, 1.73 m wide, 2.743 m wheelbase; CARLA's is 4.72 m -> 0.98
+  mustang: { scale: 0.98, bp: 'BP_Mustang66', parked: S + 'Car/4Wheeled/Mustang/Parked/SM_Mustang_prop', parkedGlass: S + 'Car/4Wheeled/Mustang/Parked/SM_Mustang_Parked_glass', paintOrm: false, overrides: true, localMats: true, f27: true },
+  // BUILT BUT NOT SHIPPED (FLEET27 QA, not in sim/fleet24.js KIND24): the BMW Gran Tourer reads as a caricature (blobby
+  // body, solid black wheel discs, track 1.89 m = 10 % too wide); the 2017 MKZ repeats the 2024 MKZ silhouette that lincoln
+  // and taxi2 already carry. The BMW's lamp faces are one normal-mapped material without LightColors UVs: roles by position.
+  bmwgt: { rejected: true, bp: 'BP_BmwGranTourer', paintMats: /^MI_BodyWStaticMesh\d$/, lampMats: /^Vh_Car_BmwGrandTourier_Mat$/, lampByPos: true, overrides: true, localMats: true, f27: true },
+  mkz17: { rejected: true, mesh: S + 'Car/4Wheeled/LincolnMKZ2017/SM_LincolnMkz2017_prop', paintMats: /^MI_BodyWStaticMesh\d$/, lampAtlas: /^MI_Details_Lincoln$/, localMats: true, f27: true },
 };
+// the kind being built (classify() and gather() read its options)
+let CFG = {};
 
 // lamp roles (per vertex, _LAMP): 1 head/DRL, 2 front blinker L, 3 front blinker R, 4 tail+brake, 5 rear blinker L,
 // 6 rear blinker R, 7 reverse, 8 siren red, 9 siren blue
@@ -58,6 +83,8 @@ export const ROLE = { head: 1, fbl: 2, fbr: 3, tail: 4, rbl: 5, rbr: 6, rev: 7, 
 function classify(mat, comp, meshName) {
   const n = (mat || '').toLowerCase(), c = (comp || '').toLowerCase(), m = (meshName || '').toLowerCase();
   if (!mat || /worldgridmaterial|plaguedoll|^none$/.test(n) || /customcollision|plaguedoll|^sm_sc_/.test(c + ' ' + m)) return null;
+  if (CFG.paintMats && CFG.paintMats.test(String(mat).split('@')[0])) return 'paint';
+  if (CFG.lampMats && CFG.lampMats.test(String(mat).split('@')[0])) return 'lamp';
   const isInt = /(^|_)int_?\d|int\d|_int_|glassint/.test(m) || /glassint/.test(n);
   const isExt2 = /ext_?2/.test(m);
   if (/siren/.test(n) || /glassint_(blue|red)/.test(n)) return 'siren';
@@ -139,13 +166,16 @@ async function gather(meshes) {
         if (!mm) return 0;
         return (mm[1].toLowerCase() === 'front' ? 1 : 3) + (mm[2].toLowerCase() === 'right' ? 1 : 0);
       });
-      for (const prim of mesh.listPrimitives()) {
-        const mat = prim.getMaterial()?.getName() || '';
-        const cls = classify(mat, m.comp, meshName);
+      mesh.listPrimitives().forEach((prim, pi) => {
+        let mat = prim.getMaterial()?.getName() || '';
+        // a WorldGridMaterial slot that the blueprint overrides (UE draws the override)
+        if (CFG.overrides && /worldgridmaterial/i.test(mat) && m.overrides && (m.overrides[pi] || m.overrides[0])) mat = (m.overrides[pi] || m.overrides[0]).split('/').pop().split('.')[0];
+        if (CFG.localMats) mat = localMaterial(mat, m.pkg);
+        const cls = classify(mat.split('@')[0], m.comp, meshName);
         const tris = (prim.getIndices()?.getCount() ?? prim.getAttribute('POSITION').getCount()) / 3;
-        const sk = `${cls || 'DROP'}:${mat}`;
+        const sk = `${cls || 'DROP'}:${mat.split('@')[0]}`;
         stats[sk] = (stats[sk] || 0) + tris;
-        if (!cls) continue;
+        if (!cls) return;
         let wheelOf = null;
         if (skin && m.wheelFromSkin) {
           const J = prim.getAttribute('JOINTS_0'), W = prim.getAttribute('WEIGHTS_0');
@@ -160,11 +190,28 @@ async function gather(meshes) {
           }
         }
         addPrimitive(bucket(buckets, cls, mat), prim, M, wheelOf);
-      }
+      });
     }
   }
   return { buckets, stats };
 }
+
+// material names repeat across folders (ParkedVehicles/TeslaM3/MI_Interior_TeslaM3 maps the parked atlas, the drivable
+// mesh's MI_Interior_TeslaM3 another): a JSON next to the mesh (or in its Materials folder) that is NOT the one the
+// global name index returns is referenced as "<name>@<json path>"
+function localMaterial(name, pkg) {
+  if (!name) return name;
+  const dir = path.join(EXPORT_ROOT, path.dirname(pkg));
+  const glob = findMaterialJson(name);
+  for (const d of [dir, path.join(dir, 'Materials'), path.join(dir, '..', 'Materials')]) {
+    const f = path.join(d, name + '.json');
+    if (!fs.existsSync(f)) continue;
+    if (glob && path.resolve(glob) === path.resolve(f)) return name;
+    return name + '@' + path.resolve(f);
+  }
+  return name;
+}
+const matRef = (key) => { const i = key.indexOf('@'); return i < 0 ? { name: key, file: null } : { name: key.slice(0, i), file: key.slice(i + 1) }; };
 
 // ---------------- helpers ----------------
 function boundsOf(buckets, filter = () => true) {
@@ -182,9 +229,10 @@ function translate(buckets, d) {
   for (const b of buckets.values()) for (let i = 0; i < b.pos.length; i += 3) { b.pos[i] += d[0]; b.pos[i + 1] += d[1]; b.pos[i + 2] += d[2]; }
 }
 // geometric wheel tagging for meshes without a skin (parked LODs): inside a hub cylinder (lateral axis = X)
-function tagWheels(buckets, hubs) {
+function tagWheels(buckets, hubs, filter = null) {
   for (const b of buckets.values()) {
     if (b.cls === 'glass' || b.cls === 'lamp' || b.cls === 'lens') continue;
+    if (filter && !filter(b)) continue;
     for (let i = 0, v = 0; i < b.pos.length; i += 3, v++) {
       const x = b.pos[i], y = b.pos[i + 1], z = b.pos[i + 2];
       for (const h of hubs) {
@@ -194,6 +242,140 @@ function tagWheels(buckets, hubs) {
     }
   }
 }
+// static meshes: the four wheels are the four clusters (front/rear x left/right of the wheel material's own centre) of
+// the wheel / tyre material vertices; hub = cluster bbox centre, radius = half its height, half-width = half its span
+const WHEEL_MATS = /wheel|tyre|tire|rubber/i;
+function hubsFromWheels(buckets) {
+  const pts = [];
+  for (const b of buckets.values()) {
+    if (b.cls !== 'detail' || ![...b.mats].some((m) => WHEEL_MATS.test(m.split('@')[0]))) continue;
+    for (let i = 0; i < b.pos.length; i += 3) pts.push(b.pos[i], b.pos[i + 1], b.pos[i + 2]);
+  }
+  if (pts.length < 12) throw new Error('static mesh without a wheel material');
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+  for (let i = 0; i < pts.length; i += 3) { x0 = Math.min(x0, pts[i]); x1 = Math.max(x1, pts[i]); z0 = Math.min(z0, pts[i + 2]); z1 = Math.max(z1, pts[i + 2]); }
+  const xc = (x0 + x1) / 2, zc = (z0 + z1) / 2;
+  const cl = [1, 2, 3, 4].map(() => ({ mn: [1e9, 1e9, 1e9], mx: [-1e9, -1e9, -1e9], n: 0 }));
+  for (let i = 0; i < pts.length; i += 3) {
+    // FL = 1 (front = +Z, left = +X), FR = 2, RL = 3, RR = 4
+    const c = cl[(pts[i + 2] > zc ? 0 : 2) + (pts[i] > xc ? 0 : 1)];
+    c.n++;
+    for (let k = 0; k < 3; k++) { c.mn[k] = Math.min(c.mn[k], pts[i + k]); c.mx[k] = Math.max(c.mx[k], pts[i + k]); }
+  }
+  return cl.map((c, i) => {
+    if (!c.n) throw new Error('wheel cluster ' + (i + 1) + ' empty');
+    const p = [0, 1, 2].map((k) => (c.mn[k] + c.mx[k]) / 2);
+    return { id: i + 1, p, r: Math.max(c.mx[1] - c.mn[1], c.mx[2] - c.mn[2]) / 2, w: (c.mx[0] - c.mn[0]) / 2 + 0.02 };
+  });
+}
+
+// PAINT MASK (Tesla): M_Tesla_Bodywork_d_a is a grey field whose ALPHA marks paint (UE lerps the paint colour in by
+// it). The runtime tints the paint map by the car's colour, so paint texels become white and the unpainted trim (A = 0:
+// black window surrounds, grey seals, the red reflector) keeps its own colour. Written to ~/.tools/liveries.
+const LIVERY_DIR = (process.env.ASSET_TOOLS || `${process.env.USERPROFILE || process.env.HOME}/.tools`) + '/liveries';
+async function paintMaskTexture(name) {
+  const src = findTexture(name);
+  if (!src) { console.warn('  paint mask source not exported:', name); return; }
+  const out = path.join(LIVERY_DIR, name + '_paintmask.png');
+  if (!fs.existsSync(out) || fs.statSync(out).mtimeMs < fs.statSync(src).mtimeMs) {
+    const sharp = (await import('sharp')).default;
+    // raw first: sharp premultiplies by alpha inside one pipeline
+    const { data, info } = await sharp(src).raw().toBuffer({ resolveWithObject: true });
+    const ch = info.channels, n = info.width * info.height, rgb = Buffer.alloc(n * 3);
+    for (let i = 0; i < n; i++) {
+      const a = ch === 4 ? data[i * 4 + 3] / 255 : 1;
+      for (let c = 0; c < 3; c++) rgb[i * 3 + c] = Math.round(255 * a + data[i * ch + c] * (1 - a));
+    }
+    fs.mkdirSync(LIVERY_DIR, { recursive: true });
+    await sharp(rgb, { raw: { width: info.width, height: info.height, channels: 3 } }).png().toFile(out);
+    console.log('  paint mask ->', out);
+  }
+  TEX_OVERRIDE[name] = out;
+}
+
+// LAMP ATLAS (Tesla, MKZ 2017): the lamp lenses are faces of an interior/detail atlas. A triangle moves to the lamp
+// class when the atlas colour at its UV centroid is a lamp colour AND it sits at the right end of the car: saturated
+// red in the rear 0.9 m -> tail, amber within 0.9 m of either end -> blinker, near-white in the front 0.45 m between
+// 0.45 and 1.05 m up -> head. Roles are set here (tagLamps keeps them).
+async function atlasLamps(buckets, size) {
+  const L = size[2], zF = L / 2, zR = -L / 2;
+  const moved = { head: 0, tail: 0, amber: 0 };
+  for (const b of [...buckets.values()]) {
+    if (b.cls !== 'detail' || ![...b.mats].some((m) => CFG.lampAtlas.test(m.split('@')[0]))) continue;
+    const mr = matRef([...b.mats][0]);
+    const ue = readMaterial(mr.name, mr.file);
+    const texName = ue?.textures?.Diffuse || ue?.textures?.PM_Diffuse || ue?.textures?.BaseColor;
+    const f = texName && findTexture(texName);
+    if (!f) { console.warn('  lamp atlas texture missing for', mr.name); continue; }
+    const col = await sampler(f);
+    const keep = [], out = [];
+    for (let k = 0; k < b.idx.length; k += 3) {
+      const a = b.idx[k], c1 = b.idx[k + 1], c2 = b.idx[k + 2];
+      const u = (b.uv[a * 2] + b.uv[c1 * 2] + b.uv[c2 * 2]) / 3, v = (b.uv[a * 2 + 1] + b.uv[c1 * 2 + 1] + b.uv[c2 * 2 + 1]) / 3;
+      const y = (b.pos[a * 3 + 1] + b.pos[c1 * 3 + 1] + b.pos[c2 * 3 + 1]) / 3, z = (b.pos[a * 3 + 2] + b.pos[c1 * 3 + 2] + b.pos[c2 * 3 + 2]) / 3;
+      const x = (b.pos[a * 3] + b.pos[c1 * 3] + b.pos[c2 * 3]) / 3;
+      const [r, g, bl] = col(u, v);
+      let role = 0;
+      const red = r > 110 && g < 0.45 * r && bl < 0.45 * r, amber = r > 150 && g > 0.35 * r && g < 0.8 * r && bl < 0.35 * r;
+      const white = Math.min(r, g, bl) > 185;
+      // headBand [y0, y1, depth]: the headlamp housings are plain grey atlas texels, found by position (the Tesla's
+      // near-white texels are its bumper fog strips)
+      const hb = CFG.headBand;
+      if (red && z < zR + 0.9) { role = ROLE.tail; moved.tail++; }
+      else if (amber && (z > zF - 0.9 || z < zR + 0.9)) { role = z > 0 ? (x > 0 ? ROLE.fbl : ROLE.fbr) : (x > 0 ? ROLE.rbl : ROLE.rbr); moved.amber++; }
+      else if (hb && z > zF - hb[2] && y > hb[0] && y < hb[1] && Math.min(r, g, bl) > 90) { role = ROLE.head; moved.head++; }
+      else if (!hb && white && z > zF - 0.45 && y > 0.45 && y < 1.05) { role = ROLE.head; moved.head++; }
+      if (role) out.push([a, c1, c2, role]); else keep.push(a, c1, c2);
+    }
+    if (!out.length) continue;
+    const lb = bucket(buckets, 'lamp', b.mats.values().next().value);
+    const remap = new Map();
+    for (const [a, c1, c2, role] of out) {
+      for (const vi of [a, c1, c2]) {
+        const key = vi * 16 + role;
+        if (!remap.has(key)) {
+          remap.set(key, lb.pos.length / 3);
+          lb.pos.push(b.pos[vi * 3], b.pos[vi * 3 + 1], b.pos[vi * 3 + 2]);
+          lb.nrm.push(b.nrm[vi * 3], b.nrm[vi * 3 + 1], b.nrm[vi * 3 + 2]);
+          lb.uv.push(b.uv[vi * 2], b.uv[vi * 2 + 1]);
+          lb.wheel.push(0); lb.lamp.push(role);
+        }
+        lb.idx.push(remap.get(key));
+      }
+    }
+    b.idx = keep;
+  }
+  console.log(`  lamp atlas: head ${moved.head} tail ${moved.tail} amber ${moved.amber} tris`);
+}
+
+// LAMP COVERS in the body glass (Tesla): glass faces under `lensBelow` metres within 0.45 m of either end of the car are
+// the head / tail lamp covers, not windows: they move to the clear lens class (tinted window glass read as black lamps)
+function lensFromGlass(buckets, size) {
+  const g = buckets.get('glass');
+  if (!g) return;
+  const zF = size[2] / 2, keep = [], out = [];
+  for (let k = 0; k < g.idx.length; k += 3) {
+    const t = [g.idx[k], g.idx[k + 1], g.idx[k + 2]];
+    const y = t.reduce((s, i) => s + g.pos[i * 3 + 1], 0) / 3, z = t.reduce((s, i) => s + g.pos[i * 3 + 2], 0) / 3;
+    if (y < CFG.lensBelow && Math.abs(z) > zF - 0.45) out.push(...t); else keep.push(...t);
+  }
+  if (!out.length) return;
+  const lb = bucket(buckets, 'lens', g.mats.values().next().value);
+  const remap = new Map();
+  for (const vi of out) {
+    if (!remap.has(vi)) {
+      remap.set(vi, lb.pos.length / 3);
+      lb.pos.push(g.pos[vi * 3], g.pos[vi * 3 + 1], g.pos[vi * 3 + 2]);
+      lb.nrm.push(g.nrm[vi * 3], g.nrm[vi * 3 + 1], g.nrm[vi * 3 + 2]);
+      lb.uv.push(g.uv[vi * 2], g.uv[vi * 2 + 1]);
+      lb.wheel.push(0); lb.lamp.push(0);
+    }
+    lb.idx.push(remap.get(vi));
+  }
+  g.idx = keep;
+  console.log(`  lamp covers: ${out.length / 3} glass tris -> lens`);
+}
+
 // lamp roles from position (front/rear, side) and lens colour sampled from LightColors at uv0
 async function tagLamps(buckets, lenCar) {
   const lc = findTexture('LightColors');
@@ -201,25 +383,55 @@ async function tagLamps(buckets, lenCar) {
   for (const b of buckets.values()) {
     if (b.cls !== 'lamp' && b.cls !== 'lens' && b.cls !== 'lampInner' && b.cls !== 'siren') continue;
     for (let i = 0, v = 0; i < b.pos.length; i += 3, v++) {
+      if (b.lamp[v]) continue;   // set by atlasLamps
       const x = b.pos[i], z = b.pos[i + 2];
       const front = z > 0, left = x > 0;
       if (b.cls === 'siren') { b.lamp[v] = left ? ROLE.sirenR : ROLE.sirenB; continue; }
       let c = 'white';
-      if (col && b.cls === 'lamp') {
+      if (col && b.cls === 'lamp' && !CFG.lampByPos) {
         const [r, g, bb] = col(b.uv[v * 2], b.uv[v * 2 + 1]);
         c = g < 60 ? 'red' : bb < 60 ? 'amber' : 'white';
       }
       if (front) b.lamp[v] = c === 'amber' ? (left ? ROLE.fbl : ROLE.fbr) : ROLE.head;
       else b.lamp[v] = c === 'amber' ? (left ? ROLE.rbl : ROLE.rbr) : ROLE.tail;   // reverse lamps are not simulated: white rear glass reads as tail
+      // headMinY: white front lamps below it are fog lamps (unlit housings): the head anchor stays on the headlamps
+      if (CFG.headMinY && b.cls === 'lamp' && b.lamp[v] === ROLE.head && b.pos[i + 1] < CFG.headMinY) b.lamp[v] = 0;
     }
   }
 }
 
 // ---------------- glTF writing ----------------
+// CARLA's generic car materials carry no parameters of their own (the look lives in parents that were not exported):
+// linear albedo, metallic, roughness
+const GENERIC = {
+  Rubber_Inst: [[0.028, 0.028, 0.03], 0, 0.82], Rubber: [[0.028, 0.028, 0.03], 0, 0.82],
+  PolishedAluminiumWhite_Inst: [[0.8, 0.8, 0.8], 1, 0.28],
+  Black: [[0.018, 0.018, 0.02], 0, 0.35], plastiCbLACK: [[0.022, 0.022, 0.024], 0, 0.6], plasticgrey_Inst: [[0.1, 0.1, 0.105], 0, 0.55],
+};
+async function solidTexture(doc, texCache, lin) {
+  const s = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055));
+  const rgb = [0, 1, 2].map((k) => Math.max(0, Math.min(255, s(lin[k] ?? 0.5))));
+  const key = 'solid|' + rgb.join(',');
+  if (texCache.has(key)) return texCache.get(key);
+  const sharp = (await import('sharp')).default;
+  const f = path.join(LIVERY_DIR, `solid_${rgb.map((v) => v.toString(16).padStart(2, '0')).join('')}.png`);
+  if (!fs.existsSync(f)) {
+    fs.mkdirSync(LIVERY_DIR, { recursive: true });
+    await sharp(Buffer.from(Array(64).fill(rgb).flat()), { raw: { width: 8, height: 8, channels: 3 } }).png().toFile(f);
+  }
+  const r = await makeTexture(f, { kind: 'color', size: 8, mode: 'uastc' });
+  const t = doc.createTexture('solid_' + rgb.join('_')).setImage(r.bytes).setMimeType('image/ktx2').setURI(`solid_${rgb.join('_')}.ktx2`);
+  texCache.set(key, t);
+  return t;
+}
+
 async function materialFor(doc, key, b, kindCfg, texCache) {
-  const m = doc.createMaterial(key);
-  const extras = { cls: b.cls, ue: [...b.mats] };
-  const ue = readMaterial([...b.mats][0]);
+  // a folder-resolved material ("<name>@<json path>") is named "<name>@<folder>" in the GLB (no local paths)
+  const short = (k) => k.replace(/@(.*)$/, (_, f) => '@' + path.basename(path.dirname(f)));
+  const m = doc.createMaterial(short(key));
+  const extras = { cls: b.cls, ue: [...b.mats].map(short) };
+  const mr = matRef([...b.mats][0]);
+  const ue = readMaterial(mr.name, mr.file);
   const tex = async (name, kind, size, mode = 'uastc') => {
     if (NOTEX || !name) return null;
     const f = TEX_OVERRIDE[name] && fs.existsSync(TEX_OVERRIDE[name]) ? TEX_OVERRIDE[name] : findTexture(name);
@@ -238,10 +450,12 @@ async function materialFor(doc, key, b, kindCfg, texCache) {
     // legacy bodies feed flake / noise sheets (even an ASPHALT texture on the Impala) through Diffuse and ORM: not a paint map
     const diff = t.Diffuse && !/flat_white|flakes|asphalt|noise/i.test(t.Diffuse) ? t.Diffuse : null;
     const orm = t.PM_SpecularMasks && !/flat_orm|asphalt|noise/i.test(t.PM_SpecularMasks) ? t.PM_SpecularMasks : null;
+    // paintOrm false: the MI borrows another car's ORM sheet (the Mustang's is the Mini 2021's: foreign AO blotches)
+    const ormUse = CFG.paintOrm === false ? null : orm;
     const bc = ue?.colors?.['Base Color'] || [0.5, 0.5, 0.5, 1];
     m.setBaseColorFactor([...lin(bc), 1]).setMetallicFactor(0).setRoughnessFactor(0.4);
     if (diff) m.setBaseColorTexture(await tex(diff, 'color', kindCfg.livery ? 2048 : 1024));
-    if (orm) { const o = await tex(orm, 'data', 1024); if (o) { m.setMetallicRoughnessTexture(o); m.setOcclusionTexture(o); } }
+    if (ormUse) { const o = await tex(ormUse, 'data', 1024); if (o) { m.setMetallicRoughnessTexture(o); m.setOcclusionTexture(o); } }
     const cc = doc.createExtension(KHRMaterialsClearcoat).createClearcoat().setClearcoatFactor(1).setClearcoatRoughnessFactor(0.05);
     m.setExtension('KHR_materials_clearcoat', cc);
     extras.defaultColor = lin(bc);
@@ -249,13 +463,24 @@ async function materialFor(doc, key, b, kindCfg, texCache) {
     extras.flakeDensity = ue?.scalars?.FlakeDensity ?? null;
   } else if (b.cls === 'detail') {
     const t = ue?.textures || {};
-    const d = t.Diffuse || t.PM_Diffuse, n = t.Normal || t.PM_Normals, o = t.ORM || t.PM_SpecularMasks;
+    const d = t.Diffuse || t.PM_Diffuse || (CFG.f27 ? t.BaseColor : null), n = t.Normal || t.PM_Normals, o = t.ORM || t.PM_SpecularMasks;
     const big = b.idx.length / 3 > 50000;
     m.setBaseColorFactor([1, 1, 1, 1]).setMetallicFactor(ue?.scalars?.['Metallic Multiplier'] ?? 1)
       .setRoughnessFactor(Math.min(2, ue?.scalars?.['Roughness Multiply'] ?? 1));
-    if (d && !/flat_white/i.test(d)) m.setBaseColorTexture(await tex(d, 'color', big ? 2048 : 1024));
-    if (n && !/flat_n/i.test(n)) m.setNormalTexture(await tex(n, 'normal', big ? 2048 : 1024));
-    if (o && !/flat_orm/i.test(o)) { const ot = await tex(o, 'data', 1024); if (ot) { m.setMetallicRoughnessTexture(ot); m.setOcclusionTexture(ot); } }
+    // FLEET27: legacy lamp-housing materials feed asphalt / noise sheets through ORM (not a mask of this part)
+    const junk = CFG.f27 ? /flat_orm|asphalt|noise|checker/i : /flat_orm/i;
+    const gen = CFG.f27 ? GENERIC[mr.name] : null;
+    if (d && !(CFG.f27 ? /flat_white|defaulttexture|asphalt|noise/i : /flat_white/i).test(d)) m.setBaseColorTexture(await tex(d, 'color', big ? 2048 : 1024));
+    else if (CFG.f27) {
+      // no albedo map: the runtime forces a detail material's colour to white and multiplies its map, so a flat part
+      // (tyre rubber, black plastic) carries its colour as a tiny solid map; metal / roughness from the same table
+      const c = gen ? gen[0] : (ue?.colors?.['Base Color'] || ue?.colors?.Color || ue?.colors?.Tint || [0.5, 0.5, 0.5]);
+      m.setBaseColorTexture(await solidTexture(doc, texCache, c));
+    }
+    if (n && !/flat_n/i.test(n) && !(CFG.f27 && /asphalt|noise/i.test(n))) m.setNormalTexture(await tex(n, 'normal', big ? 2048 : 1024));
+    if (o && !junk.test(o)) { const ot = await tex(o, 'data', 1024); if (ot) { m.setMetallicRoughnessTexture(ot); m.setOcclusionTexture(ot); } }
+    if (gen) m.setMetallicFactor(gen[1]).setRoughnessFactor(gen[2]);
+    else if (CFG.f27 && !(o && !junk.test(o))) m.setMetallicFactor(ue?.scalars?.Metallic ?? 0).setRoughnessFactor(Math.min(1, ue?.scalars?.Roughness ?? 0.5));
     extras.roughMul = ue?.scalars?.['Roughness Multiply'] ?? 1;
   } else if (b.cls === 'glass') {
     m.setBaseColorFactor([0.02, 0.025, 0.03, 0.35]).setAlphaMode('BLEND').setMetallicFactor(0).setRoughnessFactor(0.03).setDoubleSided(false);
@@ -302,28 +527,40 @@ function deepCloneMesh(doc, mesh, name) {
 // ---------------- build ----------------
 async function build(kind) {
   const cfg = KINDS[kind];
+  CFG = cfg;
   const t0 = Date.now();
-  console.log(`\n=== ${kind} (${cfg.bp})`);
-  const comps = readBlueprint(path.join(JSON_ROOT, 'vehicles', cfg.bp + '.json'));
-  const root = comps.find((c) => c.type === 'SkeletalMeshComponent');
-  if (!root) throw new Error('no skeletal root in ' + cfg.bp);
-  const skDoc = await loadGlb(root.mesh);
-  if (!skDoc) throw new Error('root mesh not exported: ' + root.mesh);
+  console.log(`\n=== ${kind} (${cfg.bp || cfg.mesh.split('/').pop()})`);
   const K = cfg.scale || 1, SM = [K, 0, 0, 0, 0, K, 0, 0, 0, 0, K, 0, 0, 0, 0, 1];
-  const sockets = new Map();
   const hubsG = [];
-  for (const n of skDoc.getRoot().listNodes()) {
-    if (!n.getName() || n.getMesh()) continue;
-    const w = n.getWorldMatrix();
-    sockets.set(n.getName(), w);
-    const mm = /^wheel_(front|rear)_(left|right)$/i.exec(n.getName());
-    if (mm) hubsG.push({ id: (mm[1].toLowerCase() === 'front' ? 1 : 3) + (mm[2].toLowerCase() === 'right' ? 1 : 0), g: [w[12] * K, w[13] * K, w[14] * K], name: n.getName() });
+  let lights = [], meshes;
+  if (cfg.mesh) {
+    // one static mesh: no sockets, no light components
+    meshes = [{ pkg: cfg.mesh, M: SM, comp: 'Body', wheelFromSkin: false }];
+  } else {
+    const comps = readBlueprint(path.join(JSON_ROOT, 'vehicles', cfg.bp + '.json'));
+    const root = comps.find((c) => c.type === 'SkeletalMeshComponent');
+    if (!root) throw new Error('no skeletal root in ' + cfg.bp);
+    const skDoc = await loadGlb(root.mesh);
+    if (!skDoc) throw new Error('root mesh not exported: ' + root.mesh);
+    const sockets = new Map();
+    for (const n of skDoc.getRoot().listNodes()) {
+      if (!n.getName() || n.getMesh()) continue;
+      const w = n.getWorldMatrix();
+      sockets.set(n.getName(), w);
+      const mm = /^wheel_(front|rear)_(left|right)$/i.exec(n.getName());
+      if (mm) hubsG.push({ id: (mm[1].toLowerCase() === 'front' ? 1 : 3) + (mm[2].toLowerCase() === 'right' ? 1 : 0), g: [w[12] * K, w[13] * K, w[14] * K], name: n.getName() });
+    }
+    componentWorlds(comps, root.name, sockets);
+    lights = comps.filter((c) => c.light).map((c) => ({ name: c.name, p: toRt([c.world[12] * K, c.world[13] * K, c.world[14] * K]) }));
+    meshes = comps.filter((c) => c.mesh && !/customcollision/i.test(c.name))
+      .map((c) => ({ pkg: c.mesh, M: K === 1 ? c.world : mul(SM, c.world), comp: c.name, wheelFromSkin: c === root, overrides: c.overrides }));
   }
-  componentWorlds(comps, root.name, sockets);
-  const lights = comps.filter((c) => c.light).map((c) => ({ name: c.name, p: toRt([c.world[12] * K, c.world[13] * K, c.world[14] * K]) }));
-  const meshes = comps.filter((c) => c.mesh && !/customcollision/i.test(c.name))
-    .map((c) => ({ pkg: c.mesh, M: K === 1 ? c.world : mul(SM, c.world), comp: c.name, wheelFromSkin: c === root }));
+  if (cfg.paintMask) await paintMaskTexture(cfg.paintMask);
   const lod0 = await gather(meshes);
+  // static source: the hubs are the four clusters of the wheel material; wheel vertices by the hub cylinders (paint
+  // excluded: an arch lip inside the tyre radius must not spin)
+  const hubsS = cfg.mesh ? hubsFromWheels(lod0.buckets) : null;
+  if (hubsS) tagWheels(lod0.buckets, hubsS, (b) => b.cls !== 'paint');
   // frame: ground at the lowest tyre point, x/z centred on the body envelope (glass/lamps included)
   const bb = boundsOf(lod0.buckets);
   const tyres = boundsOf(lod0.buckets, (b) => b.wheel.some((w) => w));
@@ -332,7 +569,7 @@ async function build(kind) {
   translate(lod0.buckets, shift);
   const size = [bb.mx[0] - bb.mn[0], bb.mx[1] - groundY, bb.mx[2] - bb.mn[2]];
   // wheel hubs in the runtime frame, radius/width measured from the tagged vertices
-  const hubs = hubsG.map((h) => {
+  const hubs = hubsS ? hubsS.map((h) => ({ id: h.id, p: h.p.map((v, k) => +(v + shift[k]).toFixed(4)), r: +h.r.toFixed(4), w: +h.w.toFixed(4) })) : hubsG.map((h) => {
     const p = toRt(h.g); p[0] += shift[0]; p[1] += shift[1]; p[2] += shift[2];
     let r = 0, x0 = 1e9, x1 = -1e9;
     for (const b of lod0.buckets.values()) for (let i = 0, v = 0; i < b.pos.length; i += 3, v++) {
@@ -343,6 +580,8 @@ async function build(kind) {
     return { id: h.id, p: p.map((v) => +v.toFixed(4)), r: +r.toFixed(4), w: +(Math.max(Math.abs(x0 - p[0]), Math.abs(x1 - p[0])) + 0.02).toFixed(4) };
   }).sort((a, b) => a.id - b.id);
   for (const l of lights) { l.p[0] += shift[0]; l.p[1] += shift[1]; l.p[2] += shift[2]; l.p = l.p.map((v) => +v.toFixed(3)); }
+  if (cfg.lampAtlas) await atlasLamps(lod0.buckets, size);
+  if (cfg.lensBelow) lensFromGlass(lod0.buckets, size);
   await tagLamps(lod0.buckets, size[2]);
   const report = (tag, bk) => {
     let t = 0;
@@ -367,6 +606,8 @@ async function build(kind) {
       const dc = [(b1.mn[0] + b1.mx[0]) / 2, (b1.mn[2] + b1.mx[2]) / 2];
       if (Math.hypot(dc[0], dc[1]) > 0.08) console.warn(`  parked mesh centre off by ${dc.map((v) => v.toFixed(3))}`);
       tagWheels(lod1.buckets, hubs);
+      if (cfg.lampAtlas) await atlasLamps(lod1.buckets, size);
+      if (cfg.lensBelow) lensFromGlass(lod1.buckets, size);
       await tagLamps(lod1.buckets, size[2]);
       report('LOD1 parked', lod1.buckets);
     } else lod1 = null;
@@ -453,7 +694,8 @@ async function build(kind) {
 }
 
 const which = args.filter((a) => !a.startsWith('--') && !(args[args.indexOf(a) - 1] || '').startsWith('--out'));
-const list = which[0] === 'all' || !which.length ? Object.keys(KINDS) : which;
+// 'all' skips the kinds rejected in QA (rejected: true; name them explicitly to build them)
+const list = which[0] === 'all' || !which.length ? Object.keys(KINDS).filter((k) => !KINDS[k].rejected) : which;
 for (const k of list) {
   if (!KINDS[k]) { console.error('unknown kind', k); continue; }
   try { await build(k); } catch (e) { console.error(`FAILED ${k}:`, e.stack || e); }

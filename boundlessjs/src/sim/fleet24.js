@@ -42,7 +42,18 @@ export const KIND24 = {
   ambulance: { w: 1, pw: 0, cap: 12, palette: 'livery' },
   minibus: { w: 1, pw: 0, cap: 12, palette: 'truck' },    // a Japanese Fuso Rosa: rare shuttle duty only
   firetruck: { w: 1, pw: 0, cap: 8, palette: 'livery' },
+  // FLEET27 (2026-09-26): older CARLA cars from the same 0.10 package (15-21k tris, the Impala's generation; built by
+  // tools/assets/build_vehicle.mjs). `?fleet27=0` drops them (f27 'qa' would hold a kind back unless `?fleet27=all`).
+  // The Tesla Model 3 is one of the most common NYC ride-hail and private cars; the Audi TT is a rare coupe; the 1966
+  // Mustang convertible only stands parked (a classic). Their pw count in half units of a second copy of the parked list
+  // (loadFleet24), so the parked cars of the older kinds mostly keep the kinds they had.
+  // Left out after QA: the BMW Gran Tourer (cartoon proportions, 10 % too wide, solid wheel discs), the 2017 MKZ (the
+  // lincoln / taxi2 silhouette again), the VW T2 and the two-wheelers.
+  model3: { w: 6, pw: 2, cap: 60, palette: 'car', f27: true },
+  auditt: { w: 1, pw: 0.5, cap: 12, palette: 'car', f27: true },
+  mustang: { w: 0, pw: 0.5, cap: 4, palette: 'car', f27: true },
 };
+const F27 = QS.get('fleet27');
 // scene.environmentIntensity mirrored per frame: vehicle materials carry their OWN envMap (so their specular
 // reflection runs at full strength) but their env DIFFUSE is scaled back to what the rest of the scene gets
 const F24ENV = { value: 0.22 };
@@ -595,7 +606,7 @@ export async function loadFleet24(renderer) {
   const only = QS.get('f24only') ? QS.get('f24only').split(',') : null;
   const kinds = {};
   const t0 = performance.now();
-  const wanted = Object.keys(KIND24).filter((k) => !only || only.includes(k));
+  const wanted = Object.keys(KIND24).filter((k) => (!only || only.includes(k)) && !(KIND24[k].f27 && (F27 === '0' || (KIND24[k].f27 === 'qa' && F27 !== 'all'))));
   const bases = new Set(wanted.map((k) => KIND24[k].base || k));
   await Promise.all([...bases].map(async (k) => {
     try { kinds[k] = buildKind(k, await loader.loadAsync(BASE + k + '.glb')); }
@@ -619,7 +630,28 @@ export async function loadFleet24(renderer) {
     trafficFleet[k] = { paint: box, dark: box, parts: {}, shell: null, cap: KIND24[k].cap, w: KIND24[k].w, lamps: K.lamps, f24: K };
   }
   // weighted parked kinds (traffic.js picks uniformly from this list; repeats = weight)
-  trafficFleet.__parkedKinds = names.flatMap((k) => Array(KIND24[k].pw).fill(k));
+  const parked = names.filter((k) => !KIND24[k].f27).flatMap((k) => Array(KIND24[k].pw).fill(k));
+  // FLEET27 kinds (half-unit pw) go into a SECOND copy of that list: traffic.js picks index (hash % length), and with
+  // the length doubled (hash % 2n) % n is the old pick, so every parked record keeps the kind it had before FLEET27
+  // except those landing on the copy slots the new kinds take. The slots are taken in proportion to each old kind's
+  // weight (largest remaining quota first), so the old kinds keep their ratios as closely as whole slots allow.
+  const extra = names.filter((k) => KIND24[k].f27).flatMap((k) => Array(Math.round(KIND24[k].pw * 2)).fill(k));
+  if (extra.length && extra.length >= parked.length) {
+    // too few old kinds left to share slots with (f24only look-dev): plain half-unit weights
+    parked.splice(0, parked.length, ...names.flatMap((k) => Array(Math.round(KIND24[k].pw * 2)).fill(k)));
+  } else if (extra.length) {
+    const copy = parked.slice(), n = new Map();
+    for (const k of copy) n.set(k, (n.get(k) || 0) + 1);
+    const quota = new Map([...n].map(([k, c]) => [k, (extra.length * c) / copy.length]));
+    for (const k of extra) {
+      const top = [...quota].filter(([q]) => n.get(q) > 0).sort((a, b) => b[1] - a[1])[0][0];
+      copy[copy.lastIndexOf(top)] = k;
+      quota.set(top, quota.get(top) - 1);
+      n.set(top, n.get(top) - 1);
+    }
+    parked.push(...copy);
+  }
+  trafficFleet.__parkedKinds = parked;
   trafficFleet.__fleet24 = true;
   return { kinds, trafficFleet, install: (traffic, engine) => installFleet24(traffic, engine, kinds) };
 }

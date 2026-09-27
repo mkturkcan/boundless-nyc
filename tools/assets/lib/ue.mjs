@@ -106,8 +106,10 @@ export function findMaterialJson(name) { buildIndex(); return matIndex.get(Strin
 export function findTexture(name) { buildIndex(); return matIndex.get('tex:' + String(name).toLowerCase()) || null; }
 
 // Flattened MI parameters: { name, textures: {param: texName}, colors: {param: [r,g,b,a] linear}, scalars, switches, blend, shading }
-export function readMaterial(name) {
-  const f = findMaterialJson(name);
+// `file`: an explicit JSON path (material names are not unique: a parked mesh's MI_Interior_X can live next to a
+// different MI_Interior_X of the drivable mesh)
+export function readMaterial(name, file = null) {
+  const f = file || findMaterialJson(name);
   if (!f) return null;
   const j = JSON.parse(fs.readFileSync(f, 'utf8'));
   const p = j.Parameters || {};

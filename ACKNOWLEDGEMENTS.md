@@ -52,7 +52,7 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
 - **CARLA Simulator** (<https://carla.org>), assets under **CC BY 4.0**.
   - `boundlessjs/public/models/carla/`: vehicles and about 180 street, construction and trash props, converted
     from CARLA 0.9.15.
-  - `boundlessjs/public/models/fleet24/`: 13 vehicle models, converted from CARLA 0.10.0.
+  - `boundlessjs/public/models/fleet24/`: 16 vehicle models, converted from CARLA 0.10.0.
   - `boundlessjs/public/models/peds24/`: 25 pedestrian bodies in 37 outfit variants, converted from CARLA 0.10.0.
 
   NYC-specific edits: taxi and police liveries, New York licence plates, a plain white box-truck body, removed CARLA
@@ -62,6 +62,11 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
   MetaHuman licence in addition to CC BY 4.0, which does not allow using them to build or enhance a database or to
   train or test AI models.
   See the MetaHuman notice in [LICENSING.md](LICENSING.md) and the server option `--pedestrians procedural`.
+- **Microsoft Rocketbox Avatar Library** (<https://github.com/microsoft/Microsoft-Rocketbox>), **MIT licence**, Copyright
+  (c) 2020 Microsoft. M. Gonzalez-Franco et al., *The Rocketbox Library and the Utility of Freely Available Rigged
+  Avatars*, Frontiers in Virtual Reality 1, 2020, doi:10.3389/frvir.2020.561558.
+  - `boundlessjs/public/models/peds24/rb27/`: 49 pedestrian bodies (45 adults, 4 children), re-bound to the pedestrian
+    skeleton; the licence text travels with them in `rb27/NOTICE.md`.
 - **100STYLE** locomotion dataset: I. Mason, S. Starke and T. Komura, *Real-Time Style Modelling of Human Locomotion
   via Feature-Wise Transformations and Local Motion Phases*, 2022, Zenodo record 8127870. **CC BY 4.0.** Sixteen
   styles (walk and idle) and four further walks are retargeted onto the pedestrian skeleton

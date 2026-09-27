@@ -51,6 +51,18 @@ const HP26 = PY25 && typeof location !== 'undefined' && new URLSearchParams(loca
 // walker as well as ahead (a take walking faster than the crowd went through the backs it caught up with). `?lw26=0`: off.
 const LW26 = PY25 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('lw26') !== '0');
 const LW_HW = 1.1;
+// TB27 (owner 2026-09-26: "they should walk intelligently and traverse the streetscape intelligently"): one walker in five
+// turned back along the same sidewalk at every corner, which in a take reads as someone walking to a corner and giving up.
+// Now one in twenty-five (a changed mind). `?tb27=0` restores one in five.
+const TB27 = typeof location === 'undefined' || new URLSearchParams(location.search).get('tb27') !== '0';
+// XW27 (owner 2026-09-26, film 10's fTraffic: "a frozen pedestrian on a crosswalk right next to cars waiting in red light"):
+// a car stopped with its nose over the zebra held a crosser for the whole take. The crosser is stopped while a car body
+// lies within 0.4 m of its way ahead, and its sideways room on a road crossing was 0.9 m either side of the crossing
+// line, less than a bumper's overlap. Held for 1 s, a crosser may now step up to 2.2 m off its line for the rest of that
+// crossing and walk round the bumper, as people do; held 4 s by a car that is standing, it may pass the bumper with its
+// centre 0.3 m off the body (the body radius and 5 cm) instead of 0.4 m, and after 8 s at 0.12 m. 60 s at 125th & Lenox: walkers held mid-crossing over 10 s 9 -> 2, the longest hold 60 s -> 14.6 s
+// (the first stage alone). `?xw27=0` restores both.
+const XW27 = PY25 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('xw27') !== '0');
 const PED_TARGET = Math.min(700, Number(typeof location !== 'undefined' && new URLSearchParams(location.search).get('pedtarget')) || 520); // reference-photo sidewalk density; ?pedtarget=N (film)
 // SPAWN_R0 was 40 m: an eye-level camera at 2.4 m stands in the middle of a 40 m
 // hole, which is exactly the part of the frame the photographs fill with people
@@ -927,7 +939,7 @@ export class Peds {
       const d0 = body(R.x[0], R.z[0]);
       for (let i = 1; i < R.n; i++) {
         const d = body(R.x[i], R.z[i]);
-        if (d < 0.4 && d < d0 - 0.02) return true;
+        if (d < (this._sq27 && v < 0.3 ? this._sq27 : 0.4) && d < d0 - 0.02) return true;
         // a car rolling across the route within the next second (its body 1.2 s ahead)
         if (v > 0.3 && i * R.step < 2.5) {
           const fx = sy * v * 1.0, fz = cy * v * 1.0;   // where the car is in 1 s
@@ -1222,17 +1234,24 @@ export class Peds {
           c.chk = PY25 ? 0.2 : 0.25;
           const cx0 = c.x0 + (c.x1 - c.x0) * c.t + nx * off, cz0 = c.z0 + (c.z1 - c.z0) * c.t + nz * off;
           const la = Math.min(1, c.t + 1.6 / c.len);
+          // XW27: held 4 s by a standing car: pass its bumper with the centre 0.3 m off it; 8 s: 0.12 m (a brush beats a freeze)
+          this._sq27 = XW27 && c.road ? ((c.hT || 0) > 8 ? 0.12 : (c.hT || 0) > 4 ? 0.3 : 0) : 0;
           c.blocked = c.t < 1 && this._carInPath(cx0, cz0, c.x0 + (c.x1 - c.x0) * la + nx * off, c.z0 + (c.z1 - c.z0) * la + nz * off, true, p.v);
+          this._sq27 = 0;
         }
+        if (XW27 && dt > 0 && c.road) c.hT = c.blocked ? (c.hT || 0) + dt : 0;
+        // XW27: held by a car for 1 s in the roadway: the wider room holds until this crossing ends (no pull back into the bumper)
+        if (XW27 && dt > 0 && c.road && !c.wide) { c.blkT = c.blocked ? (c.blkT || 0) + dt : 0; if (c.blkT > 1.0) c.wide = true; }
+        const xwR = XW27 && c.wide ? 2.2 : 0.9;
         const hurry = c.ew !== undefined && walkTimeLeft(this.traffic ? this.traffic.time : 0, c.ew) <= 0 ? 1.35 : 1;
         if (PY25) {
           const tt = Math.min(1, c.t);
           if (dt > 0 && ((p._avT = (p._avT ?? 0) - dt) <= 0)) {
             p._avT = 0.1;
-            const oR = LN25 && !c.road ? 0.3 : 0.9;
+            const oR = LN25 && !c.road ? 0.3 : xwR;
             this._avoid(p, c.x0 + (c.x1 - c.x0) * tt + nx * off, c.y0 + (c.y1 - c.y0) * tt, c.z0 + (c.z1 - c.z0) * tt + nz * off, ux, uz, nx, nz, -oR, oR, 0, off, p.v * hurry * (c.vf ?? 1), 1);
           }
-          const oR2 = LN25 && !c.road ? 0.3 : 0.9;
+          const oR2 = LN25 && !c.road ? 0.3 : xwR;
           let offT = Math.max(-oR2, Math.min(oR2, p._latA ?? 0));
           if (LN25 && c.t > 0.7 && c.oLo !== undefined) offT = Math.max(c.oLo, Math.min(c.oHi, offT));
           c.off = off + Math.max(-0.8 * dt, Math.min(0.8 * dt, (offT - off) * Math.min(1, dt * 2.5)));
@@ -1323,7 +1342,7 @@ export class Peds {
           const here = PY25 ? this.sample(p.e, Math.max(0.05, Math.min(p.e.len - 0.05, p.d))) : this.sample(p.e, Math.max(0.4, Math.min(p.e.len - 0.4, p.d)));
           // a walker held at the kerb (the light, a car) keeps the crossing it chose instead of re-rolling every frame
           let best = p.pick && !p.pick.e2.dead && !p.e.dead ? p.pick : null;
-          if (!best && !p.e.dead && Math.random() >= 0.2) {
+          if (!best && !p.e.dead && Math.random() >= (TB27 ? 0.04 : 0.2)) {
             const cands = [];
             const list = this._near && this._near.length ? this._near : this.walkEdges;
             for (const e2 of list) {

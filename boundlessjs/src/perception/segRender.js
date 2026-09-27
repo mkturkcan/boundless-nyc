@@ -439,7 +439,8 @@ export function initPerception(engine, refs) {
   const crowdMats = new Map();
   function crowdSegMat(kind, code, o) {
     const skin = o.userData.crowdSkin, hair = !!o.userData.crowdHair;
-    const key = [kind, code | 0, hair ? 1 : 0, skin.uInstData.value?.uuid || 'x'].join('|');
+    // the hair array too: a second body set (sim/crowd.js rb27) shares the pose data but carries its own hair cards
+    const key = [kind, code | 0, hair ? 1 : 0, skin.uInstData.value?.uuid || 'x', skin.uHairA?.value?.uuid || 'h'].join('|');
     let m = crowdMats.get(key);
     if (m) return m;
     const base = mkMat(kind, { code });

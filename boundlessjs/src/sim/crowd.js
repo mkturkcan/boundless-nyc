@@ -58,10 +58,13 @@ export async function loadCrowd(renderer) {
   const t0 = performance.now();
   const manifest = await (await fetch(BASE + 'manifest.json')).json();
   const clipIdx = await (await fetch(BASE + 'clips.json')).json();
+  // RB27 (tools/assets/build_rocketbox.mjs): Microsoft Rocketbox avatars (MIT) re-bound to the GEN2 skeleton, so they play
+  // the same clips; they carry their own texture arrays (arraysX[set]). `?rb27=0` leaves them out.
+  const extra = QS.get('rb27') === '0' ? null : await fetch(BASE + 'rb27/manifest.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
   const ktx2 = new KTX2Loader().setTranscoderPath('basis/').detectSupport(renderer);
   const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
-  const arrays = {};
-  await Promise.all(Object.entries(manifest.arrays).map(async ([k, a]) => {
+  const arrays = {}, arraysX = {};
+  const loadArrays = (list, into) => Promise.all(Object.entries(list).map(async ([k, a]) => {
     if (!a.file) return;
     const t = await ktx2.loadAsync(BASE + a.file);
     t.colorSpace = k === 'albedo' || k === 'hair' ? THREE.SRGBColorSpace : THREE.NoColorSpace;
@@ -69,8 +72,9 @@ export async function loadCrowd(renderer) {
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     t.minFilter = THREE.LinearMipmapLinearFilter;
     t.needsUpdate = true;
-    arrays[k] = t;
+    into[k] = t;
   }));
+  await Promise.all([loadArrays(manifest.arrays, arrays), extra ? loadArrays(extra.arrays, (arraysX[extra.set || 'rb27'] = {})) : null]);
   const skel = {};
   for (const [k, S] of Object.entries(manifest.skeletons)) {
     if (!S.parents) continue;
@@ -86,7 +90,7 @@ export async function loadCrowd(renderer) {
     skel[k] = { name: k, nb, bones: S.bones, parents: S.parents, hips: S.bones.findIndex((b) => /hips/i.test(b)), clipTex, clips, bodies: [] };
   }
   const bodies = {};
-  await Promise.all(Object.entries(manifest.bodies).map(async ([name, B]) => {
+  const loadBody = async ([name, B]) => {
     try {
       const g = await loader.loadAsync(BASE + B.file);
       g.scene.updateMatrixWorld(true);
@@ -113,9 +117,13 @@ export async function loadCrowd(renderer) {
         });
         lods.push(parts);
       }
-      bodies[name] = { name, ...B, lods };
-    } catch (e) { console.warn('[crowd] body failed', name, e?.message || e); }
-  }));
+      return { name, ...B, lods };
+    } catch (e) { console.warn('[crowd] body failed', name, e?.message || e); return null; }
+  };
+  // the rb27 bodies load alongside but join after the CARLA ones, which keep their skeleton rows and S.refHips
+  const extraBodies = extra ? Promise.all(Object.entries(extra.bodies).map(loadBody)) : null;
+  await Promise.all(Object.entries(manifest.bodies).map(async (e) => { const b = await loadBody(e); if (b) bodies[b.name] = b; }));
+  if (extraBodies) for (const b of await extraBodies) if (b) bodies[b.name] = b;
   for (const [name, B] of Object.entries(bodies)) { const S = skel[B.skeleton]; if (S) { B.index = S.bodies.length; S.bodies.push(B); } }
   // body reference texture per skeleton: per bone refT, refR, ibm rows 0..2 (5 texels)
   for (const S of Object.values(skel)) {
@@ -136,9 +144,9 @@ export async function loadCrowd(renderer) {
     for (const B of S.bodies) B.hipsH = Math.hypot(B.refT[S.hips * 3], B.refT[S.hips * 3 + 1], B.refT[S.hips * 3 + 2]);
     S.refHips = (S.bodies.find((B) => B.height > 1.5) || S.bodies[0])?.hipsH || 1;
   }
-  const variants = manifest.variants.filter((v) => bodies[v.body]);
-  console.log(`[crowd] ${Object.keys(bodies).length} bodies, ${variants.length} variants, arrays ${Object.entries(arrays).map(([k, t]) => `${k}:${t.image?.depth ?? '?'}`).join(' ')}, clips ${clipIdx.clips.length} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
-  return { manifest, bodies, variants, skel, arrays };
+  const variants = [...manifest.variants, ...(extra ? extra.variants : [])].filter((v) => bodies[v.body]);
+  console.log(`[crowd] ${Object.keys(bodies).length} bodies, ${variants.length} variants${extra ? ` (rb27 ${extra.variants.length})` : ''}, arrays ${Object.entries(arrays).map(([k, t]) => `${k}:${t.image?.depth ?? '?'}`).join(' ')}, clips ${clipIdx.clips.length} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+  return { manifest, bodies, variants, skel, arrays, arraysX };
 }
 
 // ---------------------------------------------------------------- shaders
@@ -533,6 +541,21 @@ const STYLES = [
   { w: 0, walk: ['s_elated_walk'], idle: ['s_elated_idle'] },
   { w: 0, heavy: true, walk: ['s_heavyset_walk'], idle: ['s_heavyset_idle'] },
 ];
+// WS27 (owner 2026-09-26: "There are too many weird walk cycles right now. The non-standard walk animations should be
+// rarer"): 45 % of adults walked a performed style. The neutral walk now carries 80 of 97 (phone calls 8, hands in pockets
+// 6, rushed 2, crowd dodging 1); depressed / arms behind back / looking up / arms folded / old leave the mix (an old walk on
+// a young body read as a limp). `?ws27=0` restores the old weights.
+const WS27 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ws27') === '0');
+if (WS27) {
+  const W27 = { s_neutral_walk: 80, s_onphoneleft_walk: 4, s_onphoneright_walk: 4, s_handsinpockets_walk: 6, s_rushed_walk: 2, s_crowdavoidance_walk: 1 };
+  for (const st of STYLES) st.w = W27[st.walk[0]] ?? 0;
+}
+// KC27 (same review: "I don't want to see broken pedestrian animations"): children picked their walk by speed alone from
+// every child locomotion clip, so a GEN3 child at an adult's pace got joy_c (a skipping hop, filed as a walk) and every GEN2
+// child, boys included, walked CARLA's girl clip, whose arm swing flares out from the body. Children now walk: GEN2 boys the
+// neutral adult walk (the same skeleton; the rate follows the child's leg length), GEN2 girls their own walk or the neutral
+// one, GEN3 children walk_c / walk_c2, never joy_c. `?kc27=0` restores the speed-only pick.
+const KC27 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('kc27') === '0');
 const SHOW_STYLES = STYLES.map((s, i) => (s.w > 0 ? i : -1)).filter((i) => i >= 0);
 const STYLE_BAG = STYLES.flatMap((s, i) => Array(s.w).fill(i));
 const hash = (a, b = 0) => { let h = Math.imul((a | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b | 0, 0xc2b2ae35); h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; return ((h >>> 0) % 100003) / 100003; };
@@ -559,7 +582,8 @@ export class Crowd {
     this.pool = [];
     for (let i = 0; i < assets.variants.length; i++) {
       const v = assets.variants[i];
-      const w = v.uniform === 'police' ? 1 : v.age === 'child' ? 2 : v.build === 'heavy' ? 4 : 10;
+      // RB27 variants carry their own pool weight (build_rocketbox.mjs: the set is ~40 % of the crowd)
+      const w = v.weight ?? (v.uniform === 'police' ? 1 : v.age === 'child' ? 2 : v.build === 'heavy' ? 4 : 10);
       for (let k = 0; k < w; k++) this.pool.push(i);
     }
     // pose targets + passes per skeleton
@@ -579,16 +603,23 @@ export class Crowd {
       const pose = [0, 1, 2].map((i) => ({ value: rt.textures[i] }));
       const mats = { opaque: crowdMaterial('opaque', assets.arrays, pose, instTex), hair: crowdMaterial('hair', assets.arrays, pose, instTex), depth: crowdDepthMaterial(pose, instTex), id: crowdIdMaterial(pose, instTex) };
       const skinU = { uPose0: pose[0], uPose1: pose[1], uPose2: pose[2], uInstData: { value: instTex }, uHairA: { value: assets.arrays.hair || null } };
-      this.passes[S.name] = { S, rt, instData, instTex, mat, quad, scene: new THREE.Scene().add(quad), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), rows: 0, mats, skinU };
+      // RB27: bodies of an extra set sample that set's texture arrays (same programs and pose targets, other uniforms)
+      const matsX = {}, skinUX = {};
+      for (const [k, arr] of Object.entries(assets.arraysX || {})) {
+        matsX[k] = { ...mats, opaque: crowdMaterial('opaque', arr, pose, instTex), hair: crowdMaterial('hair', arr, pose, instTex) };
+        skinUX[k] = { ...skinU, uHairA: { value: arr.hair || null } };
+      }
+      this.passes[S.name] = { S, rt, instData, instTex, mat, quad, scene: new THREE.Scene().add(quad), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), rows: 0, mats, skinU, matsX, skinUX };
     }
     // render sets per (body, LOD) main + shadow
     this.sets = new Map();
     for (const B of Object.values(assets.bodies)) {
       const P = this.passes[B.skeleton];
       if (!P) continue;
+      const bm = (B.set && P.matsX[B.set]) || P.mats, bs = (B.set && P.skinUX[B.set]) || P.skinU;
       this.sets.set(B.name, {
-        main: B.lods.map((parts, li) => new RenderSet(scene, parts, `${B.name}:lod${li}`, P.mats, false, P.skinU)),
-        shadow: B.lods.map((parts, li) => new RenderSet(scene, parts, `${B.name}:lod${li}`, P.mats, true)),
+        main: B.lods.map((parts, li) => new RenderSet(scene, parts, `${B.name}:lod${li}`, bm, false, bs)),
+        shadow: B.lods.map((parts, li) => new RenderSet(scene, parts, `${B.name}:lod${li}`, bm, true)),
       });
     }
     this._shadowMeshes = [];
@@ -630,7 +661,9 @@ export class Crowd {
     if (s.variant[idx] !== v) { s.variant[idx] = v; s.clipA[idx] = -1; s.clipB[idx] = -1; s.w[idx] = 0; }
     // walk style: heavier builds walk heavyset, fast walkers hurry, the rest from the NYC mix
     const V = this.A.variants[v], hsd = hash(Math.floor(skin * 1e6), 5);
-    s.gait[idx] = V.build === 'heavy' && hsd < 0.4 ? STYLES.length - 1 : s.speed[idx] > 1.62 && hsd < 0.3 ? 5 : STYLE_BAG[Math.floor(hash(Math.floor(skin * 1e6), 9) * STYLE_BAG.length)];
+    // WS27: the heavyset walk on a fifth of heavy builds (was 40 %), the rushed walk on an eighth of fast walkers (was 30 %)
+    const hvK = WS27 ? 0.2 : 0.4, fsK = WS27 ? 0.12 : 0.3;
+    s.gait[idx] = V.build === 'heavy' && hsd < hvK ? STYLES.length - 1 : s.speed[idx] > 1.62 && hsd < fsK ? 5 : STYLE_BAG[Math.floor(hash(Math.floor(skin * 1e6), 9) * STYLE_BAG.length)];
   }
   setAmp(idx, amp) { if (!this.show) this.st.amp[idx] = amp; }
   // PY25 (sim/peds.js): a walker slowed behind someone plays its walk at that fraction of its rate, so the feet stay
@@ -676,6 +709,13 @@ export class Crowd {
     const age = variant.age === 'child' || body.height * (variant.scale || 1) < 1.4 ? 'child' : 'adult';
     const pool = walking ? C.walk : C.idle;
     let list = pool.filter((c) => c.age === age);
+    if (KC27 && walking && age === 'child') {
+      if (skelName === 'gen2') {
+        const names = variant.gender === 'f' ? ['walk_f', 's_neutral_walk'] : ['s_neutral_walk', 'walk_m'];
+        const sl = C.all.filter((c) => names.includes(c.name));
+        if (sl.length) list = sl;
+      } else list = list.filter((c) => c.name !== 'joy_c');
+    }
     const sty = STYLES[styleIdx];
     if (sty && age === 'adult' && skelName === 'gen2') {
       const names = walking ? sty.walk : sty.idle;

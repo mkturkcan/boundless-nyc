@@ -37,8 +37,9 @@ client.close()                          # also a context manager: `with boundles
 
 ## Blueprints
 
-- `vehicle.<kind>`, 14 kinds of the NYC fleet: `taxi`, `taxi2` (the current TLC cab), `lincoln`, `suv`, `charger`,
-  `impala`, `mercedes`, `mini`, `van`, `boxtruck`, `police`, `ambulance`, `minibus`, `firetruck`. Attributes:
+- `vehicle.<kind>`, 17 kinds of the NYC fleet: `taxi`, `taxi2` (the current TLC cab), `lincoln`, `suv`, `charger`,
+  `impala`, `mercedes`, `mini`, `van`, `boxtruck`, `police`, `ambulance`, `minibus`, `firetruck`, `model3` (Tesla
+  Model 3), `auditt` (Audi TT) and `mustang` (a 1966 Mustang convertible; in traffic it only stands parked). Attributes:
   `class`, `width`, `height`, `length`, `color` (`"r,g,b"`), `role_name`, and `capacity` (how many of that kind can
   exist at once; a spawn beyond it fails with `pool_full`).
 - `walker.pedestrian.0000` .. `0036`: 37 outfits. Attributes: `name`, `gender`, `age`, `build`, `uniform`, `speed`,
@@ -47,6 +48,9 @@ client.close()                          # also a context manager: `with boundles
   (LICENSING.md). With the server option
   `--pedestrians procedural` the library instead holds one blueprint, `walker.pedestrian.procedural`, the built-in
   procedural pedestrian.
+- `walker.pedestrian.0037` .. `0085`: 49 bodies from the Microsoft Rocketbox Avatar Library (MIT), with the same
+  attributes; they walk the same clips as the outfits above. The server option `--pedestrians procedural` leaves them
+  out.
 - `controller.ai.walker`: attach to a walker. Attribute: `max_speed` (m/s, default 1.4).
 - `sensor.camera.rgb`, `.semantic_segmentation`, `.instance_segmentation`, `.depth`, `.bounding_boxes`. Attributes:
   - `fov`: horizontal field of view in degrees; default 90.

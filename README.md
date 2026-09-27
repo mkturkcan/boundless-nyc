@@ -130,7 +130,8 @@ the architecture diagram is a draw.io file in `docs/assets/figures/src/`.
 - **Documentation and figures:** CC BY 4.0.
 - **Compiled city:** ODbL 1.0, because it contains data derived from OpenStreetMap. Images and labels rendered from it
   may be used under any terms with the attribution "© OpenStreetMap contributors".
-- **Vehicle, prop and pedestrian models:** CC BY 4.0, from the CARLA Simulator.
+- **Vehicle, prop and pedestrian models:** CC BY 4.0, from the CARLA Simulator; the Rocketbox pedestrian set
+  (`models/peds24/rb27/`) is MIT, from the Microsoft Rocketbox Avatar Library.
 - **Textures and skies:** CC0, from Poly Haven and ambientCG.
 
 The photoreal pedestrians contain components created with Epic Games' MetaHuman. The MetaHuman licence does not allow

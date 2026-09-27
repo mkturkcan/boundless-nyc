@@ -23,6 +23,7 @@ import {
 //   env: scene.environmentIntensity (the sky-only IBL: cool, and the ambient's bulk)
 //   bnc: engine.bounce, the warm inter-reflected half of a canyon's ambient
 const GH25 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gh25') === '0');
+const GH26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gh26') === '0');
 const PRESETS = {
   // LB13 — THE SHADOW BUDGET (docs/notes/light-r13.md). `?lb13=0` restores the row below verbatim
   // (DAY_R12). Four changes, all day-only, so golden/dusk/night are bit-identical:
@@ -57,7 +58,16 @@ const PRESETS = {
   // through sunW), a key that dominates the fill, a cool blue sky fill instead of the warm bounce (warm key against a
   // blue shade is the golden-hour contrast), a lighter probe, and scattered cumulus with cirrus (CS25). `?gh25=0`
   // restores the round-14 row.
-  golden: GH25 ? { elev: 14, azim: 245, expo: 0.76, fog: 0xe2b98e, fogD: 0.00013, night: 0.05, env: 0.20, sun: 3.2, bnc: 1.0, skyGain: 0.7,
+  // GH26 (owner 2026-09-26: "The first clip in the trailer still has bad lighting and looks low quality"): at 245 deg the
+  // sun sat behind the west campus, so the whole foreground of the opening shot (College Walk's steps, a third of the
+  // frame) and most of Low Plaza were in flat blue shade. From 205 deg, 15 deg up, it rakes across the steps and the plaza
+  // and lights Low's facade warm and nearly head-on, with a stronger key over a cooler fill and a warmer grade (sweep on
+  // mCollegeWalk key 0, variants A-H, 2026-09-26). `?gh26=0` restores the GH25 row.
+  golden: GH25 && GH26 ? { elev: 15, azim: 205, expo: 0.76, fog: 0xe2b98e, fogD: 0.00013, night: 0.05, env: 0.20, sun: 4.0, bnc: 0.9, skyGain: 0.7,
+            probeK: 0.5, hemi: 0.6, hemiC: 0x8aa9d8, sunW: 0.55,
+            cloud: { cov: 0.35, dens: 0.9, cirrus: 0.5, h: 2200, lit: 1.6, shade: 0.55 },
+            grade: { lut: 'teal_orange', lutAmt: 0.42, contrast: 0.72, saturation: 1.25, warmth: 0.08, hazeSun: 1.7, godrays: 0.5 } }
+    : GH25 ? { elev: 14, azim: 245, expo: 0.76, fog: 0xe2b98e, fogD: 0.00013, night: 0.05, env: 0.20, sun: 3.2, bnc: 1.0, skyGain: 0.7,
             probeK: 0.5, hemi: 0.75, hemiC: 0x8aa9d8, sunW: 0.35,
             cloud: { cov: 0.35, dens: 0.9, cirrus: 0.5, h: 2200, lit: 1.6, shade: 0.55 },
             // chosen from a four-way sweep on the trailer's first frame: warm highlights against cool shade, a touch more

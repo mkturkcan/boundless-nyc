@@ -108,6 +108,23 @@ const PY25 = typeof location === 'undefined' || new URLSearchParams(location.sea
 // where the car really is across its lane (carPath): turning cars crept into crossers standing in front of their bumpers
 // at W 122nd / Lenox and W 120th / Amsterdam. `?yield26=0`: the PY25 windows and path.
 const YD26 = PY25 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('yield26') !== '0');
+// TW26 (owner 2026-09-26: "cars randomly change lanes by teleporting"): the wide-swing fallback built the turn from exit and
+// entry points moved 1.2 m toward the road centre, so a car whose normal arc cut the kerb jumped 1.2 m sideways as its turn
+// began and again as it ended (probe: every lateral jump over 1 m in a 600-step Lenox run sat at a turn's first or last
+// step). The swing now bends the middle of the arc through its control points; the arc starts and ends where the car is.
+// The lane itself was eased INSIDE _laneOffset (7-8 % of the gap per call, ~2 calls a step): a lane change began at up to
+// 13 m/s sideways. laneF now follows the lane on a critically damped spring stepped once per frame (starts and stops
+// smoothly, peaks near 1.5 m/s, done in ~3 s), the body yaws into its sideways motion, and a turn clamps laneF to the next
+// street's lanes before it builds the arc, so the arc lands in a real lane. A turn's s was also the Bezier PARAMETER over an
+// estimated length (chord x (1 + 0.3 bend)), so cars surged to ~30 m/s through part of every corner; turns now carry an
+// arc-length table and s is metres along the curve. `?tw26=0` restores all of it.
+const TW26 = typeof location === 'undefined' || new URLSearchParams(location.search).get('tw26') !== '0';
+// TW27 (film 10 recorder, CAR-JUMP ~1.2 m forward, 0 sideways): a car leaves its edge up to 0.6 m short of the junction
+// mouth, but its connector began AT the mouth and the car was not placed on the frame it left: it stood still for a frame
+// and then jumped up to 0.6 m plus two steps; a connector under 2 m was not driven at all. The connector now starts where
+// the car is, the car is placed on it at once, and a short one is driven as a straight connector (probe, 600 steps at
+// 125th & Lenox: jump events 410 -> 0, traffic flow unchanged). `?tw27=0` restores the old junction entry.
+const TW27 = TW26 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('tw27') !== '0');
 const CG = 10;   // car grid cell (m)
 
 export class Traffic {
@@ -565,7 +582,7 @@ export class Traffic {
       let color = fleetColor(Math.random);
       if (color === 0xf7b500 && !/^(crown|prius|tesla|sedan)$/.test(kind)) color = fleetColor(() => 0.17 + Math.random() * 0.83);
       const car = { e, d, dir, lane: (Math.random() * lanesDir) | 0, v: 4, kind, color, idx: pool.n++,
-        laneF: undefined, _cp: undefined, _cpF: undefined, _hsx: undefined, _hcz: undefined, _pg: undefined, _pgS: undefined, _pk: undefined, _pkF: undefined, _pyHold: undefined };
+        laneF: undefined, _lfv: 0, _cp: undefined, _cpF: undefined, _hsx: undefined, _hcz: undefined, _pg: undefined, _pgS: undefined, _pk: undefined, _pkF: undefined, _pyHold: undefined };
       car.laneF = car.lane;
       // lane 0 is the LEFT lane of travel (next to the centreline on a two-way street); the curb
       // lane is lanesDir - 1 — double-parked vans used to sit in the middle of two-way streets
@@ -725,7 +742,7 @@ export class Traffic {
       return P.s[P.n - 1] < Lmax;
     };
     const bez = (T, s) => {
-      const t = Math.max(0, Math.min(1, s / T.len)), u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
+      const t = TW26 && T.lut ? this._turnT(T, s) : Math.max(0, Math.min(1, s / T.len)), u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
       return push(a0 * T.p0[0] + a1 * T.c1[0] + a2 * T.c2[0] + a3 * T.p2[0], a0 * T.p0[2] + a1 * T.c1[2] + a2 * T.c2[2] + a3 * T.p2[2]);
     };
     // along edge e from d in direction dir (lane of `car`, travelling `dir`), up to dStop (the exit mouth) or Lmax
@@ -985,7 +1002,7 @@ export class Traffic {
         else if (car._pyHold && car.v < 3.5) car.v = Math.min(T.vCap, car.v + IDM.a * dt);
         else { car._pyHold = false; car.v = Math.max(3.5, Math.min(car.v, T.vCap)); }
         T.s = Math.min(T.len, T.s + car.v * dt);
-        const t = T.s / T.len;
+        const t = TW26 && T.lut ? this._turnT(T, T.s) : T.s / T.len;
         const omt = 1 - t;
         // cubic Bezier p0 -> c1 -> c2 -> p2 (see the connector construction below)
         const a0 = omt * omt * omt, a1 = 3 * omt * omt * t, a2 = 3 * omt * t * t, a3 = t * t * t;
@@ -1177,7 +1194,7 @@ export class Traffic {
           continue;
         }
         // curved connector: junction-boundary exit -> next edge's mouth entry
-        const exitD = Math.max(0.2, Math.min(e.len - 0.2, car.dir > 0 ? e.len - mEnd : mEnd));
+        const exitD = Math.max(0.2, Math.min(e.len - 0.2, TW27 ? car.d : car.dir > 0 ? e.len - mEnd : mEnd));
         const exitPos = this.sampleEdge(e, exitD);
         const hA = [exitPos.dirx * car.dir, exitPos.dirz * car.dir];
         const exOff = this._laneOffset(e, car);
@@ -1192,6 +1209,7 @@ export class Traffic {
         car.dir = pick.o.dir;
         const lanesDir = ne.oneway !== 0 ? ne.lanes : Math.max(1, Math.floor(ne.lanes / 2));
         car.lane = Math.min(car.lane, Math.max(0, lanesDir - 1));
+        if (TW26 && car.laneF !== undefined) { car.laneF = Math.min(car.laneF, Math.max(0, lanesDir - 1)); car._lfv = 0; }
         car.d = entryD;
         ne.cars.add(car);
         const enOff = this._laneOffset(ne, car);
@@ -1237,12 +1255,26 @@ export class Traffic {
           if (offRoad(T)) {
             let best = null;
             for (const kf of [0.5, 0.64, 0.8]) { const Tk = mk(kf * chord); if (!offRoad(Tk)) { best = Tk; break; } }
-            if (!best) for (const kf of [0.36, 0.5, 0.64]) { const Tk = mk(kf * chord, p0w, p2w); if (!offRoad(Tk)) { best = Tk; break; } }
-            T = best || mk(0.5 * chord, p0w, p2w);
+            // TW26: the swing moves the controls, not the ends (a Bezier passes 3/4 of a control offset at its middle, so 1.33x)
+            const mkW = (k) => { const T0 = mk(k), s0 = [(p0w[0] - p0[0]) * 1.33, (p0w[2] - p0[2]) * 1.33], s2 = [(p2w[0] - p2[0]) * 1.33, (p2w[2] - p2[2]) * 1.33];
+              T0.c1 = [T0.c1[0] + s0[0], T0.c1[1], T0.c1[2] + s0[1]]; T0.c2 = [T0.c2[0] + s2[0], T0.c2[1], T0.c2[2] + s2[1]]; return T0; };
+            if (!best) for (const kf of [0.36, 0.5, 0.64]) { const Tk = TW26 ? mkW(kf * chord) : mk(kf * chord, p0w, p2w); if (!offRoad(Tk)) { best = Tk; break; } }
+            T = best || (TW26 ? mkW(0.5 * chord) : mk(0.5 * chord, p0w, p2w));
           }
           car.turn = { ...T, len: chord * (1 + bend * 0.3), s: 0, vCap: bend > 0.4 ? 6.0 : 12 };
+          if (TW26) this._turnLUT(car.turn);
           car.turnNode = this.junction?.get(nodeKey) || nodeKey; car.turnLane = car.lane; car.turnHead = hA; car.turnCr = myCr;   // for the junction-box occupancy test
           car.turnFrom = e; car.turnFromDir = dir0; car.turnFromLane = exLane;                                                  // for the followers left behind
+          if (TW27) this._placeCar(car, car.turn.p0[0], car.turn.p0[1], car.turn.p0[2], Math.atan2(hA[0], hA[1]), dt);   // TW27: on its connector this frame
+        } else if (TW27 && chord > 0.05) {
+          // TW27: a connector under 2 m is driven too, as a straight one (it used to be skipped: the car snapped across it,
+          // sideways too where the lanes do not line up)
+          const q = (f) => [p0[0] + (p2[0] - p0[0]) * f, p0[1] + (p2[1] - p0[1]) * f, p0[2] + (p2[2] - p0[2]) * f];
+          car.turn = { p0, c1: q(1 / 3), c2: q(2 / 3), p2, len: chord, s: 0, vCap: 12 };
+          this._turnLUT(car.turn);
+          car.turnNode = this.junction?.get(nodeKey) || nodeKey; car.turnLane = car.lane; car.turnHead = hA; car.turnCr = myCr;
+          car.turnFrom = e; car.turnFromDir = dir0; car.turnFromLane = exLane;
+          this._placeCar(car, p0[0], p0[1], p0[2], Math.atan2(hA[0], hA[1]), dt);
         }
         continue;
       }
@@ -1252,8 +1284,22 @@ export class Traffic {
       const sB = this.sampleEdge(e, car.d + 1.7);
       let hx = (sB.x - sA.x) * car.dir, hz = (sB.z - sA.z) * car.dir;
       const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl;
+      let yawT = Math.atan2(hx, hz);
+      if (TW26 && car.laneF !== undefined) {
+        // critically damped spring (k 1.6, c 2 sqrt k): from rest it peaks near 0.47 lanes/s and settles in ~3 s
+        const gap = car.lane - car.laneF;
+        if (Math.abs(gap) < 0.002 && Math.abs(car._lfv) < 0.002) { car.laneF = car.lane; car._lfv = 0; }
+        else {
+          car._lfv += (1.6 * gap - 2.53 * car._lfv) * dt;
+          car.laneF += car._lfv * dt;
+          // the body points along its path: lateral m/s over forward m/s
+          const lw = this._laneOffsetAt(e, car, car.laneF + 1) - this._laneOffsetAt(e, car, car.laneF);
+          const lat = car._lfv * lw, fw = Math.max(car.v || 0, 1.5);
+          yawT = Math.atan2(hx * fw - hz * lat, hz * fw + hx * lat);
+        }
+      }
       const off = this._laneOffset(e, car);
-      this._placeCar(car, s.x - hz * off, s.y + (NO_DATUM ? 0.03 : 0.002), s.z + hx * off, Math.atan2(hx, hz), dt);   // see the parked-car note: origin = contact patch
+      this._placeCar(car, s.x - hz * off, s.y + (NO_DATUM ? 0.03 : 0.002), s.z + hx * off, yawT, dt);   // see the parked-car note: origin = contact patch
     }
     if (PY25) this._buildCarGrid();
     if (this.camera) this.lights.update(this.cars, this.camera);
@@ -1435,9 +1481,29 @@ export class Traffic {
     const c1 = [p0[0] + (2 / 3) * (p1[0] - p0[0]), p0[1], p0[2] + (2 / 3) * (p1[2] - p0[2])];
     const c2 = [p2[0] + (2 / 3) * (p1[0] - p2[0]), p2[1], p2[2] + (2 / 3) * (p1[2] - p2[2])];
     car.turn = { p0, c1, c2, p2, len, s: 0, vCap: 3.2 };
+    if (TW26) this._turnLUT(car.turn);
+  }
+  // TW26: an arc-length table for a turn's cubic (17 samples), so its s runs in metres along the curve
+  _turnLUT(T) {
+    const L = new Float32Array(17);
+    let px = T.p0[0], pz = T.p0[2], acc = 0;
+    for (let i = 1; i <= 16; i++) {
+      const t = i / 16, u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
+      const x = a0 * T.p0[0] + a1 * T.c1[0] + a2 * T.c2[0] + a3 * T.p2[0], z = a0 * T.p0[2] + a1 * T.c1[2] + a2 * T.c2[2] + a3 * T.p2[2];
+      acc += Math.hypot(x - px, z - pz); L[i] = acc; px = x; pz = z;
+    }
+    T.lut = L; T.len = Math.max(acc, 0.5);
+    return T;
+  }
+  _turnT(T, s) {
+    const L = T.lut, tg = Math.min(Math.max(s, 0), T.len);
+    let i = 1;
+    while (i < 16 && L[i] < tg) i++;
+    const a = L[i - 1], b = L[i];
+    return ((i - 1) + (b > a ? (tg - a) / (b - a) : 0)) / 16;
   }
   _laneOffset(e, car) {
-    if (car && car.laneF !== undefined) { car.laneF += (car.lane - car.laneF) * 0.04; return this._laneOffsetAt(e, car, car.laneF); }
+    if (car && car.laneF !== undefined) { if (!TW26) car.laneF += (car.lane - car.laneF) * 0.04; return this._laneOffsetAt(e, car, car.laneF); }
     return this._laneOffsetAt(e, car, car ? car.lane : 0);
   }
   _laneOffsetAt(e, car, lane) {

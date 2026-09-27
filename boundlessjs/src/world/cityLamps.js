@@ -54,6 +54,11 @@ float cl24Throw( vec3 D, float yaw ) {
 // sentinel spot switch on together at night 0.06, so the day programs are lamp-free and the dusk switch recompiles once,
 // as it already did for the headlamps. `?cl26=0` keeps the loop in every program.
 const CL26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cl26') === '0');
+// LA26 (owner 2026-09-26: night "shimmer" on the fronts of vehicles): a luminaire's lens is ~0.7 m across, but every lit
+// shader saw a point, so on a 0.035-rough clearcoat, glass or a wet road each lamp was a sub-pixel star that sparkled
+// frame to frame (the film runs without TAA). Each lamp's reflection now takes the lamp's own angular size (sphere-light
+// roughness widening, for this light only). `?la26=0` restores point highlights.
+const LA26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('la26') === '0');
 export const LAMPS_ON = 0.06;   // night level at which the street lamps (and the headlamps) switch on
 const LOOP = /* glsl */ `
 #if defined( RE_Direct )${CL26 ? ' && ( NUM_SPOT_LIGHTS > 0 )' : ''}
@@ -79,7 +84,20 @@ const LOOP = /* glsl */ `
 			#endif
 			directLight.color = lc.rgb * ( f * getDistanceAttenuation( d, lp.w, 2.0 ) );
 			directLight.visible = true;
+			${LA26 ? `#ifdef STANDARD
+			{
+				// the lens (~0.35 m radius) seen from here: widen the lobe to its angular size, for this light only
+				PhysicalMaterial clm = material;
+				float clA = min( 0.35 / max( d, 0.5 ), 0.6 );
+				clm.roughness = clamp( sqrt( clm.roughness * clm.roughness + clA * clA ), 0.0525, 1.0 );
+				#ifdef USE_CLEARCOAT
+				clm.clearcoatRoughness = clamp( sqrt( clm.clearcoatRoughness * clm.clearcoatRoughness + clA * clA ), 0.0525, 1.0 );
+				#endif
+				RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, clm, reflectedLight );
+			}
+			#else
 			RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
+			#endif` : `RE_Direct( directLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );`}
 		}
 	}
 }
@@ -111,6 +129,11 @@ const TAKE_R2 = 520 * 520;
 // candela at the throw peak per fixture candela. night11's `cd` was the whole round point light; the throw above puts
 // 0.16 of the peak at nadir, so the peak carries more to leave the street as bright on average and far more even
 const PEAK_K = 3.0;   // live: window.__LAMPS.gain (tuned on W 122nd St and 125th St, 2026-09-25)
+// LS26 (owner 2026-09-26: night "shimmer"): the CL_N lamps were re-picked every 0.25 s and written in rank order, so a lamp
+// that fell out of the set switched off in the frame it did (off the road, off every car's paint and glass) and one that
+// came in switched on at full strength. Lamps now hold a slot while they stay in the best 1.25 x CL_N, new lamps take
+// free slots, and each slot fades in and out over ~0.4 s. `?ls26=0` restores the ranked list.
+const LS26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ls26') === '0');
 
 export class CityLamps {
   constructor() {
@@ -168,6 +191,41 @@ export class CityLamps {
       }
       cand.sort((a, b) => a.k - b.k);
       this.sel = cand.slice(0, CL_N).map((c) => c.s);
+      if (LS26) {
+        if (!this._sl) this._sl = Array.from({ length: CL_N }, () => ({ s: null, w: 0, rel: false }));
+        const keepSet = new Set();
+        for (let i = 0; i < cand.length && i < Math.ceil(CL_N * 1.25); i++) keepSet.add(cand[i].s);
+        const held = new Set();
+        for (const sl of this._sl) {
+          if (!sl.s) continue;
+          if (!sl.rel && !keepSet.has(sl.s)) sl.rel = true;
+          if (!sl.rel) held.add(sl.s);
+        }
+        let j = 0;
+        for (const sl of this._sl) {
+          if (sl.s && (!sl.rel || sl.w > 0.004)) continue;
+          sl.s = null; sl.rel = false; sl.w = 0;
+          while (j < this.sel.length && held.has(this.sel[j])) j++;
+          if (j < this.sel.length) { sl.s = this.sel[j]; held.add(sl.s); j++; }
+        }
+      }
+    }
+    if (LS26 && this._sl) {
+      const k = Math.min(1, dt * 2.5);
+      let n = 0;
+      for (const sl of this._sl) {
+        const o = n * 4;
+        if (sl.s) sl.w += Math.max(-k, Math.min(k, (sl.rel ? 0 : 1) - sl.w));
+        if (!sl.s || sl.w <= 0.004) { P[o + 3] = 0; C[o] = C[o + 1] = C[o + 2] = 0; C[o + 3] = 99; n++; continue; }
+        const s = sl.s, F = fixtureOf(s[3] ?? -1), FC = fixtureColor(s[3] ?? -1);
+        P[o] = s[0]; P[o + 1] = s[1] + (s[4] ?? 8.2); P[o + 2] = s[2]; P[o + 3] = F.range;
+        const I = F.cd * this.gain * night * sl.w;
+        C[o] = FC.r * I; C[o + 1] = FC.g * I; C[o + 2] = FC.b * I;
+        C[o + 3] = s[5] === undefined || s[5] === null ? 99 : s[5];
+        n++;
+      }
+      M[0] = n; M[1] = this.shape[0]; M[2] = this.shape[1]; M[3] = this.shape[2];
+      return;
     }
     let n = 0;
     for (const s of this.sel) {

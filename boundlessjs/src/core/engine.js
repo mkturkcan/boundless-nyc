@@ -405,6 +405,12 @@ const GR26 = !(typeof location !== 'undefined' && new URLSearchParams(location.s
 // and the strength to 0.6x (p5 74 -> 66, local contrast 14.2 -> 15.7; views away from the sun unchanged); golden (night
 // 0.05) and after dark keep their glow. `?bl26=0` restores it.
 const BL26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('bl26') === '0');
+// BC26 (film 10 night review, owner: "shimmer in fronts of vehicles"): a lamp lens or a headlamp is a few pixels at many
+// times white, and UnrealBloom spreads each one's whole energy over its widest mips, so a frame-wide veil switches on the
+// frame such a lens crosses the image edge (fBrownstoneNight frame 104: 20 blocks up by 42 levels at once) and a headlamp's
+// halo breathes with its pixel coverage. After dark the high-pass keeps at most 4x white per channel: a small source
+// glows like a small source; lit glass, signs and wet streaks (1-4) are untouched. `?bc26=0` restores it.
+const BC26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('bc26') === '0');
 // Screen-space god rays: quarter-res sky/sun occlusion mask -> 48-tap radial
 // march toward the projected sun -> additive composite. Sun screen position
 // and off-screen/behind-camera fade are computed CPU-side each frame.
@@ -606,6 +612,7 @@ class TAAPass extends Pass {
       tDiffuse: { value: null }, tHistory: { value: null }, tDepth: { value: depthTexture },
       uInvProj: { value: new THREE.Matrix4() }, uCamMat: { value: new THREE.Matrix4() }, uPrevVP: { value: new THREE.Matrix4() },
       uBlend: { value: 0 }, uTexel: { value: new THREE.Vector2(1 / w, 1 / h) },
+      uAccum: { value: 0 }, uAccFirst: { value: 1 },   // AC26
     };
     this._quad = new FullScreenQuad(new THREE.ShaderMaterial({
       uniforms: this.uniforms,
@@ -614,12 +621,20 @@ class TAAPass extends Pass {
       fragmentShader: /* glsl */ `
         uniform sampler2D tDiffuse; uniform sampler2D tHistory; uniform sampler2D tDepth;
         uniform mat4 uInvProj, uCamMat, uPrevVP;
-        uniform float uBlend; uniform vec2 uTexel;
+        uniform float uBlend; uniform vec2 uTexel; uniform float uAccum; uniform float uAccFirst;
         varying vec2 vUv;
         ${NF_GLSL}
         void main() {
           vec3 cur = texture2D(tDiffuse, vUv).rgb;
           if (nfBad3(cur)) cur = vec3(0.0);
+          if (uAccum > 0.5) {
+            // AC26: weighted running mean of this frozen frame's jittered samples; the weight sum rides in alpha
+            float w = 1.0 / (1.0 + max(cur.r, max(cur.g, cur.b)) * 0.0625);
+            vec4 h = texture2D(tHistory, vUv);
+            float W = (uAccFirst > 0.5 || nfBad3(h.rgb) || nfBad(h.a)) ? 0.0 : h.a;
+            gl_FragColor = vec4((h.rgb * W + cur * w) / (W + w), W + w);
+            return;
+          }
           if (uBlend < 0.01) { gl_FragColor = vec4(cur, 1.0); return; }
           // neighborhood bounds of the CURRENT frame bound the history (kills ghosting)
           vec3 mn = cur, mx = cur;
@@ -654,7 +669,7 @@ class TAAPass extends Pass {
       uniforms: { tDiffuse: { value: null } },
       depthTest: false, depthWrite: false,
       vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
-      fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ gl_FragColor = texture2D(tDiffuse, vUv); }',
+      fragmentShader: 'uniform sampler2D tDiffuse; varying vec2 vUv; void main(){ gl_FragColor = vec4(texture2D(tDiffuse, vUv).rgb, 1.0); }',
     }));
   }
   setSize(w, h) {
@@ -674,6 +689,8 @@ class TAAPass extends Pass {
     this.uniforms.tHistory.value = this.histA.texture;
     const still = this.stillBlend ?? 1;
     this.uniforms.uBlend.value = this._first ? 0 : this.amount * (0.3 + 0.7 * still);
+    this.uniforms.uAccum.value = this.accum ? 1 : 0;
+    this.uniforms.uAccFirst.value = this.accFirst || this._first ? 1 : 0;
     this.uniforms.uInvProj.value.copy(invProj);
     this.uniforms.uCamMat.value.copy(this.camera.matrixWorld);
     this.uniforms.uPrevVP.value.copy(this.prevVP);
@@ -742,6 +759,14 @@ const shadowMixFor = (camY) => {
   return 0.88 + (0.34 - 0.88) * w;
 };
 
+// AC26 (owner review 2026-09-26: "night-time there is shimmer in fronts of vehicles"): ACCUMULATION AA for film takes,
+// `?accum=N` (tools/ad/record.mjs draws N extra frozen frames before each capture). The film runs with TAA off (clean=1:
+// its clamped history and the sharpening were the 2026-09-17 complaint), so a chrome grille, a lamp's glint in a clearcoat,
+// leaf edges and wires alias differently on every frame. Here every FROZEN frame (no sim step, no camera move) adds one
+// sub-pixel-jittered sample of the same world to a per-pixel mean in the TAA history, and the first frame after a step
+// starts it again: a supersample, no ghosting. The weight 1 / (1 + max rgb / 16) only tames a sample far above white (a
+// sun glint); a lamp lens or a headlamp at 5-10 keeps its energy (the plain 1 / (1 + max) Karis weight dimmed them).
+const ACCUM = typeof location !== 'undefined' ? Math.max(0, Number(new URLSearchParams(location.search).get('accum')) || 0) : 0;
 // Halton (2,3) 8-point sub-pixel jitter pattern, centered on 0
 const HALTON8 = [
   [0.0, -0.1667], [-0.25, 0.1667], [0.25, -0.3889], [-0.375, -0.0556],
@@ -1045,6 +1070,15 @@ export class Engine {
     this.nanGuard = new ShaderPass(NaNGuardShader);   // film 7: see NaNGuardShader
     this.composer.addPass(this.nanGuard);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.12, 0.45, 1.35);
+    if (BC26) {
+      const hp = this.bloom.materialHighPassFilter;
+      hp.uniforms.uBloomMax = { value: 1e4 };
+      const f0 = hp.fragmentShader;
+      hp.fragmentShader = f0.replace('uniform float smoothWidth;', 'uniform float smoothWidth;\n\t\tuniform float uBloomMax;')
+        .replace('gl_FragColor = mix( outputColor, texel, alpha );', 'gl_FragColor = mix( outputColor, texel, alpha );\n\t\t\tgl_FragColor.rgb = min( gl_FragColor.rgb, vec3( uBloomMax ) );');
+      if (hp.fragmentShader === f0 || !hp.fragmentShader.includes('uBloomMax )')) console.warn('[BC26] bloom high-pass patch did not apply');
+      hp.needsUpdate = true;
+    }
     this.composer.addPass(this.bloom);
     this.smaa = new SMAAPass(innerWidth, innerHeight);
     this.composer.addPass(this.smaa);
@@ -1151,7 +1185,16 @@ export class Engine {
           this.taa.unjitProj.copy(this.camera.projectionMatrix);
           this.taa.unjitProjInv.copy(this.camera.projectionMatrixInverse);
         }
-        if (this.taa && this.taa.amount > 0.01 && still > 0.55) {
+        if (ACCUM && this.taa && this.recordMode) {   // record mode only: a free-running sim would smear moving things
+          // AC26: a sim step (main.js sets simStepped in record mode), a camera move or a history reset starts the mean again
+          const fresh = movingNow || this.simStepped || this.taa._first;
+          this.simStepped = false;
+          this._accK = fresh ? 0 : (this._accK ?? 0) + 1;
+          this.taa.accum = true; this.taa.accFirst = this._accK === 0;
+          const j = HALTON8[this._accK % 8];
+          this.camera.setViewOffset(innerWidth, innerHeight, j[0], j[1], innerWidth, innerHeight);
+          this._jittered = true;
+        } else if (this.taa && this.taa.amount > 0.01 && still > 0.55) {
           const j = HALTON8[this.frames % 8];
           this.camera.setViewOffset(innerWidth, innerHeight, j[0] * still, j[1] * still, innerWidth, innerHeight);
           this._jittered = true;
@@ -1335,6 +1378,7 @@ export class Engine {
     // the radius is tight enough that the halo stays on the object.
     this.bloom.strength = 0.09 + night * 0.20;
     this.bloom.threshold = 2.30 - night * 1.45;
+    if (BC26 && this.bloom.highPassUniforms.uBloomMax) this.bloom.highPassUniforms.uBloomMax.value = night > 0.3 ? 4.0 : 1e4;
     const dayW = BL26 ? Math.max(0, 1 - night / 0.05) : 0;   // BL26: 1 at full day, 0 from golden on
     this.bloom.radius = 0.26 + night * 0.10 - 0.14 * dayW;
     this.bloomDayK = 1 - 0.4 * dayW;

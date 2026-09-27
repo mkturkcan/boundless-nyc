@@ -46,6 +46,11 @@ const PS26W = PS26 && typeof location !== 'undefined' && new URLSearchParams(loc
 // 40 s in the middle of a 30 m hop at the park's west side behind a kerb row). Not the default: at a busy corner the hops
 // that turned round fed the kerb queue they had left (W 122nd / Mt Morris Park West, walker contact 165 -> 554 s).
 const HP26 = PY25 && typeof location !== 'undefined' && new URLSearchParams(location.search).get('hop26') === '1';
+// LW26 (owner review 2026-09-26, film 9's fStreetLife opened with the lens passing through a walker's head): a camera at
+// walking height is kept clear like a person who never gives way, 1.1 m either side of its line, and looked for BEHIND a
+// walker as well as ahead (a take walking faster than the crowd went through the backs it caught up with). `?lw26=0`: off.
+const LW26 = PY25 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('lw26') !== '0');
+const LW_HW = 1.1;
 const PED_TARGET = Math.min(700, Number(typeof location !== 'undefined' && new URLSearchParams(location.search).get('pedtarget')) || 520); // reference-photo sidewalk density; ?pedtarget=N (film)
 // SPAWN_R0 was 40 m: an eye-level camera at 2.4 m stands in the middle of a 40 m
 // hole, which is exactly the part of the frame the photographs fill with people
@@ -1064,6 +1069,15 @@ export class Peds {
     // PY25: the walker hash and the obstacle grids first, so this frame's spawns already test against them
     if (PY25) {
       this._hashWalkers();
+      // LW26: where the lens is and how it moves (its feet 1.7 m under it; a jump of more than 5 m is a cut, not a walk)
+      if (LW26 && this.lensAt) {
+        const c = this.lensAt, L = this._lensQ || (this._lensQ = { _vx: 0, _vz: 0 });
+        if (L._x !== undefined && dt > 0) {
+          if (Math.hypot(c.x - L._x, c.z - L._z) > 5) L._vx = L._vz = 0;
+          else { const k = Math.min(1, dt * 8); L._vx += ((c.x - L._x) / dt - L._vx) * k; L._vz += ((c.z - L._z) / dt - L._vz) * k; }
+        }
+        L._x = c.x; L._y = c.y - 1.7; L._z = c.z;
+      }
       // the furniture boxes: when tiles changed (at most every 45 updates) or the camera went 80 m from their centre
       this._obsF = (this._obsF || 0) + 1;
       const oa = this._obsAt;
@@ -1263,7 +1277,10 @@ export class Peds {
       if (p.stand > 0) {
         p.stand -= dt;
         if (PY25 && p._obsGen !== this._obsGen) { p._obsGen = this._obsGen; if (!this._clearAt(p._x, p._z, p._y, 0.25, false)) p.stand = 0; }
-      } else if (!p.waiting && Math.random() < dt * 0.003 && (!PY25 || this._clearAt(p._x, p._z, p._y, 0.75, false)) && !(PD26 && this._softAt(p._x, p._z)) && !(PS26P && p.e.pr && this._inPinch(p.e, p.d))) { p.stand = 5 + Math.random() * 25; p.standFace = [1, -1, 0][(Math.random() * 3) | 0]; }
+        // LW26: someone stopped (a phone call, a shop window) in the lens's way walks on; _avoid then takes them round it
+        // (the film 10 check: the fStreetLife lens walked into a walker on the phone beside the bus shelter)
+        if (LW26 && this._inLensWay(p, 6)) p.stand = 0;
+      } else if (!p.waiting && Math.random() < dt * 0.003 && (!PY25 || this._clearAt(p._x, p._z, p._y, 0.75, false)) && !(LW26 && this._inLensWay(p, 14)) && !(PD26 && this._softAt(p._x, p._z)) && !(PS26P && p.e.pr && this._inPinch(p.e, p.d))) { p.stand = 5 + Math.random() * 25; p.standFace = [1, -1, 0][(Math.random() * 3) | 0]; }
       if (!p.waiting && !(p.stand > 0)) p.d += p.v * (PY25 ? (p.vf ?? 1) : 1) * dt * p.dir;
       // PY25: nobody waits at a kerb for ever (a car that never leaves, a crossing that never opens): after 48 s, the
       // length of a signal cycle and then some, the walker gives up and walks back along its sidewalk
@@ -1744,6 +1761,19 @@ export class Peds {
         }
       }
     }
+    // LW26: the lens (see LW_HW): ahead, or behind and catching up; a lens coming at the walker is passed on its right
+    const LQ = LW26 ? this._lensQ : null;
+    if (LQ && LQ._x !== undefined && Math.abs(LQ._y - y) < 1.2) {
+      const rx = LQ._x - x, rz = LQ._z - z;
+      const a = rx * fx + rz * fz, b = rx * nx + rz * nz;
+      if (a > -LA && a < LA && Math.abs(b) < 2.6 && !(cur + b + LW_HW < Lmin || cur + b - LW_HW > Lmax)) {
+        const qa = LQ._vx * fx + LQ._vz * fz;
+        if (a >= -0.35) {
+          const t = a <= 0.45 ? 0 : (a - 0.45) / Math.max(0.15, speed - qa);
+          if (t <= 2.6) iv.push(cur + b - LW_HW, cur + b + LW_HW, Math.max(0, a), qa, qa < -0.25 ? 1 : 3);
+        } else if (qa - speed > 0.1 && (-a - 0.45) / (qa - speed) <= 2.6) iv.push(cur + b - LW_HW, cur + b + LW_HW, 0, qa, 3);
+      }
+    }
     // furniture and parked cars ahead
     for (let src = 0; src < 2; src++) {
       const G = src ? this._pkG : this._obsG, OL = src ? this._pkL : this._obsL;
@@ -1864,6 +1894,16 @@ export class Peds {
     p._vT = vT; p._vTh = vTh; p._vBy = vBy; p._sq = squeeze;
     // a fixed thing on the wanted line: the new line becomes the wanted one (no drifting back into the next stoop)
     if (sticky && !LN25 && best !== want) for (let k = 0; k < iv.length; k += 5) if (iv[k + 4] === 2 && want > iv[k] && want < iv[k + 1] && iv[k + 2] < 2.2) { p.lat = best; break; }
+  }
+  // LW26: is walker p in the lens's way — within 1.3 m of the line the lens is moving along, from just behind it to
+  // `ahead` m (plus 2 s of its travel) in front; or within 1.3 m of a lens that is standing still
+  _inLensWay(p, ahead) {
+    const L = this._lensQ;
+    if (!L || L._x === undefined || p._x === undefined || Math.abs(L._y - (p._y ?? L._y)) > 1.2) return false;
+    const dx = p._x - L._x, dz = p._z - L._z, v = Math.hypot(L._vx, L._vz);
+    if (v < 0.2) return dx * dx + dz * dz < 1.69;
+    const ux = L._vx / v, uz = L._vz / v, a = dx * ux + dz * uz;
+    return a > -0.5 && a < ahead + v * 2 && Math.abs(dx * uz - dz * ux) < 1.3;
   }
   // yaw toward the wanted heading at <= 300 deg/s (film 7 review: turn-backs, stops and crossing starts snapped 90-180 deg
   // in one frame). A new walker takes its heading at once; dt = 0 frames hold.

@@ -117,10 +117,17 @@ function planesFrom(camera, out) {
   }
 }
 
+// IC26 (film 10 check, owner 2026-09-26: "significant tree and building pop in"): the cull tests a sphere round each
+// INSTANCE ORIGIN (a tree's foot, a pole's base), so the radius has to hold the whole geometry from there: |centre| +
+// radius. The bounding sphere's own radius (round its centre, ~8 m up a crown, half-way up a lamp pole) let a crown or a
+// lamp head that was still in view be culled once the foot's sphere left the frustum: fBrownstoneNight frame 104, a crown
+// over a lit window vanished at the frame edge and the window's bloom veiled a quarter of the frame in one step.
+// `?ic26=0` restores the old radius.
+const IC26 = Q0.get('ic26') !== '0';
 function geoRadius(geo) {
   if (!geo.boundingSphere) geo.computeBoundingSphere();
   if (!geo.boundingBox) geo.computeBoundingBox();
-  return geo.boundingSphere.radius;
+  return IC26 ? geo.boundingSphere.center.length() + geo.boundingSphere.radius : geo.boundingSphere.radius;
 }
 
 // proxy geometry for the far cascade: crowns -> 20-tri blob, trunks -> 12-tri post

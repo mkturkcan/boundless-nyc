@@ -12,6 +12,12 @@ import { lampSpots } from '../world/life.js';
 // N11 — night ambient (docs/notes/night-r11.md 1.4): colour temperature per
 // fixture type. `?n11=0` puts every lamp back on the single 0xffc27a luminaire.
 import { N11, fixtureOf, fixtureColor } from '../world/night11.js';
+// HL26 (owner 2026-09-26: "night-time there is shimmer in fronts of vehicles that looks unrealistic and buggy"): the 12
+// headlamp beams went to the 12 cars nearest the camera, re-ranked EVERY frame, so as cars and the lens moved the ranking
+// churned and beams snapped on and off at full strength in front of different cars. A lit car now keeps its beam while
+// it stays among the nearest 24 and within 180 m, free beams go to the nearest unlit moving cars, and every beam fades in
+// and out over ~0.35 s (a released beam fades where it stands). `?hl26=0` restores the per-frame ranking.
+const HL26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('hl26') === '0');
 
 const PER_CAR = 7; // 2 head sprites, 2 tail sprites, 2 head glows, 1 ground pool
 
@@ -206,6 +212,36 @@ export class CarLights {
     this.glowMesh.instanceMatrix.needsUpdate = true;
     if (this.glowMesh.instanceColor) this.glowMesh.instanceColor.needsUpdate = true;
   }
+  // HL26: stable beam slots (see the flag above). Returns one { car, f, pose } per beam; f is the fade (0..1).
+  _hlAssign(byDist, dt) {
+    const K = this.DYN_CARS, R2 = 180 * 180;
+    if (!this._hl) this._hl = Array.from({ length: K }, () => ({ car: null, f: 0, rel: false, pose: [0, 0, 0, 0] }));
+    const S = this._hl;
+    const rank = new Map();
+    for (let i = 0; i < byDist.length && i < 2 * K; i++) if (byDist[i][0] <= R2) rank.set(byDist[i][1], i);
+    const lit = new Set();
+    const bad = (c) => !c._pose || c.dead || c._parkT > 0;
+    const keep = (sl) => { const p = sl.car._pose; sl.pose[0] = p[0]; sl.pose[1] = p[1]; sl.pose[2] = p[2]; sl.pose[3] = p[3]; };
+    for (const sl of S) {
+      if (!sl.car) continue;
+      if (!sl.rel && (!rank.has(sl.car) || bad(sl.car))) sl.rel = true;
+      if (!sl.rel) { lit.add(sl.car); keep(sl); }
+    }
+    const lim = Math.min(byDist.length, K);
+    let j = 0;
+    for (const sl of S) {
+      if (sl.car && (!sl.rel || sl.f > 0.004)) continue;   // lit, or fading out where it stands
+      sl.car = null; sl.rel = false; sl.f = 0;
+      while (j < lim && (lit.has(byDist[j][1]) || byDist[j][0] > R2 || bad(byDist[j][1]))) j++;
+      if (j < lim) { sl.car = byDist[j][1]; lit.add(sl.car); keep(sl); j++; }
+    }
+    const k = Math.min(1, dt * 2.9);
+    for (const sl of S) {
+      if (!sl.car) continue;
+      sl.f += Math.max(-k, Math.min(k, (sl.rel ? 0 : 1) - sl.f));
+    }
+    return S;
+  }
   update(cars, camera, dt = 0.016) {
     const night = ENV.night.value ?? 0;
     // PF25: an invisible light is left out of every shader's light loop; one at zero intensity is not, and by day that
@@ -254,11 +290,12 @@ export class CarLights {
       byDist.push([dx2 * dx2 + dz2 * dz2, car]);
     }
     byDist.sort((q, w) => q[0] - w[0]);
+    const slots = HL26 ? this._hlAssign(byDist, dt) : null;
     for (let i = 0; i < this.DYN_CARS; i++) {
       const L = this.dynCars[i];
-      const ent = byDist[i];
-      if (!ent || ent[0] > 180 * 180) { L.intensity = 0; continue; }
-      const [x, y, z, yaw] = ent[1]._pose;
+      const ent = HL26 ? (slots[i].car ? [0, slots[i].car] : null) : byDist[i];
+      if (!ent || ent[0] > 180 * 180 || (HL26 && slots[i].f <= 0.004)) { L.intensity = 0; continue; }
+      const [x, y, z, yaw] = HL26 ? slots[i].pose : ent[1]._pose;
       if (HL24) {
         // the lamp pair's midpoint on THIS model (VH13 anchors), the beam axis along the car, AIM_RAD down
         const A = this.lamps && (this.lamps[ent[1].kind] || FALLBACK_LAMPS);
@@ -294,6 +331,7 @@ export class CarLights {
         L.distance = 26;
       }
       ent[1]._dyn = true;
+      if (HL26) L.intensity *= slots[i].f;
     }
     // VH13 — NEAREST FIRST. `put` silently drops everything past `this.max`
     // (320 cars x 7 quads) and this loop ran in SPAWN order against a

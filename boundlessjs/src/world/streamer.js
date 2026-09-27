@@ -21,6 +21,7 @@ export class Streamer {
     this.macros = new Map();  // key -> {state, mesh}
     this.fetching = 0;
     this.queue = [];          // pending near assemblies (arraybufs)
+    this.hold = null;         // FP26 film hold: 'grow' loads and never unloads, 'freeze' neither loads nor unloads
     this.listeners = { add: [], remove: [] };
     this.terrains = new Map();
     this.surfaces = new Map();   // tileKey -> data.surfaceY (see assemble.js)
@@ -96,6 +97,7 @@ export class Streamer {
     if (!this.manifest) return;
     this.px = px; this.pz = pz;
     FAR_UNIFORMS.playerXZ.value.set(px, pz);
+    const frz = this.hold === 'freeze', keep = frz || this.hold === 'grow';
     // only discard far buildings once the near ring is actually assembled (the ?nmask=0 circle; NM24 masks by tile)
     FAR_UNIFORMS.nearR.value = this.tiles.size > 4 ? NEAR_R * 0.82 : 0;
     // ---- near tiles
@@ -110,7 +112,7 @@ export class Streamer {
       const key = `${tx}_${tz}`;
       if (!this.manifest.tiles[key]) continue;
       const rec = this.tiles.get(key);
-      if (!rec) { want.push({ key, d }); outstanding++; }
+      if (!rec) { if (!frz) { want.push({ key, d }); outstanding++; } }
       else if (rec.state !== 'ready') outstanding++;
     }
     this.outstanding = outstanding;
@@ -128,7 +130,7 @@ export class Streamer {
     for (const [key, t] of this.tiles) {
       const [tx, tz] = key.split('_').map(Number);
       const cx = tx * TILE + TILE / 2, cz = tz * TILE + TILE / 2;
-      if (Math.hypot(cx - px, cz - pz) > UNLOAD_R + TILE * 0.7 && t.state === 'ready') {
+      if (!keep && Math.hypot(cx - px, cz - pz) > UNLOAD_R + TILE * 0.7 && t.state === 'ready') {
         t.data.dispose(this.scene, this.ctx.instancer);
         for (const fn of this.listeners.remove) fn(key, t.data);
         this.terrains.delete(key);
@@ -143,7 +145,7 @@ export class Streamer {
     // ---- macros (all, nearest first, budget 1 concurrent)
     let macroLoading = 0;
     for (const m of this.macros.values()) if (m.state === 'loading') macroLoading++;
-    if (macroLoading < 2) {
+    if (macroLoading < 2 && !frz) {
       const wants = [];
       for (const key of Object.keys(this.manifest.macros)) {
         if (this.macros.has(key)) continue;
@@ -177,6 +179,7 @@ export class Streamer {
   }
   idle() {
     if (!this.manifest || this.fetching || this.queue.length || (this.outstanding ?? 1) !== 0) return false;
+    if (this.hold === 'freeze') return true;
     for (const key of Object.keys(this.manifest.macros)) {
       const [mx, mz] = key.split('_').map(Number);
       const d = Math.hypot(mx * MACRO + MACRO / 2 - (this._px ?? 0), mz * MACRO + MACRO / 2 - (this._pz ?? 0));

@@ -388,7 +388,11 @@ function applyEdgeFade(instancer) {
 // (painted here, plus ez-tree's oak/ash sprays and its aspen spray recoloured for linden); four bark materials
 // with the prop light trim; the crown shaded with outward normals on both faces, wrap + transmission for thin
 // backlit leaves, and the baked crown AO on the ambient; far trees carry their trunk in the crown LOD.
-const T25 = { NC: ATLAS.NC, CS: ATLAS.CS, ALPHA: 0.42, LOD: 90 };
+// FP26 (the film, ?filmlod=1): no crown LOD switch inside the near tiles. At 90 m every tree the lens passed changed shape
+// as it crossed (film 9: the College Walk opener, frame 109); at 260 m a 12 m crown is still ~95 px tall on a 1440 p
+// frame. A take renders offline, so every near tree draws its full crown and trunk; `?treelod=<m>` overrides.
+const T25Q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+const T25 = { NC: ATLAS.NC, CS: ATLAS.CS, ALPHA: 0.42, LOD: Number(T25Q?.get('treelod')) || (T25Q?.get('filmlod') === '1' ? 1e4 : 90) };
 // calibration uniforms, live-tunable from a measurement page (window.__TREE25)
 const LEAF25 = {
   gain: { value: new THREE.Vector3(1.75, 1.75, 1.55) },       // x mix(0.30, 0.88, night): the prop light-trim contract

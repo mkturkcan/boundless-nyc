@@ -147,7 +147,11 @@ function pickWallFamily(mats, rec, h) {
 }
 const DRESS_R = 150;      // dress within this radius (m)
 const DROP_R = 190;       // undress beyond (hysteresis)
-const MAX_DRESS = 48;     // active dressed buildings
+// FP26 (owner 2026-09-26: "significant tree and building pop in in the trailer"): the film (?filmlod=1) dresses the union of
+// the rings along a take's whole path before the capture and then holds it (`hold`: 'grow' adds but never drops, 'freeze'
+// changes nothing), so no facade switches representation mid-take; its ring can hold more buildings for that union.
+const FILMLOD = typeof location !== 'undefined' && new URLSearchParams(location.search).get('filmlod') === '1';
+const MAX_DRESS = FILMLOD ? 180 : 48;     // active dressed buildings
 const BUDGET_MS = 6;      // building time per frame
 const WALL_T = 0.35;      // wall thickness (inward from the footprint plane)
 const SKIRT_H = 0.7;      // below-grade foundation course under every wall (see buildDressed)
@@ -1154,16 +1158,17 @@ export class NycDresser {
     }
     // build within the frame budget
     const t0 = performance.now();
-    while (this.queue.length && performance.now() - t0 < BUDGET_MS) {
+    while (this.queue.length && performance.now() - t0 < BUDGET_MS && this.hold !== 'freeze') {
       const rec = this.queue.shift();
       this._queued.delete(rec.key);
       if (this.active.has(rec.key)) continue;
-      if (Math.hypot(rec.cx - px, rec.cz - pz) > DROP_R) continue;
+      if (this.hold !== 'grow' && Math.hypot(rec.cx - px, rec.cz - pz) > DROP_R) continue;
       const tile = this.tiles.get(rec.tile);
       if (!tile) continue;
       this._dress(rec, tile);
     }
     this.pools.flush();
+    if (this.hold === 'freeze') return;   // FP26: the take's dressed set stands as it is
     if (++this._acc < 15) return;      // rescan ~4x/sec
     this._acc = 0;
     // LD13: a pending eviction is only ever paid for by a COMPLETED build. If the
@@ -1176,7 +1181,7 @@ export class NycDresser {
     for (const t of this.tiles.values()) {
       for (const r of t.recs) {
         const d = Math.hypot(r.cx - px, r.cz - pz);
-        if (this.active.has(r.key)) { if (d > DROP_R) this._undress(r.key); }
+        if (this.active.has(r.key)) { if (d > DROP_R && this.hold !== 'grow') this._undress(r.key); }
         else if (d < DRESS_R && !this._queued.has(r.key)) cands.push({ r, d });
       }
     }
@@ -1194,7 +1199,7 @@ export class NycDresser {
     //     trade the last slot on every rescan;
     //   * the eviction is REMEMBERED, not performed — `_dress` runs it only after the
     //     replacement is in the scene, so no facade is ever between representations.
-    if (LD13 && room <= 0 && cands.length && !this._evict) {
+    if (LD13 && room <= 0 && cands.length && !this._evict && this.hold !== 'grow') {
       let far = null;
       for (const [k, a] of this.active) {
         if (a.cx === undefined) continue;

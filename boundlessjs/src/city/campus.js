@@ -9,7 +9,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { applySnowCap, applyLightTrim, applyStoneDetail, ENV } from '../world/materials.js';
 import { COLLIDERS } from './colliders.js';
 import { setCampusPads } from './landmarks.js';
-import { FW25, FW26, fountainSpray, poolRings, veilMat } from './fountainFX.js';   // FW25: spray, ring waves; FW26: water veils, foam
+import { FW25, FW26, FW27, fountainProbe, fountainSpray, poolRings, veilMat } from './fountainFX.js';   // FW25: spray, ring waves; FW26: water veils, foam; FW27: probe-lit clear pools
 
 // every campus material takes the scene light trim (see applyLightTrim): the
 // untrimmed granite and limestone clipped to pure white at noon
@@ -1097,9 +1097,13 @@ export async function buildCampus(scene) {
       [o - 0.02, rimH - 0.03], [o - 0.08, rimH - 0.01], [R + 0.1, rimH], [R + 0.03, rimH - 0.02], [R, rimH - 0.06],
       [R, wl - 0.12]], seg), GRANITE);
     const poolMat = FW.water(small ? 1.5 : 4.5);
-    const setPool = FW25 ? poolRings(poolMat, { impR: small ? 0.5 : 2.4, amp: small ? 0.06 : FW26 ? 0.08 : 0.16, k: 17, foam: small ? 0 : 1, foamIn: 0.55, foamOut: 1.3 }) : null;
+    // FW27 basin: the floor 0.36 m under the water line, the pedestal foot (r 1.3) standing in it, the veil ring and the
+    // coping lip as the pool's own reflection occluders
+    const setPool = FW25 ? poolRings(poolMat, { impR: small ? 0.5 : 2.4, amp: small ? 0.06 : FW26 ? 0.08 : 0.16, k: 17, foam: small ? 0 : 1, foamIn: 0.55, foamOut: 1.3,
+      basin: { R, depth: small ? 0.3 : 0.36, ped: small ? 0 : 1.3, veilR: small ? 0 : 2.37, veilH: small ? 0 : 2.17 - wl, copeH: rimH - wl, floor: 0.2, chop: small ? 0.3 : 1 } }) : null;
     if (setPool) setPool(x, z);
-    part(new THREE.CircleGeometry(R + 0.01, seg), poolMat, wl, false).rotation.x = -Math.PI / 2;
+    const poolMesh = part(new THREE.CircleGeometry(R + 0.01, seg), poolMat, wl, false);
+    poolMesh.rotation.x = -Math.PI / 2;
     if (!small) {
       // the pedestal: a torus foot in the pool, a swelling baluster, a collar
       part(lathe([[1.3, 0.2], [1.3, 0.4], [1.2, 0.44], [1.05, 0.46], [0.95, 0.52], [0.95, 0.58], [0.8, 0.62],
@@ -1110,7 +1114,8 @@ export async function buildCampus(scene) {
         [2.14, 2.04], [2.15, 2.1], [2.12, 2.14], [2.04, 2.155], [1.96, 2.14], [1.93, 2.1], [1.8, 2.04],
         [1.2, 1.98], [0, 1.96]], 72), WETGRANITE);
       const bowlMat = FW.water(1.8);
-      const setBowl = FW25 ? poolRings(bowlMat, { impR: 0.8, amp: FW26 ? 0.06 : 0.12, k: 22, foam: 0.85, foamIn: 0.7, foamOut: 2.2 }) : null;
+      const setBowl = FW25 ? poolRings(bowlMat, { impR: 0.8, amp: FW26 ? 0.06 : 0.12, k: 22, foam: 0.85, foamIn: 0.7, foamOut: 2.2,
+        basin: { R: 1.95, depth: 0.12, ped: 0.08, copeH: 0.045, floor: 0.2, chop: 0.6 } }) : null;
       if (setBowl) setBowl(x, z);
       part(new THREE.CircleGeometry(1.95, 72), bowlMat, 2.11, false).rotation.x = -Math.PI / 2;
       // FW25: the drops (sheet breakup, landing splash, jet column, bowl crowns), local to the fountain group
@@ -1122,7 +1127,9 @@ export async function buildCampus(scene) {
       const fallT = (h, v0) => (-v0 + Math.sqrt(v0 * v0 + 19.62 * h)) / 9.81;
       part(lathe([[1.92, 2.112], [2.02, 2.165], [2.12, 2.17], [2.18, 2.13], [2.22, 2.02], [2.26, 1.85], [2.29, 1.6],
         [2.33, 1.25], [2.36, 0.85], [2.4, wl]], 96), FW26
-        ? veilMat({ y0: 2.17, dir: 1, v0: 0.3, tMax: fallT(2.17 - wl, 0.3), aer: [0.42, 1.0], holes: 0.55, body: 0.26, freq: 5.5 }, LT)
+        ? veilMat(FW27   // FW27: finer ropes, clearer glass off the lip
+          ? { y0: 2.17, dir: 1, v0: 0.3, tMax: fallT(2.17 - wl, 0.3), aer: [0.36, 0.95], holes: 0.6, body: 0.2, freq: 10 }
+          : { y0: 2.17, dir: 1, v0: 0.3, tMax: fallT(2.17 - wl, 0.3), aer: [0.42, 1.0], holes: 0.55, body: 0.26, freq: 5.5 }, LT)
         : FW.sheet(16, 1.5, 2.4, 0.85), 0, false).renderOrder = 2;
       if (!FW26) part(foamRing(wl + 0.006, [[3.5, 0], [3.0, 0.3], [2.62, 0.8], [2.44, 1], [2.3, 0.55]], 96), FW.froth(24, 2, -0.12), 0, false).renderOrder = 1;
       // the centre jet and the crown of water it throws back into the bowl
@@ -1131,10 +1138,14 @@ export async function buildCampus(scene) {
         ? veilMat({ y0: 2.11, dir: -1, v0: jetV0, tMax: jetV0 / 9.81, aer: [0.3, 0.95], holes: 0.2, body: 0.34, freq: 30 }, LT)
         : FW.sheet(3, 2, 6.4, FW25 ? 0.75 : 0.9), 0, false).renderOrder = 1;
       part(lathe([0, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9, 1].map((t) => [0.1 + 0.75 * t, 3.28 + 0.08 * t - 1.25 * t * t]), 48), FW26
-        ? veilMat({ y0: 3.37, dir: 1, v0: 0.4, tMax: fallT(3.37 - 2.11, 0.4), aer: [0.1, 0.8], holes: 0.6, body: 0.3, freq: 9 }, LT)
+        ? veilMat(FW27   // FW27: the crown breaks into drops instead of reading as a glass dome
+          ? { y0: 3.37, dir: 1, v0: 0.4, tMax: fallT(3.37 - 2.11, 0.4), aer: [0.05, 0.55], holes: 0.8, body: 0.22, freq: 15 }
+          : { y0: 3.37, dir: 1, v0: 0.4, tMax: fallT(3.37 - 2.11, 0.4), aer: [0.1, 0.8], holes: 0.6, body: 0.3, freq: 9 }, LT)
         : FW.sheet(8, 1.2, 1.9, 0.6), 0, false).renderOrder = 1;
       if (!FW26) part(foamRing(2.116, [[1.25, 0], [0.98, 0.55], [0.86, 0.9], [0.72, 0.5], [0.45, 0.3], [0.22, 0.85], [0.09, 0.7]], 48),
         FW.froth(10, 1.5, -0.1), 0, false).renderOrder = 1;
+      // FW27: what this pool, its bowl and its veils mirror (fountainFX fountainProbe), taken 1.2 m above the water
+      if (FW27) fountainProbe(poolMesh, G, [poolMat, bowlMat], wl + 1.2);
     }
     G.position.set(x, y, z);
     uniq.add(G);

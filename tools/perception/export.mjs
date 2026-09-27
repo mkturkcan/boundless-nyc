@@ -198,6 +198,24 @@ const waitSettled = async (page, budget) => {
   return s;
 };
 const settled = (s) => !!(s && s.idle && s.dressQ === 0 && s.near > 4 && s.under);
+// FP26: a settle that PUMPS dt = 0 frames (the streamer and the dresser only move on a frame) and wants the state
+// quiet for a few polls: the pre-stream below moves the camera between path points (tools/ad/record.mjs settleWorld)
+const pumpSettle = async (page, budget, minMs = 1500, needQuiet = 3) => {
+  const t0 = Date.now();
+  let quiet = 0, last = '', s = null;
+  for (;;) {
+    await page.evaluate(() => window.__advance(0));
+    s = await page.evaluate(() => window.__RECSTAT()).catch(() => null);
+    if (s) {
+      const key = `${s.near}|${s.macro}|${s.dressActive}`;
+      quiet = s.idle && s.dressQ === 0 && key === last ? quiet + 1 : 0;
+      last = key;
+      if (quiet >= needQuiet && Date.now() - t0 >= minMs) return s;
+    }
+    if (Date.now() - t0 > budget) return s;
+    await sleep(180);
+  }
+};
 // engine.frames only advances on a frame that reached the renderer: if it is
 // stuck, a capture would silently return the LAST GOOD buffers
 const waitLive = async (page, budget = 8000) => {
@@ -267,6 +285,21 @@ try {
   // runs against a HOLD path at key 0 (as tools/ad/record.mjs does) so --warm N never carries the camera down the path.
   const warmN = Math.max(0, Number(opt('warm', '60')) || 0);
   const k0 = P0.keys[0];
+  // FP26 (owner 2026-09-26: "significant tree and building pop in"): with ?filmlod=1 the whole path is pre-streamed with
+  // the dresser and the tile streamer growing (they add, never drop), and both are frozen for the capture
+  const filmHold = url.includes('filmlod=1');
+  if (filmHold) {
+    const tp = Date.now();
+    await page.evaluate(() => window.__DRESS_HOLD?.('grow'));
+    const hk = (K) => ({ duration: 1e6, ease: 0, abs: P0.abs, tension: P0.tension, keys: [K, { p: [K.p[0] + 1e-6, K.p[1] + 1e-6, K.p[2]], look: K.look }] });
+    const mid = (a, b) => ({ p: a.p.map((v, i) => (v + b.p[i]) / 2), look: a.look.map((v, i) => (v + b.look[i]) / 2) });
+    const pts = [];
+    for (let k = 1; k < P0.keys.length; k++) pts.push(mid(P0.keys[k - 1], P0.keys[k]), P0.keys[k]);
+    for (const K of pts) { await page.evaluate((p) => window.__SET_PATH(p), hk(K)); await pumpSettle(page, 60000); }
+    await page.evaluate((p) => window.__SET_PATH(p), hk(k0));
+    const sp = await pumpSettle(page, 60000);
+    console.log(`    pre-streamed ${pts.length} path points in ${((Date.now() - tp) / 1000).toFixed(0)}s  tiles=${sp?.near} dress=${sp?.dressActive}`);
+  }
   await page.evaluate((p) => window.__SET_PATH(p), { duration: 1e6, ease: 0, abs: P0.abs, tension: P0.tension, keys: [k0, { p: [k0.p[0] + 1e-6, k0.p[1] + 1e-6, k0.p[2]], look: k0.look }] });
   await page.evaluate(() => window.__advance(0));
   await page.evaluate(() => window.__PEDS_RESET?.());
@@ -274,6 +307,7 @@ try {
   await page.evaluate((p) => window.__SET_PATH(p), P0);
   await page.evaluate(() => window.__advance(0));
   await waitSettled(page, 20000);
+  if (filmHold) await page.evaluate(() => window.__DRESS_HOLD?.('freeze'));   // FP26: nothing loads, drops or re-dresses mid-clip
   // the crossing-zone reconstruction reads every loaded tile's road graph
   console.log('    crossing zones:', await page.evaluate(() => window.__PERC.buildCrossZones()));
 

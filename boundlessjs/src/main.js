@@ -258,6 +258,11 @@ class PathCam {
     this.path = path;
     this.t = 0;
     this.ground = null; this.lookGround = null;
+    // FL26: a path may carry its own lens (fov: vertical degrees); a path without one gets the page's lens back
+    const cam = engine.camera;
+    if (this.fov0 === undefined) this.fov0 = cam.fov;
+    const fov = path.fov || this.fov0;
+    if (Math.abs(cam.fov - fov) > 1e-4) { cam.fov = fov; cam.updateProjectionMatrix(); }
     const pts = path.keys.map((k) => { const [x, z] = project(k.p[0], k.p[1]); return new THREE.Vector3(x, k.p[2], z); });
     const lks = path.keys.map((k) => {
       const src = k.look || k.p;
@@ -509,6 +514,7 @@ async function boot() {
         }
         const { Peds } = await import('./sim/peds.js');
         peds = new Peds(engine.scene, streamer, traffic, rig);
+        peds.lensAt = engine.camera.position;   // LW26: walkers keep clear of a lens at walking height
       }
       const { SignalController } = await import('./sim/signals.js');
       signals = new SignalController(instancer, signalReg, traffic);
@@ -564,6 +570,9 @@ async function boot() {
       const [k, v] = kv.split(':');
       if (k in GFX) GFX[k] = v === 'true' ? true : v === 'false' ? false : isNaN(+v) ? v : +v;
     }
+    // the sky was applied (?time=, settings/graphics.json) before these keys landed: a sun or sky offset
+    // (gfx=sunAzim:40,sunElev:-1 — a film take's own sun) only takes effect on a re-apply
+    sky.apply(sky.mode);
   }
   if (Q.has('nopost')) engine.gtRaw = true;
   if (Q.has('noshadow')) { engine.sun.castShadow = false; engine.sun2.castShadow = false; }
@@ -764,6 +773,7 @@ async function boot() {
   // take a second each without the camera or the traffic skipping.
   if (isRecord) {
     const realFrame = engine.onFrame;
+    engine.recordMode = true;   // AC26: ?accum=N accumulates only here, where the sim steps on request
     let pending = 0, threw = 0;
     // A throw anywhere in the frame body (a module mid-edit under HMR, a pool that
     // briefly has no free() ...) would otherwise skip composer.render() for the
@@ -772,6 +782,7 @@ async function boot() {
     // ?api=1 asynchronous mode (src/api/bridge.js sets window.__FREERUN_ON): the sim free-runs on real time
     engine.onFrame = (rdt) => {
       const sdt = pending || (window.__FREERUN_ON ? Math.min(0.1, rdt || 0) : 0); pending = 0;
+      if (sdt > 0) engine.simStepped = true;   // AC26: the accumulation AA starts again on a stepped frame
       try { realFrame(sdt); } catch (e) { if (!threw++) console.warn('[record] frame body threw:', e); }
     };
     // install a camera path (tools/trailer/paths.json, injected by the recorder)
@@ -790,6 +801,44 @@ async function boot() {
     window.__SPAWNGUARD = (on = true) => { spawnGuard.on = !!on; spawnGuard.update(engine.camera); return spawnGuard.on; };
     // ...and empties the crowd once the world has settled, so the warm-up repopulates it around the lens (sim/peds.js reset)
     window.__PEDS_RESET = () => { if (!peds) return -1; peds.reset(); return peds.peds.length; };
+    // LW26: is the lens inside a walker or a vehicle, or so near one that the 0.4 m near plane cuts it open? (the recorder asks
+    // every frame; film 9's fStreetLife opened inside a head, film 10's mLenoxEye looked into a passing box truck's cab)
+    window.__LENS_HIT = () => {
+      const c = engine.camera.position, out = [];
+      if (peds) for (const p of peds.peds) {
+        if (p._x === undefined) continue;
+        const d = Math.hypot(p._x - c.x, p._z - c.z);
+        if (d < 0.65 && c.y > p._y - 0.1 && c.y < p._y + 1.95) out.push(`walker ${p.idx} at ${d.toFixed(2)} m`);
+      }
+      if (traffic) for (const car of traffic.cars) {
+        const q = car._pose;
+        if (!q || Math.abs(q[0] - c.x) > 12 || Math.abs(q[2] - c.z) > 12) continue;
+        const [hw, hl] = traffic.carHalf(car), cy = Math.cos(q[3]), sy = Math.sin(q[3]), dx = c.x - q[0], dz = c.z - q[2];
+        const lx = dx * cy - dz * sy, lz = dx * sy + dz * cy;
+        const K = traffic.fleet24?.kinds?.[car.kind], ht = K && K.size ? K.size[1] : (hl > 4.5 ? 3.5 : 2.0);   // the kind's own height (a box truck is 3.4 m on a 3.9 m half-length)
+        if (Math.abs(lx) < hw + 0.5 && Math.abs(lz) < hl + 0.5 && c.y > q[1] - 0.5 && c.y < q[1] + ht + 0.45) out.push(`${car.kind || 'car'} ${car.idx ?? ''}`);
+      }
+      return out.length ? out : null;
+    };
+    // TW26: cars in view that moved more than their speed allows since the last call, or sideways by more than 0.5 m
+    // (owner 2026-09-26: "cars randomly change lanes by teleporting"); the recorder asks once a stepped frame
+    let jumpPrev = new Map();
+    window.__CAR_JUMPS = (dt = 1 / 30) => {
+      if (!traffic) return null;
+      const out = [], next = new Map();
+      for (const c of traffic.cars) {
+        const q = c._pose;
+        if (!q) continue;
+        const p = jumpPrev.get(c);
+        next.set(c, [q[0], q[1], q[2], q[3], c.v || 0]);
+        if (!p) continue;
+        const dx = q[0] - p[0], dz = q[2] - p[2], d = Math.hypot(dx, dz), hx = Math.sin(p[3]), hz = Math.cos(p[3]);
+        const lat = Math.abs(dx * hz - dz * hx), allow = Math.max(p[4], c.v || 0) * dt + 0.6;
+        if ((lat > 0.5 || d > allow) && spawnGuard.inView(q[0], q[1] + 1, q[2], 2)) out.push(`${c.kind || 'car'} ${d.toFixed(2)} m (side ${lat.toFixed(2)}) ${Math.hypot(q[0] - engine.camera.position.x, q[2] - engine.camera.position.z).toFixed(0)} m away`);
+      }
+      jumpPrev = next;
+      return out.length ? out : null;
+    };
     // ...and drops the TAA history before a re-shot frame (a void frame must not survive in the history)
     window.__TAA_RESET = () => { if (engine.taa) engine.taa._first = true; return !!engine.taa; };
     // ...and clears the kerb trees whose trunks stand within `r` m of a take's lens path (x,z points) for that take: the
@@ -1163,6 +1212,8 @@ window.__PROF = () => {
   return out;
 };
 // NYC dresser diagnostics: active/queued counts, build time, pool draw calls
+// FP26: the recorder grows the dresser's set along a take's path, then freezes it for the capture ('grow' | 'freeze' | null)
+window.__DRESS_HOLD = (mode) => { streamer.hold = mode || null; if (!dresser) return null; dresser.hold = mode || null; return dresser.hold; };   // FP26: the tile streamer holds with the dresser
 window.__DRESS = () => dresser ? {
   active: dresser.active.size, queued: dresser.queue.length, built: dresser.stats.built,
   skipped: dresser.stats.skipped, msPerBuild: dresser.stats.built ? +(dresser.stats.ms / dresser.stats.built).toFixed(1) : 0,

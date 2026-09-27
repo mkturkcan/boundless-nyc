@@ -644,6 +644,11 @@ export const SW26 = !(typeof location !== 'undefined' && new URLSearchParams(loc
 // relief unflattened, the roughness map at +-30 % (aggregate glints, binder stays matte), and new layers on the asphalt:
 // rubber skid pairs, oil and damp blotches; the concrete's grain, joints and stains deeper. `?gm28=0` restores.
 export const GM28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gm28') === '0');
+// GR28 (2026-09-27, the teaser's Lenox median): a lawn took the grass photo set only inside a 0.22-0.6 m pixel footprint
+// and at 45 %, so a median or a park lawn past a few metres was one flat green. GR28 holds the grass grain out to a 2 m
+// footprint at 75 %, adds a coarse clump layer from the same set (1/4.8 the frequency, rotated), clump-scale value and
+// dry-tint variation, and the blade normals at 80 %. All mean-preserving: the far field keeps its tone. `?gr28=0` restores.
+export const GR28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gr28') === '0');
 // BW28 (2026-09-27, the same review): a face the compiler marks blind (a lot-line wall) was painted with one fbm and
 // nothing else, and on the towers over 125th & Lenox (the State Office Building, the glass tower east of it) those
 // faces are most of what a street shot sees above the low buildings: flat beige and navy boxes. A neighbour in Harlem
@@ -4554,11 +4559,21 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
               vec2 uvR = vec2(dot(vWPos.xz, normalize(vec2(GND_wn.z, -GND_wn.x) + 1e-5)), vWPos.y) * 0.20;
               vec2 uv = mix(uvF, uvR, GND_rock);
               vec3 tc = atex(t_grC, uv, mk).rgb;
-              float detG = det * smoothstep(0.6, 0.22, fw);
-              albedo *= gdet(tc, vec3(3.30, 4.48, 10.3), mix(0.45, 0.20, GND_rock), detG);
+              float lawn = ${GR28 ? '1.0 - step(0.5, abs(float(m) - 5.0))' : '0.0'};   // GR28: the lawn only, not terrain or schist
+              float detG = det * mix(smoothstep(0.6, 0.22, fw), smoothstep(2.0, 0.35, fw), lawn);
+              albedo *= gdet(tc, vec3(3.30, 4.48, 10.3), mix(mix(0.45, 0.20, GND_rock), 0.75, lawn), detG);
+              ${GR28 ? `if (lawn > 0.5) {
+                // GR28: clumps and tussocks. The set again at 1/4.8 the frequency (a 22 m tile), strongest where the fine
+                // grain has gone sub-pixel; then value at 0.6-2.5 m and the drier clumps a little yellower
+                vec2 uvK = rot2(vWPos.xz * 0.046, 0.83) + 0.37;
+                albedo *= gdet(atex(t_grC, uvK, 1.0 - mk).rgb, vec3(3.30, 4.48, 10.3), 0.55, det * smoothstep(4.0, 0.8, fw));
+                float cl = fbm(vWPos.xz * 0.42 + 5.0), cf = vnoise(vWPos.xz * 1.6 + 23.0);
+                albedo *= mix(1.0, 0.84 + 0.32 * cl, det);
+                albedo = mix(albedo, albedo * vec3(1.16, 1.07, 0.72), smoothstep(0.6, 0.9, cf) * 0.4 * det * smoothstep(1.2, 0.3, fw));
+              }` : ''}
               // the horizontal tangent frame is meaningless on a rock wall, and a
               // grass normal map on schist reads as a dotted screen door
-              GND_tn = atex(t_grN, uv, mk).xyz * 2.0 - 1.0; GND_tnW = detG * 0.45 * (1.0 - GND_rock);
+              GND_tn = atex(t_grN, uv, mk).xyz * 2.0 - 1.0; GND_tnW = detG * mix(0.45, 0.8, lawn) * (1.0 - GND_rock);
             } else if (m == 10) {                                // plaza brick/pavers
               // (pvR/pvD dropped — ground was at the 16-sampler limit once the
               // city AO field joined; detail-multiply + normals carry the look)

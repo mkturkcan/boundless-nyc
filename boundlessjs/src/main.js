@@ -881,6 +881,41 @@ async function boot() {
       gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
     };
     const settledNow = () => streamer.idle() && !engine.holdDraw && (!dresser || dresser.queue.length === 0);
+    // o.enc 'worker': toBlob's readback of the 2560x1440 drawing buffer cost 90-140 ms of the main thread a frame. Here the
+    // canvas is snapshotted into an ImageBitmap in the same task as the last draw (a GPU copy; createImageBitmap takes the
+    // canvas's bitmap when it is called), and a worker draws it into an OffscreenCanvas, encodes the JPEG and POSTs it.
+    let encW = null;
+    const encWorker = () => {
+      if (encW) return encW;
+      const src = `let cv = null, cx = null;
+onmessage = async (e) => {
+  const { bmp, url, type, q } = e.data;
+  try {
+    if (!cv || cv.width !== bmp.width || cv.height !== bmp.height) { cv = new OffscreenCanvas(bmp.width, bmp.height); cx = cv.getContext('2d', { alpha: false }); }
+    cx.drawImage(bmp, 0, 0); bmp.close();
+    const blob = await cv.convertToBlob({ type, quality: q });
+    const r = await fetch(url, { method: 'POST', body: blob });
+    postMessage({ ok: r.ok || r.status === 204 });
+  } catch (err) { postMessage({ ok: false, err: String(err) }); }
+};`;
+      encW = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+      encW.onmessage = (e) => { frPend--; if (!e.data.ok) console.warn('[fr28] worker encode failed', e.data.err || ''); };
+      return encW;
+    };
+    const sendBlob = (name, o) => {
+      frPend++;
+      engine.renderer.domElement.toBlob((blob) => {
+        if (!blob) { frPend--; console.warn('[fr28] toBlob gave nothing for', name); return; }
+        fetch(o.sink + '/' + encodeURIComponent(name), { method: 'POST', body: blob })
+          .catch((e) => console.warn('[fr28] sink', name, e.message)).finally(() => { frPend--; });
+      }, o.type || 'image/jpeg', o.q ?? 0.95);
+    };
+    const sendWorker = (name, o) => {
+      frPend++;
+      createImageBitmap(engine.renderer.domElement)
+        .then((bmp) => encWorker().postMessage({ bmp, url: o.sink + '/' + encodeURIComponent(name), type: o.type || 'image/jpeg', q: o.q ?? 0.95 }, [bmp]))
+        .catch((e) => { frPend--; console.warn('[fr28] createImageBitmap', e.message); });
+    };
     const yieldT = () => new Promise((r) => setTimeout(r, 0));
     window.__REC_FRAME = async (o) => {
       const T0 = performance.now();
@@ -910,12 +945,10 @@ async function boot() {
         const T4 = performance.now();
         const lens = o.checks ? window.__LENS_HIT() : null;
         const jumps = o.checks && o.dt > 0 ? window.__CAR_JUMPS(o.dt) : null;
-        frPend++;
-        engine.renderer.domElement.toBlob((blob) => {
-          if (!blob) { frPend--; console.warn('[fr28] toBlob gave nothing for', o.name); return; }
-          fetch(o.sink + '/' + encodeURIComponent(o.name), { method: 'POST', body: blob })
-            .catch((e) => console.warn('[fr28] sink', o.name, e.message)).finally(() => { frPend--; });
-        }, o.type || 'image/jpeg', o.q ?? 0.95);
+        // o.encBoth: the same drawn frame both ways (<name>_blob, <name>_wkr) for an A/B of the two capture paths
+        if (o.encBoth) { const d = o.name.lastIndexOf('.'); sendBlob(o.name.slice(0, d) + '_blob' + o.name.slice(d), o); sendWorker(o.name.slice(0, d) + '_wkr' + o.name.slice(d), o); }
+        else if (o.enc === 'worker') sendWorker(o.name, o);
+        else sendBlob(o.name, o);
         const T5 = performance.now();
         return { lens, jumps, pumped, frames: engine.frames, threw,
           t: { wait: +(T1 - T0).toFixed(1), step: +(T2 - T1).toFixed(1), settle: +(T3 - T2).toFixed(1), acc: +(T4 - T3).toFixed(1), cap: +(T5 - T4).toFixed(1) } };

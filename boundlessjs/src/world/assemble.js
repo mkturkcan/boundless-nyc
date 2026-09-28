@@ -12,7 +12,9 @@ import { buildRoof } from '../city/roofEngine.js';
 import { buildDecals } from '../city/decals.js';
 import { buildShopSigns } from '../city/shopSigns.js';
 import { namedShopZone } from '../city/namedShops.js';
-import { buildBillboards } from '../city/billboards.js';
+import { buildBillboards, buildTsqScreens } from '../city/billboards.js';
+import { BP28, bpDropTree, bpTrees, bpOwns, bpBuild, bpWorld, bpApply, bpSkipBuilding } from '../city/bryantPark.js';
+import { tpTileHit, tpApply, tpStepsOwner, tpBuildSteps, tpSkipBuilding } from '../city/tsqPlaza.js';
 import { placeCurbRamps } from '../city/streetNYC.js';
 import { StaticPool } from './staticPool.js';
 import { buildTower, buildSetbacks, TOWER_H } from './towers.js';
@@ -1508,6 +1510,20 @@ export async function assembleTile(key, arrayBuf, ctx) {
   const doorAnchors = []; // per-building door position on its front edge (stoops slide to it)
   const skirtV = []; // ground-contact AO skirt verts: x,y,z,alpha
 
+  // TP28: the Times Square plaza re-kinds this tile's asphalt before anything below samples or draws the sections
+  if (tpTileHit(ox, oz)) {
+    try {
+      const rw = [...roadsOf(tile)].map((r) => ({
+        ...r,
+        pts: Array.from({ length: r.len }, (_, i) => [tile.S.roadVerts[(r.start + i) * 3] + ox, tile.S.roadVerts[(r.start + i) * 3 + 1], tile.S.roadVerts[(r.start + i) * 3 + 2] + oz]),
+        name: tile.header.names[r.nameIdx] || '',
+      }));
+      tpApply(tile, ox, oz, rw);
+    } catch (e) { console.warn('tp28', e); }
+  }
+  // BP28: Bryant Park's gravel walks re-kinded out of its lawn, likewise before anything samples the ground
+  try { bpApply(tile, ox, oz); } catch (e) { console.warn('bp28 walks', e); }
+
   // tile terrain sampler (carved grid) for foundation depths
   const terrRes = tile.header.res, terrN = terrRes + 1, terrG = tile.S.terrain;
   const sampleT = (x, z) => {
@@ -1598,7 +1614,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     return bestD <= tol ? bestY : null;
   };
   // priority order: what would a person standing here be standing ON?
-  const WALK_KINDS = ['sidewalk', 'path', 'brick', 'plaza'];
+  const WALK_KINDS = ['sidewalk', 'path', 'brick', 'plaza', 'gravel'];   // gravel: BP28's walks (city/bryantPark.js)
   const ROAD_KINDS = ['gutter', 'busred', 'asphalt'];
   const surfY = (x, z, kinds, tol) => {
     for (const k of kinds) { const y = sectionY(k, x, z, tol); if (y !== null) return y; }
@@ -1879,6 +1895,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     cx /= ring.length; cz /= ring.length;
     // a footprint that lies entirely in the traffic lanes is not a building
     if (!NO_DATUM && !b.landmarkId && b.area <= 200 && onCarriageway(ring, cx, cz)) { culledOnRoad++; cyDrop(); continue; }   // CY12: a footprint that is not a building has no courts
+    if (tpSkipBuilding(cx, cz, b.height, b.area) || bpSkipBuilding(cx, cz, b.height, b.area)) { cyDrop(); continue; }   // TP28: the TKTS booth (the red steps stand there) and the kiosk box on the Duffy Square plaza
     // foundation: walls extend down to below the lowest terrain under the footprint,
     // shader renders the below-grade band (v<0) as a stone/brick foundation course
     let minT = 1e9;
@@ -2343,7 +2360,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
   // that, so at 400 m with a 3.4 m eye a stable pair would need 5.9 METRES of
   // lift. The shader does it in one line and one draw call. docs/notes/zfight.md.
   {
-    const sections = [['asphalt', 0], ['sidewalk', 1], ['curb', 2], ['paintW', 3], ['paintY', 4], ['grass', 5], ['path', 6], ['paintG', 9], ['brick', 10], ['gutter', 11], ['busred', 12], ['warn', 13], ['warnIron', 14], ['grassU', 15]];
+    const sections = [['asphalt', 0], ['sidewalk', 1], ['curb', 2], ['paintW', 3], ['paintY', 4], ['grass', 5], ['path', 6], ['paintG', 9], ['brick', 10], ['gutter', 11], ['busred', 12], ['warn', 13], ['warnIron', 14], ['grassU', 15], ['plaza', 16], ['gravel', 17]];   // plaza: TP28's re-kinded Broadway (city/tsqPlaza.js); gravel: BP28's walks
     let total = 0;
     for (const [name] of sections) total += (tile.S[name]?.length ?? 0) / 3;
     // terrain grid
@@ -2460,8 +2477,12 @@ export async function assembleTile(key, arrayBuf, ctx) {
     }
     return null;
   };
-  for (const f of furnitureOf(tile)) {
+  // BP28: Bryant Park's allee planes join this tile's furniture (and its compiled scatter trees are dropped below)
+  const bpExtra = [];
+  if (BP28) for (const t of bpTrees(ox, oz, 0)) { t.bp = true; t.y = padYNear(t.x + ox, t.z + oz); bpExtra.push(t); }
+  for (const f of (bpExtra.length ? [...furnitureOf(tile), ...bpExtra] : furnitureOf(tile))) {
     let wx = f.x + ox, wz = f.z + oz;
+    if (BP28 && f.k === FURN.TREE && !f.bp && bpDropTree(wx, wz, f)) continue;
     // GROUND SNAP. Three compiler datums reach us for things that stand on the
     // pavement: `terrain + 0.28` (correct on the flags), the bare `terrain`
     // plane (compile.mjs:1501 frontage — stoops, scaffolds, standpipes, fire
@@ -2772,6 +2793,16 @@ export async function assembleTile(key, arrayBuf, ctx) {
     sm.renderOrder = 1;
     group.add(sm);
   }
+  // BP28: the park's gravel, hedges, chairs and fountain, built by the tile that holds the lawn's centre
+  // TP28: the TKTS red steps in Duffy Square, standing on the plaza
+  if (tpStepsOwner(ox, oz)) { try { tpBuildSteps(group, padYNear(-1157.65, 2661.15)); } catch (e) { console.warn('tp28 steps', e); } }
+  if (BP28 && bpOwns(ox, oz)) {
+    try {
+      const [lx, lz] = bpWorld(77, 69);
+      const ly = sectionY('grass', lx, lz, 0.5) ?? padYNear(lx, lz);
+      bpBuild(group, ly);
+    } catch (e) { console.warn('bryant park', e); }
+  }
   // per-tile sign text / decal / billboard / shop-sign meshes share one static
   // pool per material across tiles (4 draws per tile -> 4 draws per city)
   const poolHandles = [];
@@ -2828,6 +2859,8 @@ export async function assembleTile(key, arrayBuf, ctx) {
     const dm = buildDecals(decalRecs);
     if (dm) poolStatic(dm);
   } catch (e) { console.warn('decals', e); }
+  // TS28: the Square's screen stacks, into the tile's own group
+  try { const ts = buildTsqScreens(decalRecs); if (ts) group.add(ts); } catch (e) { console.warn('ts28', e); }
   // Times Square billboard district (animated ad panels)
   try {
     const bb = buildBillboards(decalRecs);

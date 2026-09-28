@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { ENV } from '../world/materials.js';
 import { Instancer } from '../city/instancer.js';
+import { sweepOut } from '../core/shadowSweep.js';   // SV29
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const BASE = 'models/peds24/';
@@ -782,7 +783,7 @@ export class Crowd {
       if (Ms[o] === 0 && Ms[o + 5] === 0 && Ms[o + 10] === 0) continue;
       const x = Ms[o + 12], y = Ms[o + 13], z = Ms[o + 14];
       const vis = inside(planes, x, y + 0.9, z, 1.1);
-      const shv = shPlanes ? inside(shPlanes, x, y + 0.9, z, 2.0) : false;
+      const shv = shPlanes ? inside(shPlanes, x, y + 0.9, z, 2.0) && !sweepOut(x, y + 0.9, z, 2.0) : false;   // SV29
       if (!vis && !shv) continue;
       const vi = st.variant[i];
       if (vi < 0) continue;

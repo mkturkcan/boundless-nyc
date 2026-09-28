@@ -726,6 +726,12 @@ class TAAPass extends Pass {
 // the avenue either side at 4096 -> 7.3 cm/texel, which is what a 100 mm sill
 // needs in order to throw anything at all.
 const SHADOW_S = 150;
+// PS29 (owner 2026-09-27: "Improve game performance without sacrificing visual quality"): the light probe rendered its six
+// cube faces in ONE frame, the whole scene six times (~3,500 draw calls at 125th & Lenox, ~90 ms of submission), every
+// 150 frames: a hitch every 2.5-5 s of play. One face a frame now, each at the capture's position; the SH lands five
+// frames later. `?ps29=1` turns it on.
+const PS29 = { on: typeof location !== 'undefined' && new URLSearchParams(location.search).get('ps29') === '1' };   // opt-in until measured
+if (typeof window !== 'undefined') window.__PS29 = (on) => { PS29.on = !!on; return PS29.on; };   // live A/B
 // N11 (docs/notes/night-r11.md): `?n11=0` restores the round-10 night rig, which in
 // this file means the probe's hard darkness rejection. Read locally rather than
 // imported from world/night11.js — core/ does not depend on world/.
@@ -1184,6 +1190,7 @@ export class Engine {
       // (PROGRESS 2026-09-11 10:40). The first five captures after a reset go every
       // 24 frames instead; 0.6^5 leaves 8 % of the old sky.
       const warmP = (this._probeWarm ?? 9) < 5;
+      if (this._probeNext) { const go = this._probeNext; this._probeNext = null; go(); }   // PS29: the capture's next face
       if ((warmP ? this.frames % 24 === 12 : this.frames % 150 === 40) && !this._probeBusy && this.probeGoal > 0) this._updateProbe();
       if (this._probeHas) this.probeOn = Math.min(1, this.probeOn + dt * 0.7);
       // TAA jitter + deep accumulation ONLY while the camera is (near) still —
@@ -1305,6 +1312,21 @@ export class Engine {
     } catch { /* readback unsupported — stays 1 */ }
     this._meterBusy = false;
   }
+  // PS29: one face of the probe cube (the body of three's CubeCamera.update for face f; the mipmaps on the last one)
+  _probeFace(f) {
+    const r = this.renderer, cam = this._cubeCam, rt = this._cubeRT;
+    const prevRT = r.getRenderTarget(), prevFace = r.getActiveCubeFace(), prevMip = r.getActiveMipmapLevel(), xr = r.xr.enabled;
+    r.xr.enabled = false;
+    const gm = rt.texture.generateMipmaps;
+    if (f < 5) rt.texture.generateMipmaps = false;
+    r.setRenderTarget(rt, f, cam.activeMipmapLevel);
+    if (r.state.buffers.depth.getReversed() && r.autoClear === false) r.clearDepth();
+    r.render(this.scene, cam.children[f]);
+    rt.texture.generateMipmaps = gm;
+    r.setRenderTarget(prevRT, prevFace, prevMip);
+    r.xr.enabled = xr;
+    if (f === 5) rt.texture.needsPMREMUpdate = true;
+  }
   async _updateProbe() {
     this._probeBusy = true;
     try {
@@ -1312,7 +1334,20 @@ export class Engine {
       // shadow maps are fresh from the main frame — don't re-render them 6x
       const auto = this.renderer.shadowMap.autoUpdate;
       this.renderer.shadowMap.autoUpdate = false;
-      this._cubeCam.update(this.renderer, this.scene);
+      if (PS29.on) {
+        const cam = this._cubeCam, r = this.renderer;
+        if (cam.coordinateSystem !== r.coordinateSystem) { cam.coordinateSystem = r.coordinateSystem; cam.updateCoordinateSystem(); }
+        cam.updateMatrixWorld(true);
+        for (let f = 0; f < 6; f++) {
+          if (f) {
+            // the next face after the next frame's own render (frameBody resolves this; the shadow map is that frame's)
+            this.renderer.shadowMap.autoUpdate = auto;
+            await new Promise((res) => { this._probeNext = res; });
+            this.renderer.shadowMap.autoUpdate = false;
+          }
+          this._probeFace(f);
+        }
+      } else this._cubeCam.update(this.renderer, this.scene);
       this.renderer.shadowMap.autoUpdate = auto;
       const p = await LightProbeGenerator.fromCubeRenderTarget(this.renderer, this._cubeRT);
       // GUARD (film v4, 2026-09-11): one bad capture (a NaN pixel in the cube render, or a capture

@@ -73,6 +73,7 @@ const streamer = new Streamer(engine.scene, {
 });
 
 import { HeroFacades } from './world/heroFacades.js';
+import { sweepFrame } from './core/shadowSweep.js';   // SV29: the shadow sets' view test
 const heroes = new HeroFacades(engine.scene);
 // ?hero=0 disables the hero trim ring entirely (attribution renders, lead r8)
 if (new URLSearchParams(location.search).get('hero') === '0') heroes.skip = () => true;
@@ -696,6 +697,7 @@ async function boot() {
     const { initGT } = await import('./world/gt.js');
     const gt = initGT(engine, { traffic, peds, scene: engine.scene, facadeMat, groundMat, farMat, instancer });
     window.__gtRefs = { traffic, peds };
+    window.__INSTANCER = instancer;   // perf probes: instancer.stats (main / shadow instances, cull ms)
     if (Q.get('gt')) setTimeout(() => gt.setMode(Q.get('gt')), 4000); // after tiles stream in
   } catch (e) { console.warn('gt unavailable', e); }
   // PERCEPTION OUTPUT — semantic / instance / depth / AMODAL ground truth.
@@ -741,6 +743,7 @@ async function boot() {
     const p = tick('controller', () => controller ? controller.update(dt) : { x: px, z: pz });
     spawnGuard.update(engine.camera);   // film takes: traffic / walkers never spawn in view (window.__SPAWNGUARD)
     tick('sun', () => engine.updateSun(sky.sunDir, p.x, p.y ?? 50, p.z));
+    sweepFrame(engine);   // SV29 (?sv29=0 off): which shadow casters can still shadow the view (core/shadowSweep.js)
     tick('lamps', () => cityLamps.update(engine.camera, ENV.night.value, dt, engine));
     tick('streamer', () => streamer.update(p.x, p.z));
     if (traffic) tick('traffic', () => traffic.update(dt, p.x, p.z));

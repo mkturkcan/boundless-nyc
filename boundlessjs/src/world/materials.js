@@ -3402,7 +3402,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
 
 // ------------------------------------------------------------------ GROUND
 // matId: 0 asphalt 1 sidewalk 2 curb 3 paintW 4 paintY 5 grass 6 path 7 terrain 8 far-carpet
-//        9 paintG (bike lane) 10 brick/plaza
+//        9 paintG (bike lane) 10 brick/plaza ... 16 the Times Square plaza pavers (TP28, city/tsqPlaza.js)
 // Surface research + calibration notes: boundlessjs/docs/notes/surfaces.md
 const GND_GLSL = /* glsl */ `
   // Manhattan grid bearing, taken from the OSM College Walk axis (the campus
@@ -4196,6 +4196,57 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           albedo = mix(plate * 0.74, plate * (0.92 + 0.34 * shade), dome * gMid);
           GND_rough = m == 13 ? 0.78 : 0.62;
         }
+        else if (m == 16) {
+          // TP28 — the Times Square plaza (Broadway 42nd-47th, rebuilt in 2017): 1 x 2 ft precast concrete pavers laid
+          // with the Broadway axis in a running bond, a charcoal field with lighter pavers drawn out in runs along the
+          // axis, and nickel-sized steel discs set into them that throw back the screens. GND_paint carries the discs:
+          // the night pass keeps their gloss (a dry paver goes matte) and gives them the thermoplastic's glint.
+          vec2 pq = vec2(dot(vWPos.xz, vec2(0.2646, -0.9644)), dot(vWPos.xz, vec2(0.9644, 0.2646)));   // along, across
+          vec2 pc = vec2(pq.x / 0.60, pq.y / 0.30);
+          pc.x += 0.5 * mod(floor(pc.y), 2.0);
+          vec2 pid = floor(pc), pf = fract(pc);
+          float ph = hash12(pid + 3.7);
+          float runs = vnoise(vec2(pq.x * 0.07, pq.y * 0.8) + 31.0);
+          float lite = step(0.90 - 0.22 * smoothstep(0.55, 0.90, runs), ph);
+          albedo = mix(vec3(0.150, 0.147, 0.141), vec3(0.222, 0.218, 0.207), lite);
+          albedo *= (0.91 + 0.16 * hash12(pid + 9.1)) * (0.95 + 0.09 * n1);
+          // sand-swept 4 mm joints, faded with the footprint
+          vec2 jm = min(pf, 1.0 - pf) * vec2(0.60, 0.30);
+          float jw = max(fwidth(pq.x), fwidth(pq.y)) + 1e-4;
+          float joint = 1.0 - smoothstep(0.002, 0.002 + jw * 1.4, min(jm.x, jm.y));
+          albedo *= 1.0 - joint * 0.42 * smoothstep(0.06, 0.012, jw);
+          // the walked lines along the axis a little lighter and smoother
+          float trod = vnoise(vec2(pq.x * 0.05, pq.y * 0.35) + 7.0);
+          albedo *= 0.94 + 0.12 * trod;
+          GND_rough = mix(0.70, 0.58, trod) + 0.06 * ph;
+          GND_spec = 0.85;
+          // the discs, r 11 mm: resolvable inside ~8 m only, faded out before they alias
+          float dk = 0.0;
+          if (jw < 0.016) {
+            for (int q = 0; q < 3; q++) {
+              float fq = float(q);
+              if (hash12(pid * 1.31 + fq * 7.7 + 0.5) < 0.5) {
+                vec2 c = vec2(0.1 + 0.8 * hash12(pid + fq * 3.3 + 1.1), 0.18 + 0.64 * hash12(pid + fq * 5.9 + 2.3));
+                float dd = length((pf - c) * vec2(0.60, 0.30));
+                dk = max(dk, 1.0 - smoothstep(0.011 - jw * 0.7, 0.011 + jw * 0.7, dd));
+              }
+            }
+            dk *= smoothstep(0.016, 0.006, jw);
+          }
+          albedo = mix(albedo, vec3(0.50, 0.51, 0.52), dk);
+          GND_rough = mix(GND_rough, 0.16, dk);
+          GND_spec = mix(GND_spec, 2.4, dk);
+          GND_paint = dk;
+        }
+        else if (m == 17) {
+          // BP28 — Bryant Park's walks: pale decomposed granite over compacted gravel (the park's own grass re-kinded,
+          // city/bryantPark.js). A warm light grey-beige, not the asphalt-dark park path (6): a lighter trodden line down
+          // the middle of a walk, darker damp drifts, and the fine chip grain from the concrete detail set below.
+          float gw = fbm(vWPos.xz * 0.45 + 29.0), gd = fbm(vWPos.xz * 0.06 + 3.0);
+          albedo = mix(vec3(0.232, 0.205, 0.160), vec3(0.290, 0.258, 0.204), gw * 0.6 + n1 * 0.4);   // lit it read as snow at 0.34-0.42
+          albedo *= 1.0 - smoothstep(0.62, 0.92, gd) * 0.10;
+          GND_rough = 0.95; GND_spec = 0.7;
+        }
         else {
           // terrain / far carpet. Inside the city this is the filler between
           // compiled sidewalk polygons and the building line, so it must read
@@ -4521,7 +4572,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
               albedo *= 1.0 - (1.0 - hgt) * ${GM28 ? '0.36' : '0.22'} * det * bare;   // crevice grime
               GND_tn = ${GM28 ? 'atexG(t_asN, uv, mk, gdx, gdy)' : 'atex(t_asN, uv, mk)'}.xyz * 2.0 - 1.0; GND_tnW = det * ${GM28 ? '1.0 * mix(1.0, 0.30, GND_paint)' : '0.85 * mix(1.0, 0.22, GND_paint)'};
               if (m == 0) GND_rough = mix(GND_rough, GND_rough * ${GM28 ? '(0.64 + atexG(t_asR, uv, mk, gdx, gdy).x * 0.60)' : '(0.82 + atex(t_asR, uv, mk).x * 0.30)'}, det * 0.8);
-            } else if (m == 1 || m == 2 || m == 6) {             // concrete sidewalk/curb/path
+            } else if (m == 1 || m == 2 || m == 6 || m == 16 || m == 17) {  // concrete sidewalk/curb/path, TP28 pavers, BP28 gravel
               // the kerb face is vertical: an XZ lookup smears it into vertical
               // stripes and lifted it to near-white. Sample it in the
               // (along-kerb, height) frame instead — same tap count.
@@ -4692,7 +4743,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           // khaki. It gets a gentler, more neutral one.
           if (m == 2) albedo *= mix(vec3(1.44, 1.39, 1.31), vec3(1.0), night);
           else if (m == 0) albedo *= stCal;
-          else if (m == 1) albedo *= mix(lb14Walk, vec3(1.0), night);
+          else if (m == 1 || m == 16 || m == 17) albedo *= mix(lb14Walk, vec3(1.0), night);   // TP28 pavers, BP28 gravel: walk
           else if (m == 3 || m == 4) albedo *= mix(mix(vec3(1.0), lb14Paint, GND_paint), vec3(1.0), night);
           // the terrain filler between the compiled walk and the building line
           // has to hold the same value as the walk or every block face gets a

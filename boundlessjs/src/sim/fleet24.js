@@ -15,6 +15,7 @@ import * as THREE from 'three';
 import { ENV, applySnowCap, applySpecAA } from '../world/materials.js';
 import { Instancer } from '../city/instancer.js';
 import { csVehicles } from '../city/contactShadow.js';
+import { sweepOut } from '../core/shadowSweep.js';   // SV29
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const BASE = 'models/fleet24/';
@@ -985,6 +986,7 @@ export function installFleet24(traffic, engine, kinds) {
         if (shadowOn) {
           let inSh = true;
           for (let q = 0; q < 24; q += 4) if (_pl2[q] * x + _pl2[q + 1] * y + _pl2[q + 2] * z + _pl2[q + 3] < -rSh) { inSh = false; break; }
+          if (inSh && sweepOut(x, y, z, K.radius + 1)) inSh = false;   // SV29: its shadow cannot reach the view
           if (inSh) { G.shadow[d2 < LOD0_2 ? 0 : d2 < LOD1_2 ? 1 : 2].push(A, o, veh, paint, col, null); nSh++; }
         }
       }

@@ -156,6 +156,32 @@ const BX27 = typeof location === 'undefined' || new URLSearchParams(location.sea
 // (edge <-> connector hand-overs, a swung connector's handles). A connector's speed cap follows its tightest bend (2.5 m/s2
 // sideways), reached by braking, not in one frame. A car straddling two lanes is a leader in both. `?vt28=0`: VT27.
 const VT28 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vt28') !== '0';
+// VT29 (owner 2026-09-27, after film 12: "big vehicles like trucks and buses still rotate in place non physically"): VT28
+// took the heading from the path's chord around the body CENTRE and let it turn at v / 4.5 m + 0.2 rad/s, for every kind.
+// So a stopped vehicle could still turn (the 0.2 rad/s), and on a turn a long body pivoted about its middle: its rear axle
+// slid sideways (probe, 30 s at 125th & Lenox: p99 1.4 m/s, 9 % of moving frames over 0.3 m/s; a box truck on a 1.8 m
+// connector bend turned almost on the spot). VT29 is the kinematic bicycle: the body centre follows the path and the rear
+// axle, lr behind it (0.56 x the half length, 1.25-3.4 m: a sedan 1.3, a van 1.65, a box truck 2.0, a bus 3.25), is
+// towed along its own heading. The heading is the direction from the rear axle to the centre, so it turns only as far as
+// the body moves (never standing), a long body off-tracks inside a corner as a real one does, and the rear never slides.
+// The lane-change angle comes out of the same geometry (VT28's lateral cap, v tan 8 deg, still bounds it). The path's own
+// heading bounds it: a body more than 75 deg off it (a U-turn's tight end, a kink) swings back by at most a radian per
+// 1.2 m travelled. `?vt29=0` restores VT28.
+const VT29 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vt29') !== '0';
+// VT30 (film 13's fWeather: a box truck swung its nose 20-25 deg over the first 1.2 m of a turn): VT29's towed axle is
+// only as physical as the path it follows. On a centre path of radius Rc the axle runs round sqrt(Rc^2 - lr^2), and the
+// connectors are drawn for a car: the tightest bend of half of those driven round 125th & Lenox is under 6 m, so a third
+// to a half of the big vehicles' turns ran the rear axle round a tighter circle than a real one can steer (37 deg of
+// lock on a wheelbase of 2 lr: a van's axle 4.4 m round, a box truck 6.0, a fire truck 6.3). Most of those turns join lane ends
+// at unequal distances from the corner (one 20 m before it, the other 6 m past it), where the equal handles bend the
+// path at the short side. A big vehicle's connector now takes handles of their own length (0.1-1.0 x the chord) and its
+// controls swung up to 2 m wide if that brings its tightest bend nearer the 2.84 lr its lock can follow, both sides of
+// the body on the road; the body still follows the path exactly (a steering lock on the drawn body instead let it stand
+// off the path, where it weaved and, stopped, stood inside its neighbours). Probe, 30 s round 125th & Lenox: the tightest
+// 5 % of big-vehicle turns 2.6 -> 3.4 m round, the median 6.0 -> 10.0 m, a body corner off the road on 6.0 -> 3.7 % of
+// their turning frames; overlaps as before. `?vt30=0` restores VT29.
+const VT30 = VT29 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vt30') !== '0');
+const BIGV = /^(bus|boxtruck|firetruck|ambulance|minibus|van)$/;
 const CG = 10;   // car grid cell (m)
 
 export class Traffic {
@@ -750,6 +776,15 @@ export class Traffic {
     }
     return h;
   }
+  // VT29: half the body's extent ACROSS its lane: the half width, and what its angle to the lane adds (a car keeps the
+  // angle of a lane change it stopped in)
+  _latHalf(c) {
+    const h = this.carHalf(c);
+    if (c._yawL === undefined || c._hdg === undefined) return h[0];
+    let a = c._yawL - c._hdg;
+    a -= Math.round(a / (2 * Math.PI)) * 2 * Math.PI;
+    return h[0] * Math.abs(Math.cos(a)) + h[1] * Math.abs(Math.sin(a));
+  }
   // THE PATH A CAR WILL DRIVE: points from its centre forward (s = distance along the path) over the braking horizon,
   // through its lane, the turn connector it is on or will take (car.next is chosen 34 m out), and the next edge.
   // Cached per frame; the connector of a turn not yet begun is the same k = 0.36 cubic update() builds.
@@ -1087,7 +1122,8 @@ export class Traffic {
         const nl = car.lane + (car.turnLaneWant > car.lane ? 1 : -1);
         let clear = true;
         for (const o of e.cars) {
-          if (o === car || o.dir !== car.dir || o.lane !== nl) continue;
+          if (o === car || o.dir !== car.dir) continue;
+          if (o.lane !== nl && !(VT29 && Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;   // VT29: or still in it
           if (Math.abs(o.d - car.d) < 11) { clear = false; break; }
         }
         if (clear) { car.lane = nl; car._lcT = 1.2; }
@@ -1103,10 +1139,21 @@ export class Traffic {
       }
       let gap = 1e9, leadV = v0;
       const myLf = VT28 && car.laneF !== undefined ? car.laneF : car.lane;
+      // VT29: a body across my lane is my leader when the two bodies' spans across the lane meet: their half widths plus
+      // what their angle to the lane adds (a car stops mid lane change at that angle, and a box truck at 8 deg reaches 0.54 m
+      // further each side than its width). A fixed share of a lane cannot hold both: 0.62 missed a car stopped at 0.65 of the
+      // way over, and 0.8 missed a box truck stopped at 0.85 whose rear corner stood half a metre into the lane it had left
+      // (a box truck drove into it and stood there 27 s: col_ab9, 125th St east of Lenox).
+      const lwE = VT29 ? (Math.abs(this._laneOffsetAt(e, car, myLf + 1) - this._laneOffsetAt(e, car, myLf)) || 3) : 0;
+      const myW = VT29 ? this._latHalf(car) : 0;
       for (const o of e.cars) {
         if (o === car || o.dir !== car.dir) continue;
         // VT28: my lane, or a body across it (a lane change under way on either side)
-        if (o.lane !== car.lane && !(VT28 && Math.abs((o.laneF ?? o.lane) - myLf) < 0.62)) continue;
+        if (o.lane !== car.lane) {
+          if (!VT28) continue;
+          const dl = Math.abs((o.laneF ?? o.lane) - myLf);
+          if (VT29 ? dl * lwE > myW + this._latHalf(o) + 0.25 : dl >= 0.62) continue;
+        }
         const g = (o.d - car.d) * car.dir - followGap(o, car);
         if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = o.v; }
       }
@@ -1139,7 +1186,8 @@ export class Traffic {
           if (nl < 0 || nl >= lanesDirNow) continue;
           let clear = true;
           for (const o of e.cars) {
-            if (o === car || o.dir !== car.dir || o.lane !== nl) continue;
+            if (o === car || o.dir !== car.dir) continue;
+            if (o.lane !== nl && !(VT29 && Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;   // VT29: or still in it
             if (Math.abs(o.d - car.d) < 13) { clear = false; break; }
           }
           if (clear) { car.lane = nl; car._lcT = 1.2; break; }
@@ -1183,6 +1231,10 @@ export class Traffic {
         hold = true;
         if (endD < stopD) car.v = 0;   // already past the stop bar when the box filled: stop where it is, short of the mouth
       }
+      // VT29 (f): brake for the stop bar while the lane I turn into has no room for me past the turn (only while a
+      // comfortable stop short of the bar is still possible; never on a divided avenue's interior link)
+      if (VT29 && !hold && car.next && mEnd > 0 && e.len >= 26 && endD > stopD && endD - stopD < 30 && endD - stopD > brakeDist * 0.6
+          && this._exitFull(car, car.next)) hold = true;
       if (!hold && car.next && car.next.ne.len < 26) {
         const ne2 = car.next.ne, nd2 = car.next.o.dir;
         const hd = this.dirAt(ne2, nd2 > 0 ? ne2.len - 0.5 : 0.5, nd2);
@@ -1310,6 +1362,67 @@ export class Traffic {
             if (!best) for (const kf of [0.36, 0.5, 0.64]) { const Tk = TW26 ? mkW(kf * chord) : mk(kf * chord, p0w, p2w); if (!offRoad(Tk)) { best = Tk; break; } }
             T = best || (TW26 ? mkW(0.5 * chord) : mk(0.5 * chord, p0w, p2w));
           }
+          // VT29: a connector with a bend under 3 m made everything on it turn almost on the spot (40 s census at 125th &
+          // Lenox: 50 of 1,592 connectors under 1 m, 108 more under 3 m; 90 deg turns whose 0.36-chord handles overshoot the
+          // corner, TW27 having started the turn from where the car stands). Candidates with each handle clamped short of
+          // the point where the exit and entry lines cross, and a sweep of k: the one that stays on the road with the widest
+          // tightest bend wins.
+          if (VT29) {
+            const rOf = (C) => this._turnLUT({ ...C }).rMin ?? 1e9;
+            let r0 = rOf(T);
+            if (r0 < 3) {
+              const det = hA[0] * hB[1] - hA[1] * hB[0], bx = p2[0] - p0[0], bz = p2[2] - p0[2];
+              const tA = Math.abs(det) > 0.05 ? (bx * hB[1] - bz * hB[0]) / det : -1;   // p0 + tA hA = p2 - uB hB
+              const uB = Math.abs(det) > 0.05 ? (hA[0] * bz - hA[1] * bx) / det : -1;
+              const mkA = (k0, k2) => ({ p0, c1: [p0[0] + hA[0] * k0, p0[1], p0[2] + hA[1] * k0], c2: [p2[0] - hB[0] * k2, p2[1], p2[2] - hB[1] * k2], p2 });
+              for (const kf of [0.22, 0.28, 0.36, 0.45, 0.55]) {
+                const k = kf * chord, cands = [mkA(k, k)];
+                if (tA > 0.3 && uB > 0.3) cands.push(mkA(Math.min(k, 0.85 * tA), Math.min(k, 0.85 * uB)));
+                for (const C of cands) { const rC = rOf(C); if (rC > r0 + 0.2 && !offRoad(C)) { T = C; r0 = rC; } }
+              }
+            }
+            // VT30: a big vehicle's connector, if its tightest bend is under the 2.84 lr its lock can follow: handles of
+            // their own length and the controls swung up to 2 m to the outside of the turn; of the shapes that keep both
+            // sides of the body on the road the widest bend (up to what is wanted) wins, 1 m of extra path costing 2 cm
+            if (VT30 && BIGV.test(car.kind)) {
+              const lrC = car._lr || (car._lr = Math.max(1.25, Math.min(3.4, 0.56 * this.carHalf(car)[1])));
+              const want = 2.84 * lrC;
+              if (r0 < want) {
+                const inn = hA[0] * hB[1] - hA[1] * hB[0] > 0 ? 1 : -1, hwB = this.carHalf(car)[0] + 0.1;
+                const n0 = [-hA[1] * inn, hA[0] * inn], n2 = [-hB[1] * inn, hB[0] * inn];
+                const mkS = (k0, k2, sw) => ({ p0, c1: [p0[0] + hA[0] * k0 - n0[0] * sw, p0[1], p0[2] + hA[1] * k0 - n0[1] * sw],
+                  c2: [p2[0] - hB[0] * k2 - n2[0] * sw, p2[1], p2[2] - hB[1] * k2 - n2[1] * sw], p2 });
+                const offBody = (C) => {
+                  const S = this.streamer; if (!S || !S.surfaceInfoAt) return false;
+                  for (const t of [0.08, 0.2, 0.32, 0.44, 0.56, 0.68, 0.8, 0.92]) {
+                    const u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
+                    const x = a0 * C.p0[0] + a1 * C.c1[0] + a2 * C.c2[0] + a3 * C.p2[0], z = a0 * C.p0[2] + a1 * C.c1[2] + a2 * C.c2[2] + a3 * C.p2[2];
+                    let tx = 3 * u * u * (C.c1[0] - C.p0[0]) + 6 * u * t * (C.c2[0] - C.c1[0]) + 3 * t * t * (C.p2[0] - C.c2[0]);
+                    let tz = 3 * u * u * (C.c1[2] - C.p0[2]) + 6 * u * t * (C.c2[2] - C.c1[2]) + 3 * t * t * (C.p2[2] - C.c2[2]);
+                    const L = Math.hypot(tx, tz) || 1; tx /= L; tz /= L;
+                    for (const sd of [hwB, -hwB]) { const info = S.surfaceInfoAt(x - tz * sd, z + tx * sd, 0.6); if (info && !info.road) return true; }
+                  }
+                  return false;
+                };
+                const len0 = this._turnLUT({ ...T }).len, cands = [];
+                for (const f0 of [0.1, 0.2, 0.3, 0.45, 0.55, 0.7, 0.85, 1.0]) for (const f2 of [0.1, 0.2, 0.3, 0.45, 0.55, 0.7, 0.85, 1.0]) for (const sw of [0, 1, 2]) {
+                  const C = mkS(f0 * chord, f2 * chord, sw), L = this._turnLUT({ ...C }), r = L.rMin ?? 1e9;
+                  if (r > r0 + 0.2) cands.push({ C, r, s: Math.min(r, want) - 0.02 * Math.max(0, L.len - len0) });
+                }
+                cands.sort((a, b) => b.s - a.s);
+                for (let i = 0; i < cands.length && i < 16; i++) if (!offBody(cands[i].C)) { T = cands[i].C; r0 = cands[i].r; break; }
+              }
+            }
+            // still a hook (a bend under 1.2 m: the exit and entry lines cross behind the car or past the entry, so it has
+            // already driven by the lane it wants): take another continuation, as TW27 does for a cusp; after 3 refusals at
+            // one junction the hook is driven (a one-way arm with no other way out must not strand the car)
+            if (r0 < 1.2 && (car._hookN | 0) < 3) {
+              car._hookN = (car._hookN | 0) + 1;
+              ne.cars.delete(car); car.e = e; car.dir = dir0; car.lane = exLane; car.laneF = lf0; car._lfv = lfv0; car.d = exitD; e.cars.add(car);
+              car._badNe = ne.id; car.next = null; car.v = Math.min(car.v, 2); continue;
+            }
+            car._hookN = 0;
+          }
           // TW27: a connector that doubles back (its end behind its start, or handles pointing apart: a cusp) drove the car
           // out, reversed it along the curve and brought it back, the body spinning (yaw probe: up to 149 deg in a frame).
           // The car stays on its edge instead: a two-way edge U-turns there properly, a one-way edge picks another
@@ -1344,6 +1457,7 @@ export class Traffic {
       let hx = (sB.x - sA.x) * car.dir, hz = (sB.z - sA.z) * car.dir;
       const hl = Math.hypot(hx, hz) || 1; hx /= hl; hz /= hl;
       let yawT = Math.atan2(hx, hz);
+      car._hdg = yawT;   // VT29: the lane's own heading here (_latHalf: the body's angle to its lane)
       if (TW26 && car.laneF !== undefined) {
         // critically damped spring (k 1.6, c 2 sqrt k): from rest it peaks near 0.47 lanes/s and settles in ~3 s
         const gap = car.lane - car.laneF;
@@ -1493,6 +1607,23 @@ export class Traffic {
       if (oc === car || oc.turn || oc.dir !== ndP || oc.lane !== laneP) continue;
       const behind = (entry0 - oc.d) * ndP;     // > 0: has not reached the entry point yet
       if (behind > -2 && behind < 6 + oc.v * 2.0) return true;
+    }
+    return false;
+  }
+  // VT29 (f), don't block the box: is the lane I turn into too full to take my whole body, my rear axle and 2 m past the
+  // connector's end behind its slow cars? A car that stopped just past the turn stood angled (its rear axle still in the
+  // curve, as a real one would) and held the box. Asked only while the car can still brake for the stop bar (update()):
+  // inside _boxBlocked it also ran at the mouth, whose hold pins the car at zero speed in one frame, and the car behind
+  // drove into it (overlap probe: stopped pairs overlapping for 20-40 s).
+  _exitFull(car, pick) {
+    const neP = pick.ne, ndP = pick.o.dir, mNP = ndP > 0 ? neP.mouthA : neP.mouthB;
+    const entry0 = ndP > 0 ? Math.min(mNP + 1.0, neP.len * 0.5) : Math.max(neP.len - mNP - 1.0, neP.len * 0.5);
+    const laneP = Math.min(car.lane, Math.max(0, (neP.oneway !== 0 ? neP.lanes : Math.max(1, Math.floor(neP.lanes / 2))) - 1));
+    const need = 2 * this.carHalf(car)[1] + (car._lr || 1.5) + 2;
+    for (const oc of neP.cars) {
+      if (oc === car || oc.turn || oc.dir !== ndP || (oc.v || 0) > 2.5 || Math.abs((oc.laneF ?? oc.lane) - laneP) > 0.6) continue;
+      const ahead = (oc.d - entry0) * ndP - this.carHalf(oc)[1];   // its rear bumper past the entry point
+      if (ahead > -2 && ahead < need) return true;
     }
     return false;
   }
@@ -1655,7 +1786,45 @@ export class Traffic {
   _placeCar(car, x, y, z, yaw, dt) {
     // VT27: the heading from the dragged rear point (see VT27); a jump of more than three drag lengths (a spawn, a
     // recycled car) starts it again behind the car along the path heading
-    if (VT28 && !car.api) {
+    if (VT29 && !car.api) {
+      // VT29: the rear axle towed along its heading; a placement 3 m or more from the last (a spawn, a recycled car) starts
+      // it again behind the body along the path's heading; a dt = 0 update (a settle, a redraw) turns nothing
+      const lr = car._lr || (car._lr = Math.max(1.25, Math.min(3.4, 0.56 * this.carHalf(car)[1])));
+      const q = car._pose;
+      let r = car._rear;
+      if (!r || !q || car._yawL === undefined || Math.hypot(x - q[0], z - q[2]) >= 3) {
+        r = car._rear = [x - Math.sin(yaw) * lr, z - Math.cos(yaw) * lr];
+        car._yawL = yaw;
+      } else if (dt > 0) {
+        const dx = x - r[0], dz = z - r[1];
+        let yN = dx * dx + dz * dz > 1e-8 ? Math.atan2(dx, dz) : car._yawL;
+        // the path's own heading is the sanity bound: a body that has lost it by more than 75 deg (the tight end of a
+        // U-turn, a kink the axle cannot follow) swings back toward it by at most a radian per 1.2 m it travels
+        let dP = yN - yaw;
+        dP -= Math.round(dP / (2 * Math.PI)) * 2 * Math.PI;
+        if (Math.abs(dP) > 1.31) {
+          let dy = yaw - car._yawL;
+          dy -= Math.round(dy / (2 * Math.PI)) * 2 * Math.PI;
+          const m = Math.hypot(x - q[0], z - q[2]) / 1.2;
+          yN = car._yawL + (dy > m ? m : dy < -m ? -m : dy);
+        }
+        // the turn's run-out: over a connector's last 2.2 lr + 1 m the body straightens onto the connector's own tangent
+        // (the lane it enters), the share of the rest covered this step, as a driver unwinds the wheel; a car that stops
+        // just past a turn then stands square (the pure towed axle kept the corner's off-tracking lag, 15-20 deg)
+        const T = car.turn;
+        if (T && T.len > 0) {
+          const rem = T.len - T.s, Le = 2.2 * lr + 1, ds = Math.hypot(x - q[0], z - q[2]);
+          if (rem < Le && ds > 0) {
+            let dq = yaw - yN;
+            dq -= Math.round(dq / (2 * Math.PI)) * 2 * Math.PI;
+            yN += dq * Math.min(1, ds / (rem + ds));
+          }
+        }
+        car._yawL = yN;
+        r[0] = x - Math.sin(yN) * lr; r[1] = z - Math.cos(yN) * lr;
+      }
+      yaw = car._yawL;
+    } else if (VT28 && !car.api) {
       // VT28: the heading given (lane chord + lane-change angle, or the connector's tangent), at most v / 4.5 m + 0.2 rad/s
       // of turn; a placement 3 m or more from the last one (a spawn, a recycled car) starts again
       const q = car._pose;

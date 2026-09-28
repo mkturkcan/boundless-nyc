@@ -123,6 +123,8 @@ const MATID_CLASS = [
   CID.detectable_warning,   // 13 red composite dome plate
   CID.detectable_warning,   // 14 cast-iron dome plate
   CID.grass,                // 15 campus lawn underlay (TL26: its own section so it loses every depth tie)
+  CID.plaza,                // 16 the Times Square plaza pavers (TP28, city/tsqPlaza.js)
+  CID.footpath,             // 17 Bryant Park's gravel walks (BP28, city/bryantPark.js)
 ];
 const CROSSWALK_KEY = 40;   // LUT slot for "matId 3 inside a crossing zone"
 // matId 8 (the far ground carpet) gets its OWN key even though it shares the

@@ -64,8 +64,17 @@ const FOOT = ['42ND & BROADWAY', 'TONIGHT', 'ON NOW', 'THIS WEEK ONLY',
 
 function rnd(a) { return a[(Math.random() * a.length) | 0]; }
 
+// relative luminance of a #rrggbb colour (0..1)
+function lumOf(h) {
+  const v = parseInt(h.slice(1), 16), r = (v >> 16) / 255, g = ((v >> 8) & 255) / 255, b = (v & 255) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 function drawCell(c, ox, oy) {
-  const [name, cat, bg, fg] = rnd(BRANDS);
+  let [name, cat, bg, fg] = rnd(BRANDS);
+  // TS28: at night a pale field lifted to a light source is a white sheet (PALEBLUE and AURELIA read as blank white
+  // glare in the survey stills): the Square's screens at night are dark fields with the light in the type, so a pale
+  // board swaps its two colours after dark
+  if (TS28 && ENV.night.value > 0.5 && lumOf(bg) > 0.55) [bg, fg] = [fg, bg];
   const kind = (Math.random() * 6) | 0;
   const S = CELL;
   c.save();
@@ -177,10 +186,26 @@ function drawCell(c, ox, oy) {
   c.restore();
 }
 
-function paint() {
+function paint(cells = null) {
   const cv = tex.image, c = cv.getContext('2d');
-  for (let i = 0; i < GRID * GRID; i++) drawCell(c, (i % GRID) * CELL, ((i / GRID) | 0) * CELL);
+  for (let i = 0; i < GRID * GRID; i++) if (!cells || cells.includes(i)) drawCell(c, (i % GRID) * CELL, ((i / GRID) | 0) * CELL);
   tex.needsUpdate = true;
+}
+// TS28: the boards change on the SIM clock (ENV.windT), a few at a time. The old setInterval(paint, 4200) repainted all
+// sixteen on the wall clock: a recorded take (0.6-2 s a frame) swapped every board in the Square every 2-7 frames, and
+// live play took the whole 16-cell redraw and a 2048-square upload in one frame. Now four cells every 2.4 s of sim time
+// (each design stays ~10 s, like a rotation), from the material's own pre-render hook, so a frame that draws no board
+// pays nothing; and the night swap above follows the clock too.
+let nextPaint = null, wasNight = null;
+function tick() {
+  const t = ENV.windT.value, night = ENV.night.value > 0.5;
+  if (nextPaint === null) { nextPaint = t + 2.4; wasNight = night; return; }
+  if (night !== wasNight) { wasNight = night; paint(); nextPaint = t + 2.4; return; }
+  if (t < nextPaint) return;
+  nextPaint = t + 2.4;
+  const cells = [];
+  while (cells.length < 4) { const k = (Math.random() * GRID * GRID) | 0; if (!cells.includes(k)) cells.push(k); }
+  paint(cells);
 }
 
 function ensure() {
@@ -202,12 +227,13 @@ function ensure() {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform float bbNight;')
       .replace('#include <fog_fragment>', `
-        gl_FragColor.rgb *= mix(1.5, 3.4, bbNight);
+        ${TS28 ? 'gl_FragColor.rgb = pow(max(gl_FragColor.rgb, vec3(0.0)), vec3(mix(1.0, 1.25, bbNight))) * mix(1.5, 3.1, bbNight);' : 'gl_FragColor.rgb *= mix(1.5, 3.4, bbNight);'}
         #include <fog_fragment>`);
   };
   mat.customProgramCacheKey = () => 'tsqboard';
   paint();
-  if (!animOn) { animOn = true; setInterval(paint, 4200); }
+  if (TS28) mat.onBeforeRender = tick;
+  else if (!animOn) { animOn = true; setInterval(paint, 4200); }
 }
 
 // The district atlas, for builders that clad a whole landmark in screens rather
@@ -223,6 +249,120 @@ export function boardUVRect(slot) {
 }
 
 // recs: [{ring, frontIdx, baseY, height, colorVar}] near-TSQ tall buildings.
+// TS28 (owner 2026-09-27: "Work on some new areas like Times Square and Bryant Park for the new teaser"): the bowtie
+// itself is walls of screens, not a poster per building. Every frontage within 60 m of the Square's axis (One Times
+// Square's north face at 43rd to Duffy Square at 47th) that faces it carries a STACK of screens over its full width,
+// from above the shop fronts to 48 m, one to three screens with 1.2 m gaps, each 0.7 m off the wall in a dark steel
+// frame. They are added to the tile's own group (the pooled district boards never reached the frame there). `?ts28=0`
+// restores the round-5 district alone.
+export const TS28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ts28') === '0');
+const TSQ_A = project(-73.98640, 40.75650), TSQ_B = project(-73.98505, 40.75905);
+// distance from (x, z) to the Square's axis and the unit direction toward it
+function toAxis(x, z) {
+  const ax = TSQ_B[0] - TSQ_A[0], az = TSQ_B[1] - TSQ_A[1], L2 = ax * ax + az * az;
+  const t = Math.max(0, Math.min(1, ((x - TSQ_A[0]) * ax + (z - TSQ_A[1]) * az) / L2));
+  const px = TSQ_A[0] + ax * t, pz = TSQ_A[1] + az * t, dx = px - x, dz = pz - z, d = Math.hypot(dx, dz) || 1;
+  return [d, dx / d, dz / d];
+}
+// The outward unit normal of ring edge i, tested against the ring itself: the compiled rings do not share one winding
+// (memory: the building visibility audit), and a fixed (-ez, ex) put boards 0.35 m INSIDE every building wound the other
+// way, where the facade hid them (TS28 probe: 206 district boards built and visible, none in a frame). A quad's front
+// face is (along x up), so the along-wall direction comes from the normal too, (nz, -nx): the edge's own direction
+// would face a flipped board back into the wall.
+function inRing(x, z, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, zi] = ring[i], [xj, zj] = ring[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
+export function outwardNormal(ring, i) {
+  const [x1, z1] = ring[i], [x2, z2] = ring[(i + 1) % ring.length];
+  const ex = x2 - x1, ez = z2 - z1, len = Math.hypot(ex, ez) || 1;
+  let nx = -ez / len, nz = ex / len;
+  if (inRing((x1 + x2) / 2 + nx * 0.6, (z1 + z2) / 2 + nz * 0.6, ring)) { nx = -nx; nz = -nz; }
+  return [nx, nz];
+}
+let _frameMat = null;
+export function buildTsqScreens(recs) {
+  if (!TS28) return null;
+  ensure();
+  const pos = [], uv = [], fr = [];
+  let k = 0;
+  const quad = (A, B, C, D, u0, v0, u1, v1) => {
+    for (const p of [A, B, C, A, C, D]) pos.push(...p);
+    uv.push(u0, v0, u1, v0, u1, v1, u0, v0, u1, v1, u0, v1);
+  };
+  const bar = (cx, cy, cz, ex, ez, nx, nz, w, h, d) => fr.push([cx, cy, cz, ex, ez, nx, nz, w, h, d]);
+  for (const r of recs) {
+    if (r.height < 12) continue;
+    const nR = r.ring.length;
+    for (let i = 0; i < nR; i++) {
+      const [x1, z1] = r.ring[i], [x2, z2] = r.ring[(i + 1) % nR];
+      const ex = x2 - x1, ez = z2 - z1, len = Math.hypot(ex, ez);
+      if (len < 8) continue;
+      const mx = (x1 + x2) / 2, mz = (z1 + z2) / 2, [nx, nz] = outwardNormal(r.ring, i);
+      const [d, dx, dz] = toAxis(mx, mz);
+      if (d > 60 || nx * dx + nz * dz < 0.35) continue;
+      const top = Math.min(r.baseY + r.height - 1.5, r.baseY + 48), y0 = r.baseY + 4.2;
+      if (top - y0 < 6) continue;
+      // one to three screens up the frontage (hash of the building + edge), split at random heights
+      const h = Math.abs(Math.sin((r.colorVar * 977 + i * 31.7) * 12.9898) * 43758.5453) % 1;
+      const n = top - y0 > 26 ? (h < 0.45 ? 3 : 2) : top - y0 > 14 ? (h < 0.5 ? 2 : 1) : 1;
+      const cuts = [0]; for (let c = 1; c < n; c++) cuts.push(c / n + ((h * (c + 3) * 7) % 1 - 0.5) * 0.18); cuts.push(1);
+      const inset = 0.45, w = len - 2 * inset, ux = nz, uz = -nx;
+      for (let c = 0; c < n; c++) {
+        const ya = y0 + cuts[c] * (top - y0) + (c ? 0.6 : 0), yb = y0 + cuts[c + 1] * (top - y0) - (c < n - 1 ? 0.6 : 0);
+        if (yb - ya < 3) continue;
+        const off = 0.7, cx = mx + nx * off, cz = mz + nz * off, hw = w / 2;
+        const A = [cx - ux * hw, ya, cz - uz * hw], B = [cx + ux * hw, ya, cz + uz * hw], C = [cx + ux * hw, yb, cz + uz * hw], D = [cx - ux * hw, yb, cz - uz * hw];
+        const [u0, v0, u1, v1] = boardUVRect(k++ * 7 + i * 3 + ((h * 16) | 0));
+        quad(A, B, C, D, u0, v0, u1, v1);
+        // the frame: four bars round the screen, a little proud of it and back to the wall
+        const fw = 0.28, fd = off + 0.12, fcx = mx + nx * (fd / 2), fcz = mz + nz * (fd / 2);
+        bar(fcx, ya - fw / 2, fcz, ux, uz, nx, nz, w + 2 * fw, fw, fd);
+        bar(fcx, yb + fw / 2, fcz, ux, uz, nx, nz, w + 2 * fw, fw, fd);
+        for (const s of [-1, 1]) bar(fcx + ux * s * (hw + fw / 2), (ya + yb) / 2, fcz + uz * s * (hw + fw / 2), ux, uz, nx, nz, fw, yb - ya, fd);
+      }
+    }
+  }
+  if (!pos.length) return null;
+  const G = new THREE.Group();
+  G.name = 'ts28:screens';
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.computeBoundingSphere();
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.renderOrder = 2; mesh.name = 'ts28:screen';
+  G.add(mesh);
+  // frames: one merged box mesh (a unit box per bar, stretched and turned to the wall)
+  if (!_frameMat) _frameMat = new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.55, metalness: 0.7 });
+  const box = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  const bp = box.getAttribute('position').array, bn = box.getAttribute('normal').array, nb = bp.length / 3;
+  const P = new Float32Array(fr.length * nb * 3), N = new Float32Array(fr.length * nb * 3);
+  fr.forEach(([cx, cy, cz, ux, uz, nx, nz, w, h, d], j) => {
+    for (let q = 0; q < nb; q++) {
+      const lx = bp[q * 3] * w, ly = bp[q * 3 + 1] * h, lz = bp[q * 3 + 2] * d;   // x along the wall, z outward
+      const o = (j * nb + q) * 3;
+      P[o] = cx + ux * lx + nx * lz; P[o + 1] = cy + ly; P[o + 2] = cz + uz * lx + nz * lz;
+      const ax = bn[q * 3], ay = bn[q * 3 + 1], az = bn[q * 3 + 2];
+      N[o] = ux * ax + nx * az; N[o + 1] = ay; N[o + 2] = uz * ax + nz * az;
+    }
+  });
+  const fg = new THREE.BufferGeometry();
+  fg.setAttribute('position', new THREE.BufferAttribute(P, 3));
+  fg.setAttribute('normal', new THREE.BufferAttribute(N, 3));
+  fg.computeBoundingSphere();
+  const fm = new THREE.Mesh(fg, _frameMat);
+  fm.castShadow = true; fm.receiveShadow = true; fm.name = 'ts28:frames';
+  G.add(fm);
+  console.log(`[ts28] ${pos.length / 18} screens on the Square's frontages`);
+  if (typeof window !== 'undefined') window.__TS28 = (window.__TS28 || 0) + pos.length / 18;
+  return G;
+}
+
 export function buildBillboards(recs) {
   const near = recs.filter((r) => {
     const [cx, cz] = r.ring[0];
@@ -279,7 +419,7 @@ export function buildBillboards(recs) {
       // cannot rescue it: every board was built 35 cm inside its own facade and
       // culled by the wall. buildBillboards was reporting 405 boards across five
       // tiles at Times Square while the frame showed none.
-      const nx = -ez / len, nz = ex / len;
+      const [nx, nz] = TS28 ? outwardNormal(r.ring, i) : [-ez / len, ex / len];
       const nB = 1 + (h < 0.55 ? 1 : 0) + (h < 0.25 ? 1 : 0);
       for (let k = 0; k < nB; k++) {
         const slot = slotOf(h, k + dEdge * 5);
@@ -300,7 +440,7 @@ export function buildBillboards(recs) {
         const cy = y0 + hgt / 2 + k * (hgt + 2.5);
         if (cy + hgt / 2 > r.baseY + r.height - 1.5) continue;
         const cx = x1 + ex * 0.5 + nx * 0.35, cz = z1 + ez * 0.5 + nz * 0.35;
-        const hx = (ex / len) * w / 2, hz = (ez / len) * w / 2;
+        const hx = nz * w / 2, hz = -nx * w / 2;   // along the wall, from the normal (the same as the edge unflipped)
         const A = [cx - hx, cy - hgt / 2, cz - hz], B = [cx + hx, cy - hgt / 2, cz + hz];
         const C = [cx + hx, cy + hgt / 2, cz + hz], D = [cx - hx, cy + hgt / 2, cz - hz];
         for (const p of [A, B, C, A, C, D]) pos.push(...p);

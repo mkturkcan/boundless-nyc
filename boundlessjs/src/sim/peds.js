@@ -6,6 +6,8 @@ import { applySnowCap } from '../world/materials.js';
 import { buildPedMesh } from './pedmesh.js';
 import { spawnGuard } from './spawnGuard.js';
 import { COLLIDERS } from '../city/colliders.js';
+import { tpPromenades } from '../city/tsqPlaza.js';
+import { bpPromenades } from '../city/bryantPark.js';
 
 const PED_NEAR = typeof location !== 'undefined' && new URLSearchParams(location.search).has('pednear');
 // PY25 (owner 2026-09-25: "pedestrians should never clip into vehicles etc."): path-aware car checks, crossers published
@@ -255,6 +257,16 @@ export class Peds {
           for (const e of this._mkEdges(run, 0, 1, 'path')) { e.busy = 0.6; list.push(e); }
         }
       }
+      // TP28: the Times Square plaza is walked all over, not only along its kerbs: promenade lines across it, resolved
+      // like College Walk's once the ground under them is in (_buildCampus cuts them where a cross street runs over)
+      // BP28: the Bryant Park allees, once (their lines do not depend on the tile's roads)
+      if (!this._bpDone) { this._bpDone = true; for (const pr of bpPromenades()) (this._campusTodo || (this._campusTodo = [])).push({ pts: pr.pts, busy: 3, y0: null, promenade: true }); }
+      for (const pr of tpPromenades(data.roads)) {
+        const k = `${pr.pts[0][0].toFixed(1)},${pr.pts[0][2].toFixed(1)},${pr.off.toFixed(2)}`;
+        if ((this._tpDone || (this._tpDone = new Set())).has(k)) continue;
+        this._tpDone.add(k);
+        (this._campusTodo || (this._campusTodo = [])).push({ pts: this._offsetLine(pr.pts, pr.off), busy: 5, y0: null, promenade: true });
+      }
       this.tileEdges.set(key, list);
       for (const e of list) this.walkEdges.push(e);
       this._nearT = 0;   // the walk graph changed: rebuild the near list next update (see update())
@@ -277,7 +289,9 @@ export class Peds {
     // COLUMBIA (film 7, 2026-09-23): the campus walkways are not in the road graph, so College Walk — the film's
     // opening shot — had no walkers at all. The campus kit's own data (OSM footways + College Walk's centre line,
     // public/data/columbia_campus.json) becomes walk edges once the ground under each one has streamed in.
-    this._campusTodo = null;
+    // TP28: onTile() above replays the tiles already in, synchronously, and the Times Square plaza queues its promenade
+    // lines from there: a plain `= null` here wiped them before they were ever built (scratchpad tpwalk1/2)
+    this._campusTodo = this._campusTodo || null;
     if (typeof fetch !== 'undefined') fetch('data/columbia_campus.json').then((r) => (r.ok ? r.json() : null)).then((C) => {
       if (!C) return;
       const todo = [];
@@ -285,7 +299,7 @@ export class Peds {
       const wl = (C.walkLine || []).map((p) => [p[0], p[2] ?? 0, p[1]]);
       if (wl.length >= 2) for (const off of [-4.5, 0, 4.5]) todo.push({ pts: this._offsetLine(wl, off), busy: 5, y0: wl[0][1], promenade: true });
       for (const p of C.paths || []) if (p.pts && p.pts.length >= 2) todo.push({ pts: p.pts.map((q) => [q[0], 0, q[1]]), busy: 3, y0: null });
-      this._campusTodo = todo;
+      this._campusTodo = (this._campusTodo || []).concat(todo);   // TP28's plaza lines may be queued already
     }).catch(() => {});
   }
   _offsetLine(pts, off) {
@@ -425,7 +439,14 @@ export class Peds {
         for (let k = 0; k < n; k++) {
           const t = k / n, x = B ? A[0] + (B[0] - A[0]) * t : A[0], z = B ? A[2] + (B[2] - A[2]) * t : A[2];
           const y = S.surfaceAt(x, z);
-          if (y === null || !isFinite(y)) { ok = false; break; }
+          if (y === null || !isFinite(y)) {
+            // TP28: a promenade point with no paving under it in a tile that IS in (roadAt answers true/false there, null
+            // where the tile is not) cuts the line like an obstacle; only ground still streaming defers the whole line.
+            // A plaza line runs node to node through the junctions, and one bare point there held all 20 Times Square
+            // lines in the queue for good (scratchpad tpwalk1: 0 of them built).
+            if (w.promenade && S.roadAt && S.roadAt(x, z, 0.2) !== null) { samples.push([x, 0, z, true]); continue; }
+            ok = false; break;
+          }
           const yt = this._campusTop(x, z, y);
           // the campus footway data carries the CROSSWALKS too (OSM footway=crossing over Amsterdam and 120th): a walker
           // on one walked through the traffic with no signal or car check (the overlaps measured on 2026-09-24) — the

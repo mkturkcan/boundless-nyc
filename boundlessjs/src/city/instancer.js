@@ -26,6 +26,7 @@ import { ENV, applySnowCap, applyCityAO, applyLightTrim } from '../world/materia
 // than in roofEngine/assemble so roof plant, street furniture and the props.js
 // companion pools all get it from one table.
 import { CS11, csClaim, csRelease, csAttach } from './contactShadow.js';
+import { SWEEP, sweepOut } from '../core/shadowSweep.js';   // SV29
 
 const Q0 = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams('');
 const CULL = Q0.get('cull') !== '0';          // ?cull=0: draw every instance (A/B)
@@ -35,6 +36,19 @@ const AAFIX = Q0.get('aa') !== '0';
 // ?u10=0 restores the pre-round-10 behaviour for everything the UNIFORMITY
 // BREAKER added (docs/notes/uniformity-r10.md). One parse site per file.
 export const U10 = Q0.get('u10') !== '0';
+// DC29 (owner 2026-09-27: "Improve game performance without sacrificing visual quality"): an InstancedMesh with count 0
+// still costs three a full setProgram (uniforms, material state, the vertex array bind) before renderInstances drops the
+// zero-instance draw, in the main pass and again in every pass that draws the scene. A pool with nothing in view hides
+// its main and LOD meshes until it has instances again (only a mesh this code hid is shown again: trees.js hides the trunk
+// LOD for good). `?dc29=0` restores always-visible meshes.
+const DC = { on: Q0.get('dc29') !== '0', ver: 0 };
+const DC29 = true;   // the LOD-set count fix below is unconditional; DC.on gates the hiding (live A/B: window.__DC29)
+function showIf(mesh, k) {
+  if (!mesh) return;
+  if (DC.on && k === 0) { if (mesh.visible) { mesh.visible = false; mesh.userData.dcHid = true; } }
+  else if (mesh.userData.dcHid) { mesh.visible = true; mesh.userData.dcHid = false; }
+}
+if (typeof window !== 'undefined') window.__DC29 = (on) => { DC.on = !!on; DC.ver++; return DC.on; };   // every pool re-compacts
 const PAD_MAIN = 4;                            // metres added to every sphere vs the view frustum
 const PAD_SHADOW = 14;                         // vs the near shadow box (recomputed only every 8 m)
 const MIN_PX = 0.5;                            // drop instances whose whole sphere is under half a pixel
@@ -704,7 +718,7 @@ export class Instancer {
   }
   // copy the instances of `p` that intersect the planes into `mesh`; with a
   // pool LOD, instances beyond lod.dist2 (horizontal) go to `mesh2` instead
-  _compact(p, mesh, planes, pad, minAng, camX, camY, camZ, withColor, mesh2 = null) {
+  _compact(p, mesh, planes, pad, minAng, camX, camY, camZ, withColor, mesh2 = null, sweep = false) {
     const pos = p.pos, rad = p.rad, alive = p.alive, mats = p.mats, cols = p.cols;
     let out = mesh.instanceMatrix.array, outC = withColor ? mesh.instanceColor.array : null;
     const lod2 = mesh2 && p.lod ? p.lod.dist2 : Infinity;
@@ -723,6 +737,7 @@ export class Instancer {
           if (planes[i] * x + planes[i + 1] * y + planes[i + 2] * z + planes[i + 3] < -r) { inside = false; break; }
         }
         if (!inside) continue;
+        if (sweep && sweepOut(x, y, z, rad[s] + 1)) continue;   // SV29: its shadow cannot reach the view
         if (roofLow && camY < y - ROOF_BELOW && dx * dx + dz * dz > ROOF_DIST2) continue; // behind its parapet
         if (minAng > 0) {
           const d2 = dx * dx + dy * dy + dz * dz;
@@ -749,11 +764,13 @@ export class Instancer {
       k++;
     }
     mesh.count = k;
+    if (withColor) showIf(mesh, k);   // DC29: the main set only (the shadow sets are shown by the shadow-pass listener)
     const im = mesh.instanceMatrix;
     im.clearUpdateRanges(); im.addUpdateRange(0, k * 16); im.needsUpdate = true;
     if (outC) { const ic = mesh.instanceColor; ic.clearUpdateRanges(); ic.addUpdateRange(0, k * 3); ic.needsUpdate = true; }
     if (mesh2) {
       mesh2.count = k2;
+      if (withColor) showIf(mesh2, k2);
       const im2 = mesh2.instanceMatrix;
       im2.clearUpdateRanges(); im2.addUpdateRange(0, k2 * 16); im2.needsUpdate = true;
       if (outC2) { const ic2 = mesh2.instanceColor; ic2.clearUpdateRanges(); ic2.addUpdateRange(0, k2 * 3); ic2.needsUpdate = true; }
@@ -813,11 +830,16 @@ export class Instancer {
         planesFrom(sun.shadow.camera, _pl2);
       }
     }
+    if (this._dcVer !== DC.ver) { this._dcVer = DC.ver; for (const p of this.pools.values()) p.dirty = true; }   // DC29 A/B toggle
     for (const p of this.pools.values()) {
       if (!p.pos) continue;
       if (p.n === 0) {
         if (p.mesh.count) { p.mesh.count = 0; }
+        showIf(p.mesh, 0);
+        // DC29: and the LOD sets, which kept their last count (stale instances) once a pool emptied
+        if (DC29 && p.mesh2 && p.mesh2.count) { p.mesh2.count = 0; showIf(p.mesh2, 0); }
         if (p.shadow && p.shadow.count) p.shadow.count = 0;
+        if (DC29 && p.shadow2 && p.shadow2.count) p.shadow2.count = 0;
         p.dirty = p.sdirty = false;
         continue;
       }
@@ -827,8 +849,11 @@ export class Instancer {
         p.dirty = false;
       }
       mainInst += p.mesh.count + (p.mesh2 ? p.mesh2.count : 0);
-      if (p.shadow && shadowOn && (smoved || p.sdirty)) {
-        if (CULL) this._compact(p, p.shadow, _pl2, PAD_SHADOW, 0, cx, cy, cz, false, p.shadow2);
+      // SV29: while the sweep is live the shadow set depends on the view as well, so it follows the camera too
+      const sw = SWEEP.ok && SWEEP.frame === (this.engine?.frames | 0);
+      if (p.shadow && shadowOn && (smoved || p.sdirty || (sw && moved) || sw !== !!p.swept)) {
+        p.swept = sw;
+        if (CULL) this._compact(p, p.shadow, _pl2, PAD_SHADOW, 0, cx, cy, cz, false, p.shadow2, sw);
         else this._compact(p, p.shadow, null, 0, 0, cx, cy, cz, false, p.shadow2);
         p.sdirty = false;
       }

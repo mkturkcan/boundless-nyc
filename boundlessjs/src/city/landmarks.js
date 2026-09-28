@@ -44,6 +44,12 @@ const CU_LOGGIA = 0x8b8069;    // loggia rear wall + soffit: always in shadow
 const CU_GRAN = 0x9d968a;      // granite podium and the frontal stair, cooler
 const CU_DOME = 0xb0a898;      // the saucer dome, warm granite grey
 const CU_INK = 0x35302a;       // incised inscriptions
+// `?lowzf=0`: Low Library's anta capitals back in the plane of the anta face (the z-fight the owner saw, for an A/B)
+const LOWZF = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('lowzf') === '0');
+// NY28 (owner 2026-09-27, Bryant Park and the library for the new teaser): the library's Vermont marble takes the campus
+// stone detail (ashlar coursing and grain, mean-preserving: the authored marble white stays), the trim the granite grain.
+// The survey still read it as one flat grey block. `?ny28=0` restores the plain colours.
+const NY28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ny28') === '0');
 
 /* ---- METAL and GLASS, rebuilt 2026-09-09 (docs/notes/facades-r6.md section 0/2).
    Critic r5 #2 and #21: no glass landmark reflects anything and the Chrysler
@@ -727,7 +733,10 @@ export const BUILDERS = {
     for (let i = 0; i < nCol; i++) ionicColumn(trim, bayC - span / 2 + i * gap, POD, zF - 1.05, 10.67, 0.61);
     for (const s of [-1, 1]) {                                        // antae
       lime.add(box(1.1, CAP - POD, zF - zBack, 0, { x: bayC + s * (halfBay - 0.55), y: POD, z: (zF + zBack) / 2 }));
-      trim.add(box(1.42, 0.5, 1.42, 0, { x: bayC + s * (halfBay - 0.55), y: CAP - 0.5, z: zF - 0.71 }));
+      // the anta capital projects 8 cm: its face sat exactly in the anta's and the wall's plane (zF), granite against
+      // limestone, and flickered under the ends of the architrave inscription (owner 2026-09-27: "small bits near the
+      // low library text that are z fighting")
+      trim.add(box(1.42, 0.5, 1.42, 0, { x: bayC + s * (halfBay - 0.55), y: CAP - 0.5, z: LOWZF ? zF - 0.63 : zF - 0.71 }));
     }
     for (const s of [-1, 0, 1]) {                                     // three bronze doorways
       brz.add(box(2.5, 5.4, 0.3, 0, { x: bayC + s * 5.0, y: POD + 0.1, z: zBack + 0.16 }));
@@ -1917,6 +1926,23 @@ export const BUILDERS = {
       archOpening(trim, glass, FR + 0.35, ex, baseH + 2.2, 2.6, 2.1, { dep: 0.5, vous: 9, seg: 12 });
       trim.add(box(5.9, 1.15, D * 0.31, 0, { x: ex, y: cornY + 1.0, z: FR - D * 0.15 + 0.4 }));
     }
+    // NY28: the stack wall on the park side (local -Z faces Bryant Park). That elevation is the library's book stacks, a
+    // long run of tall narrow lights in tiers between marble piers above the terrace; the block was a blank marble wall
+    // at the end of every view down the park
+    if (NY28) {
+      const rz = -D * 0.5, bw = 3.0, nb = Math.floor((W * 0.72) / bw);
+      const x0r = -((nb - 1) * bw) / 2, y0r = podium + 3.2, tiers = 5, th = (cornY - 2.8 - y0r) / tiers;
+      for (let i = 0; i < nb; i++) {
+        const bx = x0r + i * bw;
+        for (let t = 0; t < tiers; t++) {
+          const ty = y0r + t * th;
+          glass.add(box(1.25, th - 0.9, 0.16, 0, { x: bx, y: ty + 0.45, z: rz - 0.05 }));
+          trim.add(box(1.55, 0.22, 0.34, 0, { x: bx, y: ty + 0.25, z: rz - 0.12 }));   // sill
+        }
+      }
+      // the terrace cornice band over the stack lights' base
+      trim.add(box(W * 0.74, 0.5, 0.5, 0, { y: y0r - 0.7, z: rz - 0.2 }));
+    }
     // roof balustrade along the avenue front
     {
       const rz = FR - 0.2, ry = cornY + 2.55;
@@ -1927,8 +1953,8 @@ export const BUILDERS = {
       trim.add(box(W * 0.99, 0.22, 1.14, 0, { y: ry + 2.86, z: rz }));
     }
 
-    stone.into(r, MB, { rough: 0.86, flat: false });
-    trim.into(r, MB_L, { rough: 0.82 });
+    stone.into(r, MB, NY28 ? { rough: 0.86, flat: false, stone: { set: 'climestone', amt: 0.72, nrm: 0.75, rgh: 0.35, ashlar: 0.9 } } : { rough: 0.86, flat: false });
+    trim.into(r, MB_L, NY28 ? { rough: 0.82, stone: { set: 'cgranite', amt: 0.35, nrm: 0.45, rgh: 0.25, scale: 0.6 } } : { rough: 0.82 });
     glass.into(r, 0x2b3138, { rough: 0.18, metal: 0.1 });
     dark.into(r, 0x3a3126, { rough: 0.5, metal: 0.25 });  // bronze doors, the lions
     // the frieze legend, incised in the centre attic

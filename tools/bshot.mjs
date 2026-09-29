@@ -77,6 +77,7 @@ const PRESETS = {
   fleetRow:    L(396, 194, 2.6, 396, 215, -0.06),           // 21 m: six or seven kinds
   fleetOblq:   L(408, 203.5, 2.0, 396, 215, -0.05),         // 17 m from the right: 3/4 on a whole group
   fleetHigh:   L(396, 184, 15, 396, 217, -0.43),            // 33 m out, 15 m up: the whole lineup
+  fleetTop:    L(396, 207, 7.5, 396, 215, -0.80),           // 8 m out, 7.5 m up, 46 deg down: roofs (RG32 roof glass)
   // nadir plates: up-axis, heading, spacing and RELATIVE SCALE in one frame, and
   // the only framing that survives a loaded machine (one tile under the camera,
   // no horizon to stream). A/B/C cover the 15 slots in three overlapping thirds.

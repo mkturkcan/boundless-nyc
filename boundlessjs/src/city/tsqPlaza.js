@@ -7,7 +7,8 @@
 // bridged across the plaza where CSCL leaves a gap), and the plaza part becomes matId 16, the paver branch of the
 // ground shader (materials.js). Paint inside the plaza goes. `?tp28=0` restores the compiled ground.
 import * as THREE from 'three';
-import { ENV, applyLightTrim as LT } from '../world/materials.js';
+import { ENV, applyLightTrim as LT, applySkyGlass } from '../world/materials.js';
+import { TQ32 } from '../world/tq32.js';   // TQ32: the TKTS risers as backlit red glass (?tq32=0)
 import { COLLIDERS } from './colliders.js';
 import { chairGeo31, tableGeo31 } from './bryantParkKit.js';   // the same folding bistro set, in the Alliance's red
 import { frameAt, addPieces, station, duffyMonument, cohanMonument, ticketTotem, subwayEntrance, redKiosk, foodCart, compactor, marquee, posterCube, streetKiosk } from './tsqKit.js';   // TF32
@@ -598,6 +599,7 @@ export function tpStepsOwner(ox, oz) {
   return TP28 && DUFFY.c[0] >= ox && DUFFY.c[0] < ox + 512 && DUFFY.c[1] >= oz && DUFFY.c[1] < oz + 512;
 }
 let _stepMats = null;
+const TKY = { value: new THREE.Vector2(0, 1) };   // TQ32: the steps' ground height and rise, for the risers' backlight
 function stepMats() {
   if (_stepMats) return _stepMats;
   // the risers: red glass lit from behind, a light source after dark (the board material's night lift, redder)
@@ -627,6 +629,32 @@ function stepMats() {
       .replace('#include <fog_fragment>', 'gl_FragColor.rgb *= mix(0.9, 2.2, bbNight);\n#include <fog_fragment>');
   };
   booth.customProgramCacheKey = () => 'tkts-booth';
+  // TQ32 (owner 2026-09-29, teaser 3: "the materials need to be PBR ... It seems rather unlit and basic"): the unlit flat
+  // red above read as painted planes in t3DayDuffy. The risers are red glass lit from behind (r01, r04): a glossy face
+  // that mirrors the sky and catches the sun by day (applySkyGlass), over the backlight, brightest at each riser's foot
+  // where the LED strip is and dimmer toward the nosing shadow; the same levels by night. `?tq32=0` keeps the flat red.
+  if (TQ32) {
+    const r2 = new THREE.MeshStandardMaterial({ color: 0x160202, roughness: 0.07, metalness: 0.0, emissive: 0xa00b08 });
+    r2.onBeforeCompile = (sh) => {
+      sh.uniforms.bbNight = ENV.night;
+      sh.uniforms.tkY = TKY;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying float vTkY;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvTkY = (modelMatrix * vec4(transformed, 1.0)).y;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float bbNight; uniform vec2 tkY; varying float vTkY;')
+        .replace('#include <emissivemap_fragment>', `{
+          float fy = fract((vTkY - tkY.x) / max(tkY.y, 0.01));
+          float glow = mix(1.3, 0.74, smoothstep(0.0, 0.8, fy)) * (1.0 - 0.3 * smoothstep(0.88, 1.0, fy));
+          totalEmissiveRadiance *= glow * mix(0.55, 2.2, bbNight);
+        }
+        #include <emissivemap_fragment>`);
+    };
+    r2.customProgramCacheKey = () => 'tkts-riser-tq32';
+    applySkyGlass(r2, { f0: 0.05, tint: [1.0, 0.94, 0.94], rough: 0.04, aureole: 1.2 });
+    _stepMats = { riser: r2, tread, steel, booth };
+  }
+  if (_stepMats) return _stepMats;
   return (_stepMats = { riser, tread, steel, booth });
 }
 // the steps into `group` (world coords), standing on the ground at height y0
@@ -636,6 +664,7 @@ export function tpBuildSteps(group, y0) {
   const [cx, cz] = DUFFY.c, [ax, az] = DUFFY.a, bx = -az, bz = ax;   // a: up the steps (north), b: across (east)
   const W = DUFFY.halfW, n = DUFFY.n, dRun = DUFFY.run / n, dRise = DUFFY.top / n, s0 = -(DUFFY.run + DUFFY.land) / 2;
   const P = (s, t, y) => [cx + ax * s + bx * t, y0 + y, cz + az * s + bz * t];
+  TKY.value.set(y0, dRise);   // TQ32
   const rise = [], tread = [], steel = [], booth = [];
   // a quad (A, B, C, D counter-clockwise seen from its front) as two triangles
   const quad = (arr, A, B, C, D) => arr.push(...A, ...B, ...C, ...A, ...C, ...D);

@@ -757,6 +757,12 @@ const SHADOW_S = 150;
 // each step (frames 33, 58, 84). The key sun now takes its shadow from the far map over the last 9 % of the near box and
 // beyond it: distant shadows at full strength, softer with the far map's texels, and no edge to pop. `?sc31=0` restores.
 const SC31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sc31') === '0');
+// FS32 (owner 2026-09-29 on mLowAerial: "serious shimmering due to shadow jittering ... a precision problem of some
+// sort?"): the far cascade snapped its light to its own 1.1-2.5 m texel, but it aimed at the NEAR cascade's target,
+// which snaps to the near map's 7-34 cm texel. An ortho map's texel grid is centred on the ray through its target, so
+// every far re-render laid the grid at a new fraction of a far texel, and the far map's shadows and its acne on grazing
+// roofs moved each time it re-rendered. The far light now aims at its own snapped target. `?fs32=0` restores.
+const FS32 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('fs32') === '0');
 if (SC31) {
   const lf = THREE.ShaderChunk.lights_fragment_begin;
   const line = 'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
@@ -1076,7 +1082,9 @@ export class Engine {
     this.sunTarget = new THREE.Object3D();
     this.scene.add(this.sunTarget);
     this.sun.target = this.sunTarget;
-    this.sun2.target = this.sunTarget;
+    // FS32: the far cascade aims at its own texel-snapped target (updateSun)
+    if (FS32) { this.sunTarget2 = new THREE.Object3D(); this.scene.add(this.sunTarget2); this.sun2.target = this.sunTarget2; }
+    else this.sun2.target = this.sunTarget;
     this.scene.add(this.hemi, this.bounce, this.sun, this.sun2);
     // shadow-pass hooks: the renderer's single shadowMap.render(lights) call is
     // split into the near cascade and the (cached) far cascade so systems can
@@ -1596,6 +1604,7 @@ export class Engine {
         this.sun2.position.set(0, 0, 0)
           .addScaledVector(this._lsRight, r2).addScaledVector(this._lsUp, u2)
           .addScaledVector(sunDir, d).addScaledVector(sunDir, 2600);
+        if (this.sunTarget2) { this.sunTarget2.position.copy(this.sun2.position).addScaledVector(sunDir, -2600); this.sunTarget2.updateMatrixWorld(); }
         this.sun2.shadow.needsUpdate = true;
         this._farShadowAt.set(tx, ty, tz);
         this._farShadowDir.copy(sunDir);

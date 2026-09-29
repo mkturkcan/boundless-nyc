@@ -244,6 +244,14 @@ class Explorer {
 // Keys are [lon, lat, alt] so a path can be written from a map; alt is metres
 // above the terrain under that point unless the path sets "abs": true.
 // ---------------------------------------------------------------------------
+// PG32 (owner 2026-09-29 on mLowAerial: "serious shimmering due to shadow jittering"): the path camera followed the
+// terrain through a low-pass that moved it a quarter of the way on every CALL, and a film frame is sixteen calls (the
+// step and fifteen frozen accumulation samples, AC26). Where the ground under the camera changed during the step, the
+// samples of one frame were taken from creeping heights and the accumulation restarted part way through them: from
+// frame 81 of mLowAerial the sunlit roofs came out 3 % dark on every second or third frame (flat roofs only, the walls
+// and the sky unchanged; gone with ?accum=0, unchanged with ?ao=0 and ?sc31=0). The low-pass now runs on time: a frozen
+// sample (dt = 0) holds the camera where the step put it. `?pg32=0` restores.
+const PG32 = Q.get('pg32') !== '0';
 class PathCam {
   constructor() {
     this.pos = new THREE.Vector3(px, py, pz);
@@ -286,10 +294,12 @@ class PathCam {
     else a = x - f / 2;
     return a / norm;
   }
-  groundAt(x, z, prev) {
+  groundAt(x, z, prev, dt) {
     const g = streamer.terrainAt(x, z);
     if (g === null || !isFinite(g)) return prev;
-    return prev === null ? g : prev + (g - prev) * 0.25;   // tile-seam low-pass
+    if (prev === null) return g;
+    // tile-seam low-pass; PG32: by time (0.25 a 30 fps frame, as before at one call a frame), so dt = 0 holds
+    return prev + (g - prev) * (PG32 ? 1 - Math.pow(0.75, Math.max(0, dt) * 30) : 0.25);
   }
   update(dt) {
     if (this.path) {
@@ -299,8 +309,8 @@ class PathCam {
       const p = this.curve.getPointAt(u);
       const l = this.lookCurve.getPointAt(Math.min(1, u + (this.path.lookAhead ?? 0)));
       if (!this.path.abs) {
-        this.ground = this.groundAt(p.x, p.z, this.ground);
-        this.lookGround = this.groundAt(l.x, l.z, this.lookGround);
+        this.ground = this.groundAt(p.x, p.z, this.ground, dt);
+        this.lookGround = this.groundAt(l.x, l.z, this.lookGround, dt);
       }
       this.pos.set(p.x, p.y + (this.path.abs ? 0 : (this.ground ?? 0)), p.z);
       const ly = l.y + (this.path.abs ? 0 : (this.lookGround ?? this.ground ?? 0));

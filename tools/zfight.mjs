@@ -98,6 +98,9 @@ const CLOSE = {
   cwTerrace:   L(-73.96205, 40.80740, 1.7, -73.96205, 40.80830, 4.0, 'golden', 'College Walk to the Low steps'),
   cwLawn:      L(-73.96250, 40.80790, 1.5, -73.96180, 40.80800, 0.3, 'golden', 'south lawn edge vs brick paving'),
   cwPlaza:     L(-73.96205, 40.80835, 8.0, -73.96205, 40.80770, 0.2, 'golden', 'off the Low plateau down the pad'),
+  // owner 2026-09-27: "small bits near the low library text that are z fighting"
+  cuLowFront:  L(-73.962013, 40.807615, 13.0, -73.96205, 40.80862, 26, 'golden', 'Low portico: architrave inscription, anta capitals'),
+  cuLowAttic:  L(-73.96188, 40.80812, 12.0, -73.96205, 40.80862, 22, 'golden', 'Low attic inscription and the cornices'),
   // --- LoD boundary + water
   lodEdge:     W(2128, -2765, 300, 2900, -3400, 0.0, 'day', 'near tiles -> macro ground at the seam'),
   lodEdge2:    W(0, 0, 420, 1400, 1900, 0.0, 'day', 'midtown, another LoD boundary bearing'),
@@ -644,7 +647,11 @@ let server = null;
 if (!port) {
   port = String(5400 + Math.floor(Math.random() * 3000));
   const viteBin = path.join(bdir, 'node_modules', 'vite', 'bin', 'vite.js');
-  server = spawn(process.execPath, [viteBin, '--port', port, '--strictPort', '--host', '127.0.0.1'], { cwd: bdir, stdio: 'ignore' });
+  // NYC_NOHMR=1 as tools/bshot.mjs and tools/ad/record.mjs pass it (vite.config.js: no HMR, no WebSocket, NO FILE WATCHER).
+  // Without it this Vite crawled the whole boundlessjs/ tree with its watcher, the data/ tile sets and public/tiles_dev*
+  // junctions included, and answered a module request in 6-8 s at best: both fTraffic runs of 2026-09-29 (12:48 and
+  // 13:23) timed out booting ("page never reached record mode") while a bshot Vite beside them answered at once.
+  server = spawn(process.execPath, [viteBin, '--port', port, '--strictPort', '--host', '127.0.0.1'], { cwd: bdir, stdio: 'ignore', env: { ...process.env, NYC_NOHMR: '1' } });
   await sleep(6000);   // vite needs longer than 2.5 s to bind on a loaded machine
 }
 const browser = await chromium.launch({

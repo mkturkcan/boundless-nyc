@@ -11,7 +11,8 @@
 // all the pieces of a tile cost one draw per material. The signs come from one 2048 x 1024 canvas painted once (and
 // again when the web fonts land): lit signs (neon, marquee, fascia) unlit and brighter after dark, printed faces lit.
 import * as THREE from 'three';
-import { ENV, applyLightTrim as LT } from '../world/materials.js';
+import { ENV, applyLightTrim as LT, applyStoneDetail, applySkyMetal } from '../world/materials.js';
+import { TQ32 } from '../world/tq32.js';   // TQ32: Father Duffy as a figure in patinated bronze and polished granite (?tq32=0)
 import { loadAdFonts, tdraw, fit, rrect } from './adArt.js';
 
 // ---------------------------------------------------------------- materials
@@ -34,6 +35,13 @@ export function kitMats() {
     flower: S({ color: 0xc23a57, roughness: 0.9, flatShading: true }),
     leaf: S({ color: 0x36592a, roughness: 0.95, flatShading: true }),
   };
+  if (TQ32) {
+    // TQ32 (see duffyMonumentTQ32): satin brown statuary bronze with its patina, polished speckled granite
+    _M.bronzeTQ = applySkyMetal(LT(tq32Bronze(new THREE.MeshStandardMaterial({ color: 0x4e3a28, roughness: 0.42, metalness: 0.5 }))), { tint: [0.40, 0.29, 0.19], rough: 0.32, brush: 0.0, gain: 0.14 });   // a2: gain 0.42 read as polished brass
+    _M.graniteP = applyStoneDetail(S({ color: 0x8a8781, roughness: 0.34, metalness: 0.02 }), 'cgranite', { amt: 0.75, nrm: 0.45, rgh: 0.35, scale: 0.45 });
+    _M.graniteDP = applyStoneDetail(S({ color: 0x6d6a64, roughness: 0.40, metalness: 0.02 }), 'cgranite', { amt: 0.8, nrm: 0.5, rgh: 0.35, scale: 0.45 });
+    _M.steelP = applySkyMetal(tq32Panels(S({ color: 0x9aa0a6, roughness: 0.32, metalness: 0.6 })), { tint: [0.50, 0.52, 0.55], rough: 0.22, brush: 0.55, gain: 0.16 });
+  }
   return _M;
 }
 
@@ -320,7 +328,155 @@ function figure(k = 1, cohan = false) {
   } else P.push(box(s(0.2), s(0.26), s(0.06), s(0.2), s(1.3), s(0.24), 0, -0.4));
   return P;
 }
+// TQ32 (owner 2026-09-29: "the materials need to be PBR and more detailed with weathering"): the recruiting station's
+// stainless skin (r07, r13): 1.22 m x 1.53 m brushed panels with dark seams, each panel a
+// slightly different tone, the foot grimed from the plaza, a brushed sky reflection (applySkyMetal) over it. TQP carries
+// the station's ground height, set when it is built. The TF32 station was one flat grey box.
+const TQP = { value: 0 };
+function tq32Panels(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev?.call(mat, sh, r);
+    sh.uniforms.tqP0 = TQP;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTqPW; varying vec3 vTqPN;')
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+        vTqPW = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vTqPN = normalize(mat3(modelMatrix) * objectNormal);`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform float tqP0; varying vec3 vTqPW; varying vec3 vTqPN; float tqSeam = 0.0;
+        float tqPH(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          vec3 n = normalize(vTqPN);
+          float wallF = 1.0 - smoothstep(0.5, 0.8, abs(n.y));
+          vec2 t2 = normalize(vec2(-n.z, n.x) + vec2(1e-5, 0.0));
+          float yl = vTqPW.y - tqP0;
+          vec2 q = vec2(dot(vTqPW.xz, t2) / 1.22, (yl - 0.02) / 1.53);
+          vec2 fq = fract(q), aq = max(fwidth(q), vec2(1e-4));
+          float seam = max(1.0 - smoothstep(0.0, aq.x * 1.5 + 0.005, min(fq.x, 1.0 - fq.x)),
+                           1.0 - smoothstep(0.0, aq.y * 1.5 + 0.004, min(fq.y, 1.0 - fq.y)));
+          seam *= wallF * smoothstep(0.09, 0.03, max(aq.x, aq.y));
+          tqSeam = seam;
+          float pt = tqPH(floor(q)) - 0.5;
+          float grime = smoothstep(0.75, 0.0, yl) * wallF;
+          diffuseColor.rgb *= (1.0 + pt * 0.10) * (1.0 - seam * 0.6) * (1.0 - grime * 0.45);
+        }`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.62, tqSeam);`);
+  };
+  const key = mat.customProgramCacheKey?.bind(mat);
+  mat.customProgramCacheKey = () => (key ? key() : '') + '|tq32panels';
+  mat.needsUpdate = true;
+  return mat;
+}
+// ---------------------------------------------------------------- TQ32: Father Duffy as a figure, in bronze and granite
+// Owner 2026-09-29 on teaser 3 ("building primitives need a lot more detail, the materials need to be PBR and more
+// detailed with weathering"): t3DayDuffy is an arc round this statue at 13 m, where the TF32 figure (boxes and plain
+// cylinders, ~2.3 m tall, 280 px high in the 2560 x 1440 frame) read as grey blocks. After r03 / r04 (Commons): a bareheaded
+// figure in a belted, knee-length trench coat flaring to the hem, puttees and boots, both hands holding a book at the
+// waist, a helmet at his feet on an uneven bronze ground; dark brown bronze with a satin sheen and green-brown patina where
+// rain sits; the pedestal and the Celtic cross in speckled grey granite, polished. `?tq32=0` keeps the TF32 pieces.
+// patinated statuary bronze: a satin brown metal, verdigris crust on the up-facing folds and in blotches, worn lighter on
+// the raised grain; the crust is rough and near-dielectric
+function tq32Bronze(mat) {
+  const prev = mat.onBeforeCompile;
+  mat.onBeforeCompile = (sh, r) => {
+    prev?.call(mat, sh, r);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vTqBW; varying vec3 vTqBN;')
+      .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+        vTqBW = (modelMatrix * vec4(transformed, 1.0)).xyz;
+        vTqBN = normalize(mat3(modelMatrix) * objectNormal);`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        varying vec3 vTqBW; varying vec3 vTqBN;
+        float tqPat = 0.0;
+        float tqH3(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+        float tqN3(vec3 x) {
+          vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(mix(tqH3(i), tqH3(i + vec3(1, 0, 0)), f.x), mix(tqH3(i + vec3(0, 1, 0)), tqH3(i + vec3(1, 1, 0)), f.x), f.y),
+                     mix(mix(tqH3(i + vec3(0, 0, 1)), tqH3(i + vec3(1, 0, 1)), f.x), mix(tqH3(i + vec3(0, 1, 1)), tqH3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+        }`)
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          vec3 wn = normalize(vTqBN);
+          float n1 = tqN3(vTqBW * 7.0), n2 = tqN3(vTqBW * 23.0 + 3.1);
+          float up = clamp(wn.y, 0.0, 1.0);
+          float fw = length(fwidth(vTqBW));
+          float nv = smoothstep(0.06, 0.012, fw);              // the fine grain only while it is over a few pixels
+          tqPat = smoothstep(0.58, 0.9, n1 * 0.75 + mix(0.5, n2, nv) * 0.25) * (0.15 + 0.65 * up * up);
+          // run-off: the crust also streaks down the verticals under the ledges
+          tqPat = max(tqPat, smoothstep(0.62, 0.9, tqN3(vec3(vTqBW.x * 14.0, vTqBW.y * 1.6, vTqBW.z * 14.0))) * (1.0 - abs(wn.y)) * 0.55);
+          diffuseColor.rgb *= 0.86 + 0.28 * mix(0.5, n2, nv);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.105, 0.150, 0.118), tqPat * 0.45);
+        }`)
+      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.78, tqPat);`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+        metalnessFactor = mix(metalnessFactor, 0.12, tqPat);`);
+  };
+  const key = mat.customProgramCacheKey?.bind(mat);
+  mat.customProgramCacheKey = () => (key ? key() : '') + '|tq32bronze';
+  mat.needsUpdate = true;
+  return mat;
+}
+// a capsule of radius r from a to b (world-free piece frame)
+function capAB(r, a, b, seg = 12) {
+  const A = new THREE.Vector3(...a), B = new THREE.Vector3(...b), d = new THREE.Vector3().subVectors(B, A), L = d.length();
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  return [new THREE.CapsuleGeometry(r, Math.max(L, 1e-3), 4, seg), new THREE.Matrix4().compose(A.add(B).multiplyScalar(0.5), q, new THREE.Vector3(1, 1, 1))];
+}
+// the figure at 1:1 x k, facing +z, standing on its bronze ground (0 .. 0.12): 2.13 m to the crown of the head
+function duffyFigure(k = 1) {
+  const P = [];
+  // the sculpted ground, uneven: a ten-sided slab, a low mound under the feet
+  P.push([new THREE.CylinderGeometry(0.52, 0.57, 0.12, 10), mtx(0, 0.06, 0.02, 1, 1, 0.82)]);
+  P.push([new THREE.SphereGeometry(0.34, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), mtx(-0.05, 0.1, 0.05, 1.1, 0.16, 0.9)]);
+  // boots and puttee-wrapped shins
+  for (const s of [-1, 1]) {
+    P.push(capAB(0.068, [s * 0.12, 0.19, -0.05], [s * 0.125, 0.18, 0.13], 10));
+    P.push([new THREE.CylinderGeometry(0.084, 0.072, 0.5, 12), mtx(s * 0.12, 0.44, 0.0)]);
+    for (let b = 0; b < 4; b++) P.push([new THREE.TorusGeometry(0.078 + b * 0.002, 0.008, 4, 14), mtx(s * 0.12, 0.28 + b * 0.09, 0.0, 1, 1, 1, 0, Math.PI / 2 + 0.18 * s, 0)]);
+  }
+  // the trench coat: hem flared at 0.60 m, belted at 1.10-1.18, chest, sloping shoulders, collar; an elliptical section
+  const coat = [[0.001, 0.585], [0.385, 0.59], [0.40, 0.63], [0.36, 0.78], [0.31, 0.95], [0.262, 1.08], [0.276, 1.10], [0.278, 1.175],
+    [0.262, 1.19], [0.279, 1.34], [0.296, 1.49], [0.302, 1.585], [0.278, 1.665], [0.212, 1.725], [0.128, 1.765], [0.094, 1.80],
+    [0.084, 1.845], [0.001, 1.85]].map(([r, y]) => new THREE.Vector2(r, y));
+  P.push([new THREE.LatheGeometry(coat, 30), mtx(0, 0, 0, 1, 1, 0.64)]);
+  P.push(box(0.075, 0.07, 0.03, 0, 1.105, 0.172));                                   // the belt buckle
+  // arms: shoulder -> elbow -> the hands together at the book, sleeves slightly bent out
+  for (const s of [-1, 1]) {
+    P.push(capAB(0.08, [s * 0.278, 1.6, 0.0], [s * 0.305, 1.30, 0.05]));
+    P.push(capAB(0.07, [s * 0.305, 1.30, 0.05], [s * 0.10, 1.17, 0.205]));
+    P.push([new THREE.SphereGeometry(0.052, 12, 8), mtx(s * 0.078, 1.16, 0.228, 1, 0.82, 1.25)]);   // the hand
+  }
+  P.push(box(0.17, 0.23, 0.048, 0, 1.05, 0.245, 0, -0.22));                          // the book, held at the waist
+  // neck and bare head: skull, jaw, nose, ears
+  P.push([new THREE.CylinderGeometry(0.054, 0.06, 0.12, 12), mtx(0, 1.885, 0.0)]);
+  P.push([new THREE.SphereGeometry(0.118, 18, 14), mtx(0, 2.0, -0.005, 0.9, 1.1, 1.0)]);
+  P.push([new THREE.SphereGeometry(0.086, 14, 10), mtx(0, 1.93, 0.035, 0.95, 0.85, 1.0)]);
+  P.push([new THREE.CylinderGeometry(0.0, 0.021, 0.055, 6), mtx(0, 1.975, 0.118, 1, 1, 1, 0, Math.PI / 2, 0)]);
+  for (const s of [-1, 1]) P.push([new THREE.SphereGeometry(0.03, 8, 6), mtx(s * 0.106, 1.99, 0.0, 0.45, 1.0, 0.75)]);
+  // the helmet at his feet
+  P.push([new THREE.SphereGeometry(0.13, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), mtx(0.33, 0.115, -0.03, 1, 0.62, 1)]);
+  P.push([new THREE.CylinderGeometry(0.18, 0.18, 0.014, 16), mtx(0.33, 0.12, -0.03)]);
+  return P.map(([g, m]) => [g, new THREE.Matrix4().makeScale(k, k, k).multiply(m)]);
+}
+function duffyMonumentTQ32() {
+  // the Celtic cross (r03, r04): the shaft about as wide as the block, arms at 4.35 m, the ring behind the arms with its
+  // four bosses in the angles, a plinth under the shaft; chamfered with thin edge boxes so the arrises catch the light
+  const cross = [box(1.15, 6.3, 0.5, 0, 0, -1.0), box(2.5, 0.85, 0.5, 0, 4.35, -1.0), box(1.35, 0.35, 0.62, 0, 0, -1.0)];
+  cross.push([new THREE.TorusGeometry(1.0, 0.17, 10, 40), mtx(0, 4.78, -1.0, 1, 1, 1.25)]);
+  for (const [bx, by] of [[-0.71, 4.07], [0.71, 4.07], [-0.71, 5.49], [0.71, 5.49]]) cross.push([new THREE.SphereGeometry(0.13, 14, 10), mtx(bx, by, -0.72, 1, 1, 0.55)]);
+  const ped = [box(2.6, 0.3, 2.9, 0, 0, -0.35), box(2.0, 0.25, 2.3, 0, 0.3, -0.35), box(1.45, 1.85, 1.45, 0, 0.55), box(1.6, 0.2, 1.6, 0, 2.4),
+    box(1.52, 0.08, 1.52, 0, 0.55)];
+  const fig = duffyFigure(1.04).map(([g, m]) => [g, mtx(0, 2.6, 0.05).multiply(m)]);
+  return { graniteDP: cross, graniteP: ped, bronzeTQ: fig };
+}
 export function duffyMonument() {
+  if (TQ32) return duffyMonumentTQ32();
   // r04 (front, 2011): a stepped granite plinth 2.6 m wide, a 1.45 m block to 2.6 m with the figure on it in a belted
   // greatcoat, and right behind him the Celtic cross, its shaft about as wide as the block, the arms and the ring round
   // his head, its top 0.5-1 m over it (6.3 m)
@@ -355,6 +511,7 @@ export function station(ring, y) {
   const n = ring.length, cx = ring.reduce((a, p) => a + p[0], 0) / n, cz = ring.reduce((a, p) => a + p[1], 0) / n;
   const steel = [], glass = [], sign = [];
   const H = 4.6;
+  TQP.value = y;   // TQ32: the panels' ground line
   for (let i = 0; i < n; i++) {
     const [x1, z1] = ring[i], [x2, z2] = ring[(i + 1) % n], L = Math.hypot(x2 - x1, z2 - z1);
     let nx = -(z2 - z1) / L, nz = (x2 - x1) / L;
@@ -371,7 +528,7 @@ export function station(ring, y) {
   const roof = new THREE.ExtrudeGeometry(shape, { depth: 0.3, bevelEnabled: false });
   roof.rotateX(-Math.PI / 2); roof.translate(0, y + H, 0);
   steel.push([roof, I4]);
-  return { steel, glass, sign };
+  return TQ32 ? { steelP: steel, glass, sign } : { steel, glass, sign };
 }
 // a theatre marquee: w x 1.6 m, its back on the wall, projecting d (+z out); front and ends lit, bulbs underneath
 export function marquee(w = 16, d = 2.2) {

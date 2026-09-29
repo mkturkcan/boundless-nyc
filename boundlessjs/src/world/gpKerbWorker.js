@@ -12,12 +12,12 @@
 // the main thread with a 34 m radius scan and blocked frames for about a second per tile (the fps sample read 0).
 const CELL = 4;
 if (typeof self !== 'undefined' && typeof self.postMessage === 'function') self.onmessage = (e) => {
-  const { id, pos, mat } = e.data;
+  const { id, pos, mat, gp32 } = e.data;
   const t0 = performance.now();
-  const r = kerbFrame(pos, mat);
-  self.postMessage({ id, out: r.out, segs: r.segs, tris: r.tris, quads: r.quads, ms: performance.now() - t0 }, [r.out.buffer]);
+  const r = kerbFrame(pos, mat, { gp32: !!gp32 });
+  self.postMessage({ id, out: r.out, segs: r.segs, tris: r.tris, quads: r.quads, ties: r.ties, ghosts: r.ghosts, ms: performance.now() - t0 }, [r.out.buffer]);
 };
-export function kerbFrame(P, M) {
+export function kerbFrame(P, M, opts = {}) {
   const nv = M.length;
   const out = new Uint16Array(nv * 4);
   // kerb segments: the longest horizontal edge of each kerb-face triangle
@@ -182,7 +182,162 @@ export function kerbFrame(P, M) {
   // vertices store the distance to both (x, y: cm + 1; 0 = none within 12 m), exact under interpolation. The shader heaps
   // the loose stone along the edge, darkens the band where the chairs stand and keeps the middle trodden.
   gravelEdges(P, M, out);
-  return { out, segs: ns, tris, quads };
+  const g32 = opts.gp32 ? gp32Ties(P, M, out, { sx, sz, ex, ez, cnt, lst, minx, minz, gw, gh }) : { ties: 0, ghosts: 0 };
+  return { out, segs: ns, tris, quads, ties: g32.ties, ghosts: g32.ghosts };
+}
+// GP32 (owner 2026-09-29 on the fTraffic take: "Asphalt decals/material have clear z fighting that's terrible").
+// Measured cause (docs/notes/ground-gp32.md): the compiler's junction boxes overlap each other and its cap fans overlap
+// the road ends, so a junction is a stack of coincident asphalt triangles at one height (125th and Lenox: two to six at
+// every point of the box). A coplanar pair of one material is an exact depth tie at any range. GM28 drew both the same
+// colour (its asphalt was a function of world position only); the GP31 frame above is per triangle, so the two sides of
+// a tie drew different cracks, tracks and drips and the winner flipped pixel by pixel: 353 m2 round the junction of 125th
+// and Lenox, the whole box and the median's sidewalk strips. Every triangle of a group (asphalt, gutter and bus lane share the
+// asphalt branch; sidewalk; each paint colour) that overlaps another of its group within 3 cm of height gets no frame
+// (all four channels 0): the shader then lays everything out from world position alone (its block-mask fallback), and
+// both sides of the tie draw the same pixel again. Second finding, same pass: the corner-return gutters (matId 11) are
+// fillet arcs that lie 1-3 m out in the junction where the kerbs meet at a square corner (29.6 m2 more than 1 m from any
+// kerb segment round 125th and Lenox), drawn with the gutter's grit and catch-basin stripes: the tan "Y" marks. A gutter
+// triangle that lies over the asphalt with its centroid over 0.9 m from every kerb segment is flagged (y = 65535) and the
+// shader draws it as the asphalt it lies on (a kerb-side gutter lies beside the asphalt, never over it, and a gutter at
+// a tile edge whose kerb faces are in the next tile is left alone).
+function gp32Ties(P, M, out, K) {
+  const nv = M.length;
+  const GRP = (m) => (m === 0 || m === 11 || m === 12) ? 1 : m === 1 ? 2 : m === 3 ? 3 : m === 4 ? 4 : m === 9 ? 5 : 0;
+  // candidate triangles and their bounding boxes
+  const list = [];
+  for (let v = 0; v + 2 < nv; v += 3) if (GRP(M[v])) list.push(v);
+  const n = list.length;
+  if (!n) return { ties: 0, ghosts: 0 };
+  const bx0 = new Float32Array(n), bz0 = new Float32Array(n), bx1 = new Float32Array(n), bz1 = new Float32Array(n);
+  let mnx = Infinity, mnz = Infinity, mxx = -Infinity, mxz = -Infinity;
+  for (let k = 0; k < n; k++) {
+    const v = list[k];
+    const x0 = P[v * 3], x1 = P[v * 3 + 3], x2 = P[v * 3 + 6], z0 = P[v * 3 + 2], z1 = P[v * 3 + 5], z2 = P[v * 3 + 8];
+    bx0[k] = Math.min(x0, x1, x2); bx1[k] = Math.max(x0, x1, x2); bz0[k] = Math.min(z0, z1, z2); bz1[k] = Math.max(z0, z1, z2);
+    mnx = Math.min(mnx, bx0[k]); mnz = Math.min(mnz, bz0[k]); mxx = Math.max(mxx, bx1[k]); mxz = Math.max(mxz, bz1[k]);
+  }
+  const C = 3, gw = Math.ceil((mxx - mnx) / C) + 1, gh = Math.ceil((mxz - mnz) / C) + 1;
+  const cnt = new Int32Array(gw * gh + 1);
+  const span = (k, fn) => {
+    const i0 = Math.floor((bx0[k] - mnx) / C), i1 = Math.floor((bx1[k] - mnx) / C), j0 = Math.floor((bz0[k] - mnz) / C), j1 = Math.floor((bz1[k] - mnz) / C);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) fn(j * gw + i);
+  };
+  for (let k = 0; k < n; k++) span(k, (c) => cnt[c + 1]++);
+  for (let c = 0; c < gw * gh; c++) cnt[c + 1] += cnt[c];
+  const fill = cnt.slice(0, gw * gh), lst = new Int32Array(cnt[gw * gh]);
+  for (let k = 0; k < n; k++) span(k, (c) => { lst[fill[c]++] = k; });
+  const tied = new Uint8Array(n), overA = new Uint8Array(n);   // overA: a gutter or bus-lane piece lying over the asphalt
+  const grp = new Uint8Array(n);
+  for (let k = 0; k < n; k++) grp[k] = GRP(M[list[k]]);
+  // the overlap of two triangles in plan: clip A by B's three edges (Sutherland-Hodgman) with B shrunk 5 mm, so a shared
+  // edge or a touching corner is not an overlap; returns the centroid of the clipped polygon or null
+  const px = new Float64Array(12), pz = new Float64Array(12), qx = new Float64Array(12), qz = new Float64Array(12), ov = new Float64Array(2);
+  // separating axis first (an edge of either triangle with the other wholly outside it, 5 mm of penetration allowed):
+  // most candidate pairs are neighbours or near misses and stop here
+  const sepE = (ux, uz, wx, wz, rx, rz, t0x, t0z, t1x, t1z, t2x, t2z) => {
+    let nx = uz - wz, nz = wx - ux;
+    const l = Math.hypot(nx, nz); if (l < 1e-9) return false;
+    nx /= l; nz /= l;
+    const d = nx * ux + nz * uz, sg = (nx * rx + nz * rz - d) > 0 ? -1 : 1;
+    return Math.min(sg * (nx * t0x + nz * t0z - d), sg * (nx * t1x + nz * t1z - d), sg * (nx * t2x + nz * t2z - d)) > -0.005;
+  };
+  const overlapAt = (va, vb) => {
+    const a0x = P[va * 3], a0z = P[va * 3 + 2], a1x = P[va * 3 + 3], a1z = P[va * 3 + 5], a2x = P[va * 3 + 6], a2z = P[va * 3 + 8];
+    const b0x = P[vb * 3], b0z = P[vb * 3 + 2], b1x = P[vb * 3 + 3], b1z = P[vb * 3 + 5], b2x = P[vb * 3 + 6], b2z = P[vb * 3 + 8];
+    if (sepE(a0x, a0z, a1x, a1z, a2x, a2z, b0x, b0z, b1x, b1z, b2x, b2z) || sepE(a1x, a1z, a2x, a2z, a0x, a0z, b0x, b0z, b1x, b1z, b2x, b2z)
+      || sepE(a2x, a2z, a0x, a0z, a1x, a1z, b0x, b0z, b1x, b1z, b2x, b2z) || sepE(b0x, b0z, b1x, b1z, b2x, b2z, a0x, a0z, a1x, a1z, a2x, a2z)
+      || sepE(b1x, b1z, b2x, b2z, b0x, b0z, a0x, a0z, a1x, a1z, a2x, a2z) || sepE(b2x, b2z, b0x, b0z, b1x, b1z, a0x, a0z, a1x, a1z, a2x, a2z)) return null;
+    let m = 3;
+    px[0] = a0x; pz[0] = a0z; px[1] = a1x; pz[1] = a1z; px[2] = a2x; pz[2] = a2z;
+    const sB = ((b1x - b0x) * (b2z - b0z) - (b1z - b0z) * (b2x - b0x)) > 0 ? 1 : -1;   // B's winding
+    for (let e = 0; e < 3; e++) {
+      const ux = e === 0 ? b0x : e === 1 ? b1x : b2x, uz = e === 0 ? b0z : e === 1 ? b1z : b2z;
+      const wx = e === 0 ? b1x : e === 1 ? b2x : b0x, wz = e === 0 ? b1z : e === 1 ? b2z : b0z;
+      const ex = wx - ux, ez = wz - uz, el = Math.hypot(ex, ez);
+      if (el < 1e-6) return null;
+      let o = 0;
+      for (let k = 0; k < m; k++) {
+        const k2 = k + 1 === m ? 0 : k + 1;
+        const d1 = sB * (ex * (pz[k] - uz) - ez * (px[k] - ux)) / el - 0.005;   // metres inside the edge, less 5 mm
+        const d2 = sB * (ex * (pz[k2] - uz) - ez * (px[k2] - ux)) / el - 0.005;
+        if (d1 >= 0) { qx[o] = px[k]; qz[o] = pz[k]; o++; }
+        if ((d1 >= 0) !== (d2 >= 0)) { const t = d1 / (d1 - d2); qx[o] = px[k] + (px[k2] - px[k]) * t; qz[o] = pz[k] + (pz[k2] - pz[k]) * t; o++; }
+        if (o > 10) break;
+      }
+      m = o;
+      if (m < 3) return null;
+      for (let k = 0; k < m; k++) { px[k] = qx[k]; pz[k] = qz[k]; }
+    }
+    let A = 0, gx = 0, gz = 0;
+    for (let k = 0; k < m; k++) { const k2 = k + 1 === m ? 0 : k + 1, c = px[k] * pz[k2] - px[k2] * pz[k]; A += c; gx += (px[k] + px[k2]) * c; gz += (pz[k] + pz[k2]) * c; }
+    if (Math.abs(A) < 2e-4) return null;   // under 1 cm2
+    ov[0] = gx / (3 * A); ov[1] = gz / (3 * A);
+    return ov;
+  };
+  const yAt = (v, x, z) => {
+    const x0 = P[v * 3], z0 = P[v * 3 + 2], x1 = P[v * 3 + 3], z1 = P[v * 3 + 5], x2 = P[v * 3 + 6], z2 = P[v * 3 + 8];
+    const d = (z1 - z2) * (x0 - x2) + (x2 - x1) * (z0 - z2);
+    if (Math.abs(d) < 1e-12) return P[v * 3 + 1];
+    const l0 = ((z1 - z2) * (x - x2) + (x2 - x1) * (z - z2)) / d, l1 = ((z2 - z0) * (x - x2) + (x0 - x2) * (z - z2)) / d;
+    return l0 * P[v * 3 + 1] + l1 * P[v * 3 + 4] + (1 - l0 - l1) * P[v * 3 + 7];
+  };
+  for (let c = 0; c < gw * gh; c++) {
+    for (let a = cnt[c]; a < cnt[c + 1]; a++) {
+      const ka = lst[a], va = list[ka], ga = grp[ka];
+      for (let b = a + 1; b < cnt[c + 1]; b++) {
+        const kb = lst[b];
+        if (grp[kb] !== ga || (tied[ka] && tied[kb])) continue;
+        const vb = list[kb];
+        if (bx0[ka] > bx1[kb] - 0.01 || bx0[kb] > bx1[ka] - 0.01 || bz0[ka] > bz1[kb] - 0.01 || bz0[kb] > bz1[ka] - 0.01) continue;
+        // each pair once: in the cell that holds the low corner of the two boxes' intersection
+        if (Math.floor((Math.max(bz0[ka], bz0[kb]) - mnz) / C) * gw + Math.floor((Math.max(bx0[ka], bx0[kb]) - mnx) / C) !== c) continue;
+        // neighbours of one triangulation share an edge and never overlap (an exact duplicate shares all three corners and
+        // took the same frame from the same centroid); every other pair is clipped. No pair is skipped for having equal
+        // frames: a triangle that loses its frame to one partner must take its equal-framed twins with it
+        let sh = 0;
+        for (let i = 0; i < 3 && sh < 2; i++) for (let j = 0; j < 3; j++) {
+          if (Math.abs(P[(va + i) * 3] - P[(vb + j) * 3]) < 1e-3 && Math.abs(P[(va + i) * 3 + 2] - P[(vb + j) * 3 + 2]) < 1e-3) { sh++; break; }
+        }
+        if (sh >= 2) continue;
+        const p = overlapAt(va, vb);
+        if (!p) continue;
+        if (Math.abs(yAt(va, p[0], p[1]) - yAt(vb, p[0], p[1])) < 0.03) {
+          tied[ka] = 1; tied[kb] = 1;
+          if (M[vb] === 0) overA[ka] = 1;
+          if (M[va] === 0) overA[kb] = 1;
+        }
+      }
+    }
+  }
+  let ties = 0, ghosts = 0;
+  for (let k = 0; k < n; k++) {
+    const v = list[k];
+    let ghost = false;
+    if (M[v] === 11 && overA[k] && K.sx.length) {
+      // the centroid's distance to the nearest kerb SEGMENT (the frame above measures to the kerb's line, which runs on
+      // through the junction past the kerb's end)
+      const cx = (P[v * 3] + P[v * 3 + 3] + P[v * 3 + 6]) / 3, cz = (P[v * 3 + 2] + P[v * 3 + 5] + P[v * 3 + 8]) / 3;
+      const gx = Math.floor((cx - K.minx) / CELL), gz = Math.floor((cz - K.minz) / CELL);
+      let d2 = Infinity;
+      for (let z = gz - 1; z <= gz + 1; z++) for (let x = gx - 1; x <= gx + 1; x++) {
+        if (x < 0 || z < 0 || x >= K.gw || z >= K.gh) continue;
+        const cc = z * K.gw + x;
+        for (let q = K.cnt[cc]; q < K.cnt[cc + 1]; q++) {
+          const s = K.lst[q];
+          const dx = K.ex[s] - K.sx[s], dz = K.ez[s] - K.sz[s];
+          const t = Math.max(0, Math.min(1, ((cx - K.sx[s]) * dx + (cz - K.sz[s]) * dz) / (dx * dx + dz * dz)));
+          const ux = K.sx[s] + dx * t - cx, uz = K.sz[s] + dz * t - cz;
+          d2 = Math.min(d2, ux * ux + uz * uz);
+        }
+      }
+      ghost = d2 > 0.81;
+    }
+    if (!tied[k] && !ghost) continue;
+    for (let j = 0; j < 3; j++) { const i = (v + j) * 4; out[i] = 0; out[i + 1] = ghost ? 65535 : 0; out[i + 2] = 0; out[i + 3] = 0; }
+    if (tied[k]) ties++;
+    if (ghost) ghosts++;
+  }
+  return { ties, ghosts };
 }
 function gravelEdges(P, M, out) {
   const nv = M.length, key = (i) => Math.round(P[i * 3] * 50) + ',' + Math.round(P[i * 3 + 2] * 50);

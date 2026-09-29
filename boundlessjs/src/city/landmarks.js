@@ -46,6 +46,12 @@ const CU_DOME = 0xb0a898;      // the saucer dome, warm granite grey
 const CU_INK = 0x35302a;       // incised inscriptions
 // `?lowzf=0`: Low Library's anta capitals back in the plane of the anta face (the z-fight the owner saw, for an A/B)
 const LOWZF = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('lowzf') === '0');
+// CH32 (owner 2026-09-29 on mLowAerial: "the church walls have serious z-fighting"): St Paul's Chapel's two front brick
+// piers ended in the same plane (zF) as the limestone laid across them, the frieze band, the cornice and each pier's
+// base, and as the niche panels; brick and stone took turns in the depth test, streaks crawling over the fronts as the
+// lens moved. The piers now stand 6 cm behind the stone, which projects from the brick as it does on the building, and
+// the niches sit 1 cm proud of the brick. `?ch32=0` restores.
+const CH32 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ch32') === '0');
 // NY28 (owner 2026-09-27, Bryant Park and the library for the new teaser): the library's Vermont marble takes the campus
 // stone detail (ashlar coursing and grain, mean-preserving: the authored marble white stays), the trim the granite grain.
 // The survey still read it as one flat grey block. `?ny28=0` restores the plain colours.
@@ -1057,14 +1063,15 @@ export const BUILDERS = {
     /* ---- shell: the brick block, with the porch recess left out of it ---- */
     brk.add(box(W, CORN + 8.6, D - PD, 0, { y: -8.6, z: -PD / 2 }));
     lime.add(box(W + 0.5, 1.9, D - PD + 0.5, 0, { y: YP - 0.7, z: -PD / 2 }));   // water table
+    const pR = CH32 ? 0.06 : 0;                                  // CH32: the brick piers' setback behind the stone
     for (const s of [-1, 1]) {                                   // the two front piers
       const px = s * (W + rw) / 4;
-      brk.add(box(pw, CORN - YP + 0.7, PD, 0, { x: px, y: YP - 0.7, z: zF - PD / 2 }));
+      brk.add(box(pw, CORN - YP + 0.7, PD - pR, 0, { x: px, y: YP - 0.7, z: zF - PD / 2 - pR / 2 }));
       lime.add(box(pw + 0.5, 1.9, PD, 0, { x: px, y: YP - 0.7, z: zF - PD / 2 }));
       // the small round-arched niche each pier carries beside the entrance
-      gls.add(box(1.45, 2.30, 0.24, 0, { x: px, y: YP + 1.30, z: zF - 0.12 }));
+      gls.add(box(1.45, 2.30, 0.24, 0, { x: px, y: YP + 1.30, z: zF - 0.12 - (CH32 ? pR - 0.01 : 0) }));
       const nz = new THREE.Mesh(new THREE.CircleGeometry(0.72, 12, 0, Math.PI), mat(0, {}));
-      nz.position.set(px, YP + 3.60, zF - 0.12);
+      nz.position.set(px, YP + 3.60, CH32 ? zF - pR + 0.01 : zF - 0.12);
       gls.add(nz);
       const nv = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.14, 4, 12, Math.PI), mat(0, {}));
       nv.position.set(px, YP + 3.60, zF + 0.02);

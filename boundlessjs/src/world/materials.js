@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TILE } from '../shared/geo.js';
 import { fasciaTexture } from '../city/fasciaAtlas.js';  // 2 x 16 slots of 512x64 (inlined in the GLSL below)
+import { tq32Patch } from './tq32.js';   // TQ32: the Times Square towers' relief, weathering and sun occlusion (?tq32=0)
 
 // FS26 SKY-MATCHED FOG (owner 2026-09-25: golden hour "flat and low quality"). The far field faded into ONE colour per
 // preset (golden: a warm beige, warmed again by the horizon tint below) while the analytic sky at the horizon is a
@@ -3535,6 +3536,10 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
         diffuseColor.rgb *= FAC_grainV;   // FR26: the photo grain joins the colour after the relief has read it`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         totalEmissiveRadiance += FAC_emis;`);
+    // TQ32 (owner 2026-09-29: "as if building primitives need a lot more detail, the materials need to be PBR ... It seems
+    // rather unlit"): the Square's curtain walls were flat sheets that mirror the sky at grazing view (t3DayCorner: 30 % of a
+    // tower face over sRGB 225). world/tq32.js traces fins, caps and piers per pixel; a no-op under ?tq32=0
+    tq32Patch(sh);
   };
   // r8 geometric specular AA (?aa=0 to disable). The facade builds its shading
   // normal out of the photographed brick normal map and the albedo-relief
@@ -3599,6 +3604,106 @@ const GND_GLSL = /* glsl */ `
 // lane, sealed and open crack runs of a constant width, alligator cracking and raveling in old wheel tracks, utility cuts
 // behind a dark saw cut with a settled or proud edge, dust at the kerb. `?gp31=0` restores GM28.
 export const GP31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gp31') === '0');
+// GP32 (owner 2026-09-29 on the trailer take fTraffic: "Asphalt decals/material have clear z fighting that's terrible. I
+// also don't like low-quality lines etc. I gave you high quality references don't give me lines."). Measured causes
+// (docs/notes/ground-gp32.md): the junction is a stack of coincident asphalt triangles whose per-triangle kerb frames
+// differ, so the two sides of each exact depth tie drew different cracks and tracks (gpKerbWorker.js gp32Ties now gives
+// every tied triangle the world-position fallback); the corner-return gutters lie out in the junction as tan "Y" marks
+// (drawn as the asphalt they lie on); and every crack was a band of one width round a noise isoline, 2-4 px black strokes
+// from the fTraffic lens, replaced by the crack net below. `?gp32=0` restores GP31 (and `?gp31=0` GM28).
+export const GP32 = GP31 && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gp32') === '0');
+// ?gp32k=<x> scales the crack net's density (an inspection aid for stills; 1 = the default)
+const GP32K = (typeof location !== 'undefined' ? Math.max(0, +(new URLSearchParams(location.search).get('gp32k') || 1)) : 1).toFixed(3);
+// GP32 crack net: block cracking on the borders of a jittered cell grid, the crack look along a line (width wandering to
+// nothing, spalled lips, a dusty dark floor), and straight joints (saw cuts, cold joints) drawn with the same look
+const GP32_NET_GLSL = /* glsl */ `
+  float GP_cSpall;          // GP32: a crack's broken lip, the aggregate plucked out along it (coverage)
+  float GP_cDust;           // GP32: dust and grit settled on a crack's floor
+  uniform int gpVN;         // GP32: 1, the Voronoi loops' bound (a uniform, so the compiler keeps a loop rather than unrolling it)
+  // Voronoi borders (Quilez's two-pass border distance) of a jittered grid: cell units to the nearest border, the unit
+  // direction from this cell's point toward the neighbour's (toward the border) and the two cells the border separates
+  float gpVBorder(vec2 x, float jit, float seed, out vec2 bn, out vec2 cA, out vec2 cB) {
+    vec2 n = floor(x), f = fract(x);
+    vec2 mg = vec2(0.0), mr = vec2(0.0);
+    float md = 8.0;
+    for (int j = -1; j <= gpVN; j++) for (int i = -1; i <= gpVN; i++) {
+      vec2 g = vec2(float(i), float(j));
+      vec2 r = g + 0.5 + (gpH2(n + g + seed) - 0.5) * jit - f;
+      float d = dot(r, r);
+      if (d < md) { md = d; mr = r; mg = g; }
+    }
+    md = 8.0; bn = vec2(1.0, 0.0); cA = n + mg; cB = cA;
+    for (int j = -1; j <= gpVN; j++) for (int i = -1; i <= gpVN; i++) {
+      vec2 g = mg + vec2(float(i), float(j));
+      vec2 r = g + 0.5 + (gpH2(n + g + seed) - 0.5) * jit - f;
+      vec2 dr = r - mr;
+      if (dot(dr, dr) > 1e-5) {
+        vec2 u = normalize(dr);
+        float d = dot(0.5 * (mr + r), u);
+        if (d < md) { md = d; bn = u; cB = n + g; }
+      }
+    }
+    return md;
+  }
+  // the crack look along one crack line: d = metres to it, s = metres along it, eh = its own draw, wMax = its widest (m).
+  // Box-filtered over the footprint (gpBand): a crack under a pixel keeps its ink, not an aliasing contrast
+  float gpCrackBand(float d, float s, float eh, float wMax, float fw) {
+    float h = max(fw * 0.5, 0.0004);
+    // the width wanders along the crack and closes to a hairline or to nothing: tapered ends, never a blunt stroke
+    float w = wMax * smoothstep(0.16, 0.80, vnoise(vec2(s * 1.9, eh * 61.0)));
+    if (w < 5e-5) return 0.0;
+    float core = gpBand(d, w, h);
+    // the spalled lips: where it is open past ~2 mm the aggregate along its edge has broken out in pieces, 0.4-3 cm, ragged
+    // (the rag noise fades before it is under a pixel)
+    float jk = smoothstep(0.035, 0.010, fw);
+    float rag = mix(0.6, 0.15 + 0.85 * vnoise(vec2(s * 55.0, d * 70.0 + eh * 13.0)), jk);
+    float ws = smoothstep(0.0012, 0.006, w) * (0.004 + 0.024 * vnoise(vec2(s * 4.3, eh * 23.0))) * rag * smoothstep(0.28, 0.62, vnoise(vec2(s * 7.0, eh * 31.0)));
+    GP_cSpall = max(GP_cSpall, gpBand(d, w + ws, h) - core);
+    if (core > 0.01) GP_cDust = max(GP_cDust, smoothstep(0.35, 0.80, vnoise(vec2(s * 0.8, eh * 7.0 + 3.0))));
+    return core;
+  }
+  // one level of the net on the warped point pw (metres): cells of the given size (m), borders cracked above the draw onLo,
+  // widths wLo..wHi (skewed thin); the lips round down into the crack and its walls lean in (bn points toward it)
+  float gpCrackLevel(vec2 pw, float cell, float seed, float onLo, float wLo, float wHi, float dens, float fw) {
+    vec2 bn, cA, cB;
+    float d = gpVBorder(pw / cell, 0.62, seed, bn, cA, cB) * cell;
+    // the border's own draw, symmetric in its two cells
+    float eh = hash12((cA + cB) * 0.5 + abs(cA - cB) * 7.31 + seed);
+    float eW = smoothstep(onLo, onLo + 0.1, eh) * mix(wLo, wHi, pow(fract(eh * 13.7), 1.4)) * dens;
+    if (eW < 5e-5) return 0.0;
+    float sp0 = GP_cSpall;
+    float core = gpCrackBand(d, dot(pw, vec2(-bn.y, bn.x)), eh, eW, fw);
+    GP_slopeW += (bn.x * MG_A + bn.y * MG_B) * (0.55 * max(GP_cSpall - sp0, 0.0) + 0.25 * core) * smoothstep(0.02, 0.005, fw);
+    return core;
+  }
+  // the crack net of an old pour, in the street grid frame p (gG, metres): anchored to the world, so it runs on unbroken
+  // over every triangle, tile and junction, and its blocks run with both street axes. Blocks of 1.3-2.5 m (a third of
+  // their borders uncracked, the rest 1.5-13 mm), and near the lens the finer net between them (0.3-0.55 m cells, a third
+  // cracked, 0.4-2 mm hairlines). The point is warped by a 2.4 m and a 0.3 m meander and a jag round the chips at 7.7, 2.7
+  // and 1.0 cm, the finer two gone before they are under a pixel
+  float gpCrackNet(vec2 p, vec2 lotId, float lotH, float fw) {
+    float dens = min(1.0, smoothstep(0.42, 0.68, lotH) * smoothstep(0.22, 0.55, vnoise(p * 0.075 + lotId * 3.1 + 1.7)) * ${GP32K});
+    if (dens < 0.01) return 0.0;
+    float jk = smoothstep(0.035, 0.010, fw), jf = smoothstep(0.012, 0.004, fw);
+    vec2 pw = p + (vec2(vnoise(p * 0.42 + 7.1), vnoise(p * 0.42 + 3.7)) - 0.5) * 0.70
+                + (vec2(vnoise(p * 3.1 + 4.4), vnoise(p * 3.1 + 6.6)) - 0.5) * 0.09
+                + ((vec2(vnoise(p * 13.0 + 1.3), vnoise(p * 13.0 + 9.1)) - 0.5) * 0.030
+                +  (vec2(vnoise(p * 37.0 + 5.3), vnoise(p * 37.0 + 2.1)) - 0.5) * 0.011 * jk
+                +  (vec2(vnoise(p * 97.0 + 8.1), vnoise(p * 97.0 + 3.3)) - 0.5) * 0.0045 * jf) * jk;
+    float seed = hash12(lotId + 5.3) * 37.0;
+    float cell = mix(1.3, 2.5, hash12(lotId + 9.1));
+    float core = gpCrackLevel(pw, cell, seed, 0.30, 0.0015, 0.013, dens, fw);
+    if (fw < 0.012) core = max(core, gpCrackLevel(pw, cell * 0.22, seed + 11.0, 0.62, 0.0004, 0.0020, dens * smoothstep(0.012, 0.005, fw), fw));
+    return core;
+  }
+  // a straight joint that has opened (the saw cut round a utility cut, the cold joint between two pours): the same crack
+  // look along it, d = metres to the line, s = metres along it
+  float gpJoint(float d, float s, float seed, float wMax, float fw) {
+    float jk = smoothstep(0.035, 0.010, fw);
+    d += ((vnoise(vec2(s * 13.0, seed)) - 0.5) * 0.012 + (vnoise(vec2(s * 41.0, seed + 5.0)) - 0.5) * 0.004) * jk;
+    return gpCrackBand(abs(d), s, hash12(vec2(seed, 7.7)), wMax, fw);
+  }
+`;
 // per-layer linear albedo mean (after the encoder's low-frequency flattening), roughness mean and AO mean: gp31_stats.json
 const GP31_SETS = [
   { key: 'asphA', mean: [0.1991, 0.1991, 0.1990], rough: 0.524, ao: 0.910, hMean: 0.590 },   // 0 ambientCG Asphalt031, 2.0 m
@@ -3635,9 +3740,10 @@ function gpKerbAsync(g, st) {
     try {
       _gpW = new Worker(new URL('./gpKerbWorker.js', import.meta.url), { type: 'module' });
       _gpW.onmessage = (e) => {
-        const { id, out, segs, tris, ms } = e.data;
+        const { id, out, segs, tris, ms, ties, ghosts } = e.data;
         const geo = _gpJobs.get(id); _gpJobs.delete(id);
         st.pending--; st.meshes++; st.segs += segs; st.tris += tris; st.ms += ms; st.maxMs = Math.max(st.maxMs, ms);
+        if (GP32) { st.ties = (st.ties || 0) + (ties || 0); st.ghosts = (st.ghosts || 0) + (ghosts || 0); }   // GP32 gp32Ties
         if (geo && geo.attributes.position && !geo.userData.gpDisposed) geo.setAttribute('gpK', new THREE.BufferAttribute(out, 4));
       };
       _gpW.onerror = (e) => { console.warn('[gp31] kerb worker failed:', e.message); _gpW = false; };
@@ -3649,8 +3755,19 @@ function gpKerbAsync(g, st) {
   g.addEventListener('dispose', () => { g.userData.gpDisposed = true; });
   const pos = g.attributes.position.array.slice(), mat = g.attributes.matId.array.slice();
   st.pending++;
-  _gpW.postMessage({ id, pos, mat }, [pos.buffer, mat.buffer]);
+  _gpW.postMessage({ id, pos, mat, gp32: GP32 }, [pos.buffer, mat.buffer]);
 }
+// GP32: the crack net evaluated once, before the material branches, for the asphalt and the paint laid on it: called from
+// both branches its code was in the program twice (the program's compile time)
+const GP32_NETCALL = /* glsl */ `
+        float gpNetC = 0.0;
+        if ((m == 0 || m == 3 || m == 4) && gFw < 0.10) {
+          vec2 gpLq = gG / vec2(82.0, 76.0) + vec2(fbm(gG * 0.013 + 4.0), fbm(gG * 0.015 + 21.0)) * vec2(0.075, 0.075);
+          vec2 gpLid = floor(gpLq);
+          float gpLh = (hash12(gpLid + 3.3) + hash12(gpLid + 11.7) + hash12(gpLid + 27.1) + hash12(gpLid + 41.9)) * 0.25;
+          ${GP_DEFECT > 50 ? 'gpLh = max(gpLh, 0.8);' : ''}
+          gpNetC = gpCrackNet(gG, gpLid, gpLh, gFw);
+        }`;
 const GP31_GLSL = /* glsl */ `
   uniform highp sampler2DArray t_gpA;   // GP31: sRGB albedo, A = height
   uniform highp sampler2DArray t_gpN;   // GP31: normal xy (OpenGL), B = roughness, A = AO; the last layer (gpMacroL) = the 30 m scan
@@ -3784,7 +3901,7 @@ const GP31_GLSL = /* glsl */ `
                            + (textureGrad(t_gpN, vec3(st + gpH2(v2 + 7.7), gpMacroL), gx, gy).r - 0.5) * W.y
                            + (textureGrad(t_gpN, vec3(st + gpH2(v3 + 7.7), gpMacroL), gx, gy).r - 0.5) * W.z) * vs, 0.2);
   }
-`;
+${GP32 ? GP32_NET_GLSL : ''}`;
 // GP31 asphalt (matId 0 and its gutter / bus-lane variants). The tone is still the block-face lottery GT13 calibrated
 // (lotAge between the fresh and the ten-summer binder, AM120 values); what changed is what draws inside it.
 const GP31_ASPH_GLSL = /* glsl */ `
@@ -3801,12 +3918,14 @@ const GP31_ASPH_GLSL = /* glsl */ `
           // (Asphalt031). lotH, not lotAge: n1 varies inside a lot and would switch the scan mid-block.
           GP_layer = lotH < 0.40 ? 1.0 : 0.0;
           ${GP_DEFECT > 50 ? 'lotH = max(lotH, 0.8);   // ?gpdefect > 50: every pour old enough for every defect (inspection only)' : ''}
-          {
+          ${GP32 ? 'float gpJD = 9.0, gpJS = 0.0;   // GP32: metres to the nearest cold joint between two pours, and along it' + String.fromCharCode(10) + '          ' : ''}{
             // the cold joint where two pours meet (GT13), its AA width in the lot's own cell units
             vec2 lf = abs(fract(lotQ) - 0.5);
             vec2 lw = (abs(gGx) + abs(gGy)) / vec2(82.0, 76.0) * 1.5 + 0.0016;
             float seam = max(smoothstep(0.5 - lw.x, 0.5 - lw.x * 0.25, lf.x), smoothstep(0.5 - lw.y, 0.5 - lw.y * 0.25, lf.y));
-            albedo *= 1.0 - seam * 0.12 * gMid;
+            ${GP32 ? `// GP32: GP31 drew the joint as a straight band 12 % darker, 1.5 px wide at any range (the long line down the
+            // middle of the junction box at 125th and Lenox); it opens as a crack, drawn with the crack net below
+            gpJD = min((0.5 - lf.x) * 82.0, (0.5 - lf.y) * 76.0); gpJS = (0.5 - lf.x) * 82.0 < (0.5 - lf.y) * 76.0 ? gG.y : gG.x;` : 'albedo *= 1.0 - seam * 0.12 * gMid;'}
           }
           // broad traffic soot (a 28 m field): the one noise darkening kept, at two thirds of its GM28 depth
           albedo *= 1.0 - smoothstep(0.55, 0.95, fbm(vWPos.xz * 0.035 + 9.1)) * 0.12;
@@ -3881,8 +4000,10 @@ const GP31_ASPH_GLSL = /* glsl */ `
               if (inner > 0.5) { GP_layer = fresh < 0.5 ? 1.0 : 0.0; GND_rough = 0.90 + 0.05 * fresh; }
               // the saw cut: a dark kerf ~1 cm, ravelled at the corners, and on half the cuts a 3.5-5.5 cm sealant overband
               float kerf = gpBand(sd, 0.004 + 0.003 * vnoise(pc * 9.0 + cc), h);
-              albedo *= 1.0 - kerf * 0.65;
-              if (hash12(cc + 29.0) < 0.35) {
+              ${GP32 ? `// GP32: the 7-14 mm kerf at 0.35 of the road (and a sealant band on a third of the cuts) drew a dark rectangle
+              // outline, a pen line from 15 m; the joint opens as a crack instead (0-5.5 mm, closing and reopening, spalled)
+              GP_open = max(GP_open, gpJoint(sd, pc.x + pc.y, hash12(cc + 29.0) * 40.0, 0.0055, gFw));` : 'albedo *= 1.0 - kerf * 0.65;'}
+              if (${GP32 ? 'false' : 'hash12(cc + 29.0) < 0.35'}) {
                 float kw = 0.018 + 0.010 * hash12(cc + 31.0);
                 GP_seal = max(GP_seal, gpBand(sd, kw, h) * (0.55 + 0.45 * smoothstep(0.3, 0.6, vnoise(pc * 1.7 + cc * 3.0))));
               }
@@ -3902,7 +4023,20 @@ const GP31_ASPH_GLSL = /* glsl */ `
           // darker than the road, satin, feathered at the edge (the surface pass sets its tone and sheen).
           {
             float aged = smoothstep(0.38, 0.62, lotH);
-            if (aged > 0.01 && gFw < 0.15) {   // past a 15 cm footprint a 5 cm band is a third of a pixel of ink: skipped
+            ${GP32 ? `// GP32 (owner 2026-09-29: "I don't like low-quality lines etc. I gave you high quality references don't give me
+            // lines"). GP31 drew every crack as a band of one width round the zero isoline of a warped noise: sealed runs
+            // 4.4-8.4 cm wide at 0.17-0.40 of the road's albedo, from the fTraffic lens (17 m up, 20-45 m out) 2-4 px black
+            // strokes, smooth, closing into loops, and in the junction's per-triangle frames straight transverse runs that
+            // crossed in an X. What replaces them is what the references show: the crack net (gpCrackNet: block cracking on
+            // a world-anchored cell grid, a third of the borders uncracked, the rest a hairline to 11 mm, the width wandering
+            // and closing to nothing, a jag round the chips, spalled lips, a dusty dark floor, walls in the normal) and the
+            // cold joint drawn the same way. No sealant bands: a squeegeed band of one width is the stroke itself. Past a
+            // 10 cm footprint an 11 mm crack is a tenth of a pixel of ink: skipped.
+            if (gFw < 0.10) {
+              GP_open = max(GP_open, gpNetC);
+              GP_open = max(GP_open, gpJoint(gpJD, gpJS, hash12(lotId + 3.9) * 50.0, 0.0045, gFw) * smoothstep(0.30, 0.55, lotH));
+            }
+            if (false) {` : 'if (aged > 0.01 && gFw < 0.15) {   // past a 15 cm footprint a 5 cm band is a third of a pixel of ink: skipped'}
               vec2 p, gq;
               float sd = gpCrackL(q, lotId, p, gq);                                   // signed metres to the crack line
               float gl = 1.0;
@@ -3976,7 +4110,9 @@ const GP31_ASPH_GLSL = /* glsl */ `
                 vec2 bn = normalize(m2 - m1);
                 float eb = dot(0.5 * (m1 + m2), bn) * 0.21;          // metres to the chunk's border
                 float gw = 0.0025 + 0.005 * hash12(i1 + 4.4);
-                float gap = gpBand(eb, gw, max(gFw * 0.5, 0.0004));
+                ${GP32 ? `float sp0a = GP_cSpall;   // GP32: the crack look, not a gap of one width (its lips weighted like the gaps)
+                float gap = gpCrackBand(eb, dot(q, vec2(-bn.y, bn.x)), hash12(i1 + 4.4), gw * 1.7, gFw);
+                GP_cSpall = sp0a + (GP_cSpall - sp0a) * az;` : 'float gap = gpBand(eb, gw, max(gFw * 0.5, 0.0004));'}
                 GP_allig = gap * az;
                 vec2 tilt = (gpH2(i1 + 8.8) - 0.5) * 0.22;           // each chunk tilted by up to ~6 deg
                 float lift = (hash12(i1 + 2.6) - 0.5) * 0.010;       // and raised or sunk by up to 5 mm
@@ -4512,7 +4648,16 @@ const GP31_SURF_GLSL = /* glsl */ `
                 albedo *= 1.0 - GP_crack * 0.72 * bare * outP;
                 // open cracks and alligator gaps: down to the dark, damp base course
                 float gapK = max(GP_open, GP_allig) * bare * outP;
-                albedo = mix(albedo, albedo * vec3(0.26, 0.245, 0.23), gapK);
+                ${GP32 ? `// GP32: a crack's floor 5-10 mm down a 1-11 mm gap sees little sky and no sun: dark, with the dust and grit
+                // that settle in it (a warm grey in the open stretches); its broken lips are fresh binder with the aggregate
+                // plucked out: darker, the chips' contrast up, matte (the walls lean in: gpCrackNet's slope)
+                {
+                  vec3 floorC = mix(albedo * vec3(0.20, 0.19, 0.18), tone * vec3(0.95, 0.88, 0.74) * 0.55, GP_cDust * 0.65);
+                  albedo = mix(albedo, floorC, gapK);
+                  float spK = GP_cSpall * bare * outP * (1.0 - gapK);
+                  albedo = mix(albedo, albedo * clamp(ratio, vec3(0.25), vec3(2.2)) * 0.62, spK * 0.55);
+                  GP_shadow *= 1.0 - 0.85 * gapK;
+                }` : 'albedo = mix(albedo, albedo * vec3(0.26, 0.245, 0.23), gapK);'}
                 // grit and road dust: drifted into the lows (height-blended: the chip tops tyres and feet reach stay
                 // clean), a film everywhere and a drift against the kerb, pale and warm, and matte
                 float lowH = smoothstep(0.08, -0.22, hc);
@@ -4531,7 +4676,7 @@ const GP31_SURF_GLSL = /* glsl */ `
                 // roughness by height: the chip tops tyres reach are polished and glint, the binder between stays matte
                 GND_rough = clamp(GND_rough * mix(1.0, rr, 0.55 * far), 0.45, 1.0);
                 GND_rough -= smoothstep(0.06, 0.26, hc) * (0.16 + 0.24 * GP_trk) * bare * far;
-                GND_rough = mix(GND_rough, 0.70, gapK);
+                GND_rough = mix(GND_rough, ${GP32 ? '0.95' : '0.70'}, gapK);${GP32 ? '   // GP32: a crack floor of dust and broken binder is rough' + String.fromCharCode(10) + '                GND_rough = mix(GND_rough, 0.97, GP_cSpall * bare * outP);' : ''}
                 // its satin sheen is a near-field read: at a grazing 20-60 m a smooth band mirrors the sky as a white line
                 // down the road, so it roughens with the footprint
                 // the sheen goes with the age: in the batch-5 stills the whole band at a satin 0.72-0.84 reflected enough bright
@@ -4699,6 +4844,7 @@ export function makeGroundMaterial() {
     sh.uniforms.snowA = ENV.snow;
     for (const k of ['asC', 'asN', 'asR', 'asD', 'coC', 'coN', 'grC', 'grN', 'pvC', 'pvN']) sh.uniforms['t_' + k] = { value: GTEX[k] };
     GTEX_UNIFORM_REFS.push(sh.uniforms); // async KTX2 arrivals refresh these
+    if (GP32) sh.uniforms.gpVN = { value: 1 };
     if (GP31) { sh.uniforms.t_gpA = GP31_TEX.alb; sh.uniforms.t_gpN = GP31_TEX.nrm; sh.uniforms.gpReady = GP31_TEX.ready; sh.uniforms.gpSun = ENV.sunDir; sh.uniforms.gpMacroL = GP31_TEX.macroL; sh.uniforms.gpGravelL = GP31_TEX.gravelL; }
     sh.uniforms.lb14StCal = ENV.lb14StCal;   // LB14
     sh.uniforms.lb14Walk = ENV.lb14Walk;     // LB14
@@ -4763,7 +4909,7 @@ export function makeGroundMaterial() {
       .replace('#include <color_fragment>', `#include <color_fragment>
       {
         int m = int(vMat + 0.5);
-        int mRaw = m;                       // 11 gutter / 12 red bus lane are asphalt variants
+        int mRaw = m;                       // 11 gutter / 12 red bus lane are asphalt variants${GP32 ? String.fromCharCode(10) + '        bool gpGhost = mRaw == 11 && vK.y > 65000.0 && vK.x < 0.5;   // GP32: a corner-return gutter lying out in the junction (gpKerbWorker gp32Ties)' : ''}
         if (m == 11 || m == 12) m = 0;
         if (m == 15) m = 5;                 // TL26: the campus lawn underlay is lawn (its own id only for the depth order)
         GND_patch = 0.0; GND_manhole = 0.0; GND_oil = 0.0; GND_tn = vec3(0.0, 0.0, 1.0); GND_tnW = 0.0;
@@ -4795,7 +4941,7 @@ export function makeGroundMaterial() {
         GP_layer = 0.0; GP_seal = 0.0; GP_sealE = 0.0; GP_sealN = vec2(0.0); GP_off = vec2(0.0); GP_jn = vec2(0.0);
         GP_wear = 0.0; GP_asph = vec3(0.2); GP_crack = 0.0; GP_cut = 0.0; GP_dust = 0.0;
         GP_potD = 0.0; GP_potIn = 0.0; GP_potF = 0.0; GP_water = 0.0; GP_wDepth = 0.0; GP_rim = 0.0; GP_pomXZ = vec2(0.0);
-        GP_slopeW = vec2(0.0); GP_shadow = 1.0; GP_ravel = 0.0; GP_allig = 0.0; GP_open = 0.0; GP_bleach = 0.0; GP_trk = 0.0; GP_hp = 0.0; GP_flake = 0.0; GP_pEdge = 1.0; GP_castPat = 0.5; GP_castSlot = 0.0;
+        GP_slopeW = vec2(0.0); GP_shadow = 1.0; GP_ravel = 0.0; GP_allig = 0.0; GP_open = 0.0; GP_bleach = 0.0; GP_trk = 0.0; GP_hp = 0.0; GP_flake = 0.0; GP_pEdge = 1.0; GP_castPat = 0.5; GP_castSlot = 0.0;${GP32 ? ' GP_cSpall = 0.0; GP_cDust = 0.0;' : ''}
         // the kerb frame (world/gpKerbWorker.js): kQ = metres across the street from its canonical kerb (continuous over
         // the centreline), kDn = metres to the nearest kerb, kW = the street width (0 = no facing kerb found), kn = the
         // canonical kerb's normal into the street. A street within 4 deg of the commissioners' grid takes the grid axis
@@ -4818,7 +4964,7 @@ export function makeGroundMaterial() {
           gAx = step(abs(dot(kt, MG_A)), abs(dot(kt, MG_B)));
         }
         GP_qT = kOk ? kt : (gAx > 0.5 ? MG_B : MG_A);                  // world directions of the street frame's axes
-        GP_qN = kOk ? kn : (gAx > 0.5 ? MG_A : MG_B);` : ''}
+        GP_qN = kOk ? kn : (gAx > 0.5 ? MG_A : MG_B);${GP32 ? GP32_NETCALL : ''}` : ''}
         if (m == 0) {${GP31 ? GP31_ASPH_GLSL : `
           // ---- NYC asphalt. A street here is never one pour: it is a stack of
           // mill-and-pave lots, DEP/Con Ed utility trenches cut and backfilled
@@ -5389,7 +5535,13 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
             vec2 lotId = floor(lotQ);
             float lotH = (hash12(lotId + 3.3) + hash12(lotId + 11.7) + hash12(lotId + 27.1) + hash12(lotId + 41.9)) * 0.25;
             float aged = smoothstep(0.38, 0.62, lotH);
-            if (aged > 0.01) {
+            ${GP32 ? `// GP32: the road's crack net runs on through the film (the same net in the same grid frame, so a crack crosses a
+            // bar unbroken): the film splits along the crack and lets go along its broken lips; no sealant band over it
+            if (gFw < 0.10) {
+              GP_open = gpNetC;
+              GP_flake = min(1.0, GP_open + GP_cSpall * 1.4);
+            }
+            if (false) {` : 'if (aged > 0.01) {'}
               vec2 q = kOk ? vec2(kqx, kQ) : (gAx > 0.5 ? gG.yx : gG);
               vec2 p, gq; float sd = gpCrackL(q, lotId, p, gq);
               float h = max(gFw * 0.5, 0.0008);
@@ -5630,7 +5782,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
         // basins.) The bus lane is 3.35 m wide, so gT is useless there and the
         // scrub keeps using the asphalt branch's own wheel tracks.
         float gT = gG.x + gG.y;
-        if (mRaw == 11) {
+        if (mRaw == 11${GP32 ? ' && !gpGhost' : ''}) {
           // ---- GUTTER: 0.45 m against every kerb and every corner return.
           // Measured (sunlit) off refs/streetview — lane vs gutter in the SAME frame:
           //   Bedford Ave & N 7, 2022-07     lane (130,124,113) -> gutter (120,111,101)  x0.80 linear
@@ -5663,7 +5815,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
               float grt = smoothstep(0.31 + bAA, 0.31 - bAA, bp);
               albedo = mix(albedo, vec3(0.238, 0.216, 0.180), hdr * 0.72);
               albedo = mix(albedo, vec3(0.060, 0.055, 0.050), grt * 0.92);
-              albedo *= 1.0 + grt * (0.5 - abs(fract(gT / 0.052) - 0.5)) * 1.25 * gNear;
+              albedo *= 1.0 + grt * (0.5 - abs(fract(${GP32 ? '(kOk ? kqx : gT)' : 'gT'} / 0.052) - 0.5)) * 1.25 * ${GP32 ? 'smoothstep(0.020, 0.008, gFw)' : 'gNear'};${GP32 ? '   // GP32: bars across the gutter, gone before their 5.2 cm pitch is under 3 px (GP31 drew them on gT, 45 deg to a grid kerb, and kept them to a 3 cm footprint: a diagonal hatch from 15-40 m)' : ''}
               GND_rough = mix(GND_rough, 0.52, grt * 0.8);
               GND_spec = max(GND_spec, grt * 0.95);
             }
@@ -5850,7 +6002,7 @@ ${GP31_SURF_GLSL}
           // before their tops; a pothole holds its own (the surface pass drew it, and rain only raises its level)
           if (m == 0) {
             pud = max(pud, smoothstep(0.45, 0.85, GP_trk) * smoothstep(0.30, 0.80, wet) * smoothstep(0.35, 0.65, vnoise(vWPos.xz * 0.21 + 7.0)));
-            if (mRaw == 11) pud = max(pud, smoothstep(0.15, 0.55, wet) * (0.55 + 0.45 * vnoise(vec2(gT * 0.4, 1.0))));
+            if (mRaw == 11${GP32 ? ' && !gpGhost' : ''}) pud = max(pud, smoothstep(0.15, 0.55, wet) * (0.55 + 0.45 * vnoise(vec2(gT * 0.4, 1.0))));
             damp = min(1.0, damp * mix(1.25, 0.75, smoothstep(-0.10, 0.25, GP_hp)));
             // a pothole holds its own pool; its broken walls stay rough when wet (their gloss drew a bright rim line)
             pud *= 1.0 - GP_potIn; damp *= (1.0 - GP_water) * (1.0 - 0.8 * GP_potIn);

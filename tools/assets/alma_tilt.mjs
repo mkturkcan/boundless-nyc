@@ -8,13 +8,15 @@
 // (a window chosen in the tilted frame pulls the answer back toward the tilt). Two regions: the statue's own stepped
 // base (inside its footprint, under the bronze) and the Low steps round it (the capture's ground, 1.3-4 m out).
 // Prints each as a pitch (+ = her top leaning back, toward -z) and a roll (+ = leaning to her left, +x).
-//   node tools/assets/alma_tilt.mjs <scan.glb> [W deg, default 15]
+//   node tools/assets/alma_tilt.mjs <scan.glb> [W deg, default 15] [--out]
 import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 
-const [src, wArg] = process.argv.slice(2);
+const [src, wArg] = process.argv.slice(2).filter((x) => !x.startsWith('--'));
 const W = ((+(wArg || 15)) * Math.PI) / 180;
-const A = (-15 * Math.PI) / 180, cA = Math.cos(A), sA = Math.sin(A), UC = -0.745, VC = 0.695, YB = -1.52;   // = alma_mater.mjs
+// --out: the model alma_mater.mjs wrote, already in her frame (the check that its levelling came out at 0)
+const OUT = process.argv.includes('--out');
+const A = OUT ? 0 : (-15 * Math.PI) / 180, cA = Math.cos(A), sA = Math.sin(A), UC = OUT ? 0 : -0.745, VC = OUT ? 0 : 0.695, YB = OUT ? 0 : -1.52;   // = alma_mater.mjs
 const io = new NodeIO().registerExtensions(ALL_EXTENSIONS);
 const doc = await io.read(src);
 const mul = (m, v) => [m[0] * v[0] + m[4] * v[1] + m[8] * v[2] + m[12], m[1] * v[0] + m[5] * v[1] + m[9] * v[2] + m[13], m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14]];

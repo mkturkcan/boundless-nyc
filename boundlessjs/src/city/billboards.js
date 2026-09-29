@@ -24,6 +24,7 @@
 import * as THREE from 'three';
 import { project } from '../shared/geo.js';
 import { ENV } from '../world/materials.js';
+import { TQ32, tq32SetScreens } from '../world/tq32.js';   // TQ32: the screens' light on the Square's walls and in its glass
 import { paintAd, adsFor, adId, loadAdFonts, AD_COUNT, hs as ahs } from './adArt.js';
 
 const TSQ = project(-73.9866, 40.7575); // Times Square
@@ -523,6 +524,7 @@ function ensureTA() {
     const rt = renderer.getRenderTarget();
     taProbeU.value = rt && rt.isWebGLCubeRenderTarget && rt.width <= 32 ? 1 + (TA31PK - 1) * ENV.night.value : 1;
     if (!(rt && rt.isWebGLCubeRenderTarget)) spillTick(scene, camera);   // SP31, from the view's own draws (4 Hz)
+    if (TQ32 && !(rt && rt.isWebGLCubeRenderTarget)) tq32Tick(camera);   // TQ32, the same faces for the facade shader
     if (geometry.userData.ta31) return;
     const ng = taUpgrade(geometry);
     if (ng && object && object.geometry === geometry) { object.geometry = ng; taRegisterPanels(object, ng); }
@@ -667,6 +669,17 @@ export function tsqScreenLights(maxBoards = 40) {
 const TA31SP = (() => { if (typeof location === 'undefined') return 6; const v = parseInt(new URLSearchParams(location.search).get('ta31sp'), 10); return Number.isFinite(v) ? Math.max(0, Math.min(12, v)) : 6; })();
 const SP_K = 8;                    // candela per (m^2 x mean linear luminance x board gain): a 20 x 10 m ad at 0.25 ~ 880,
                                    // a CL24 cobrahead peaks at 245 x 3 = 735
+// TQ32 (owner 2026-09-29 on teaser 3: "It seems rather unlit and basic"; docs/notes/tsq-aaa32.md): nothing carried the
+// screens' light onto the Square's walls (SP31 lights the pavement at night only) and the curtain-wall glass mirrored only
+// the analytic sky. The same faces now light the walls and show in the glass, through the facade shader (world/tq32.js
+// tq32SetScreens ranks them by size over distance); refreshed at 4 Hz like SP31. `?tq32=0` leaves it out.
+let tq32Next = 0;
+function tq32Tick(camera) {
+  const now = typeof performance !== 'undefined' ? performance.now() : 0;
+  if (now < tq32Next || !camera) return;
+  tq32Next = now + 250;
+  tq32SetScreens(tsqScreenLights(0), camera.getWorldPosition ? camera.getWorldPosition(new THREE.Vector3()) : camera.position);
+}
 let spill = null;
 // also called from the shop-sign material (shopSigns.js), which draws in every district, so the pool switches itself off
 // once the camera has left the Square rather than keeping six lights live over the rest of the city

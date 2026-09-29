@@ -39,7 +39,10 @@ const PAVBRICK = LT(new THREE.MeshStandardMaterial({ color: 0x9a5540, roughness:
 const PAVSTONE = LT(new THREE.MeshStandardMaterial({ color: 0x958c7c, roughness: 0.95, metalness: 0.0 }));
 // the fountain stone the falling water keeps wet: darker and glossier than the dry coping
 const WETGRANITE = LT(new THREE.MeshStandardMaterial({ color: 0x6c675f, roughness: 0.4, metalness: 0.02 }));
-for (const m of [GRANITE, STONE, BRONZE, ALMABRONZE, MARBLE, DARKMETAL, GREENPOST, HEDGE, PAVBRICK, PAVSTONE]) applySnowCap(m); // walls, balustrades, hedges, monuments cap over
+// AL32: Alma Mater's rebuilt granite block, the tone of the scan's carved front beside it (its photo texture's mean,
+// sRGB 206,197,185, a shade down for the sun the capture's front took)
+const ALMAGRANITE = LT(new THREE.MeshStandardMaterial({ color: 0xc4bcb0, roughness: 0.82, metalness: 0.02 }));
+for (const m of [GRANITE, STONE, BRONZE, ALMABRONZE, MARBLE, DARKMETAL, GREENPOST, HEDGE, PAVBRICK, PAVSTONE, ALMAGRANITE]) applySnowCap(m); // walls, balustrades, hedges, monuments cap over
 // AM30 (owner 2026-09-28: "Columbia University athena statue is extremely barebones as well and blocky I'd like a more
 // realistic reconstruction"): Alma Mater from M. K. Turkcan's photogrammetry scan of the monument (CC BY 4.0,
 // https://doi.org/10.5281/zenodo.10312053), cut to the bronze, its throne and the stone die, moved into her frame and
@@ -50,7 +53,13 @@ for (const m of [GRANITE, STONE, BRONZE, ALMABRONZE, MARBLE, DARKMETAL, GREENPOS
 // up was 5.6 deg off the vertical (tools/assets/alma_tilt.mjs, from her base's treads and risers), which is also what
 // made its underside look uneven; the scan is now levelled and cut where its base meets the landing, and stands on the
 // landing on its own stepped pedestal, without the plinth or the faceted model's apron slab.
+// AL32 (owner 2026-09-29: "still leaned the wrong way. You might need to prop up the base"): AL31 turned the scan the
+// wrong way about its tilt axis and left it leaning 11.3 deg back (alma_tilt.mjs --out on the shipped model). Now level
+// to within 0.5 deg. The capture's granite block is set into the Low steps (its sides seen only above the stairs, its
+// back not at all), so alma_mater.mjs keeps its carved ALMA MATER front and rebuilds the rest as a closed box ('block',
+// in ALMAGRANITE above) that stands on the landing, the die and the bronze propped into its top.
 const AM30 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('am30') === '0');
+const TB32 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tb32') === '0');   // TB32: the terrace's granite border (`?tb32=0` off)
 let _almaScan = null;   // one load for the campus
 const almaScan = () => _almaScan || (_almaScan = (async () => {
   const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
@@ -59,14 +68,16 @@ const almaScan = () => _almaScan || (_almaScan = (async () => {
     if (!o.isMesh) return;
     o.castShadow = true; o.receiveShadow = true;
     const m = o.material;
-    // the photo texture carries the patina's own colour; the bronze a dark metal, the die a honed stone
-    if (m.name === 'bronze') { m.metalness = 0.35; m.roughness = 0.52; } else { m.metalness = 0.0; m.roughness = 0.86; }
+    if (m.name === 'block') { o.material = ALMAGRANITE; return; }
+    // the photo texture carries the patina's own colour; the bronze a dark metal, the marble die polished, the granite honed
+    if (m.name === 'bronze') { m.metalness = 0.35; m.roughness = 0.52; } else { m.metalness = 0.0; m.roughness = m.name === 'marble' ? 0.5 : 0.86; }
     LT(m); applySnowCap(m);
   });
   return g.scene;
 })());
 // CT25 (materials.js applyStoneDetail): photographed stone surfaces on the campus kit, triplanar in the campus frame
 applyStoneDetail(GRANITE, 'cgranite', { amt: 0.8, nrm: 0.75, rgh: 0.45 });
+applyStoneDetail(ALMAGRANITE, 'cgranite', { amt: 0.7, nrm: 0.7, rgh: 0.45, scale: 0.8 });
 applyStoneDetail(STONE, 'cgranite', { amt: 0.85, nrm: 0.8, rgh: 0.4, scale: 1.3 });
 applyStoneDetail(PAVSTONE, 'cpave', { amt: 0.9, nrm: 0.7, rgh: 0.35 });
 applyStoneDetail(PAVBRICK, 'cpave', { amt: 0.6, nrm: 0.6, rgh: 0.3, scale: 0.7 });
@@ -494,6 +505,10 @@ export async function buildCampus(scene) {
       const p = relPt(a, 0);
       granite.add(p[0], yTop + 0.070, p[1], 58, 0.08, 0.52, yawAxis);
     }
+    // TB32 (owner 2026-09-29, of the ground in another shot: "I don't like low-quality lines"): the field's south edge
+    // stood 6.5 cm proud of the slab at the head of the steps, a thin red line across the whole staircase in the College
+    // Walk shots. A granite border in front of it, at the joint bands' height, as the terrace is laid.
+    if (TB32) { const p = relPt(7.55, 0); granite.add(p[0], yTop + 0.070, p[1], 58.4, 0.08, 0.38, yawAxis); }   // 7.36-7.74, to the first band
   }
   /* ============ Low Plaza's retaining walls (built on C.terraceEdges) =======
   The compiler hands us the analytic seams of the terrace model in
@@ -997,8 +1012,8 @@ export async function buildCampus(scene) {
     G.position.set(x, y, z); G.rotation.y = faceWalk;
     if (AM30) {
       almaScan().then((scan) => {
-        // AM30: the scan's own stepped base straight on the landing (AL31: levelled, cut where it meets the landing; the
-        // group stands on the faceted model's 0.16 m apron, which the scan does not have)
+        // AM30: the scan's own pedestal straight on the landing (AL32: its y = 0 is the block's foot; the group stands
+        // on the faceted model's 0.16 m apron, which the scan does not have)
         for (const m of [mGr, mMb, mBz]) if (m) m.visible = false;
         const s = scan.clone(); s.position.y = -0.16;
         G.add(s);

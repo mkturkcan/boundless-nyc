@@ -55,6 +55,14 @@ export const KIND24 = {
   mustang: { w: 0, pw: 0.5, cap: 4, palette: 'car', f27: true },
 };
 const F27 = QS.get('fleet27');
+// RG32 (owner 2026-09-29: "a bug of tops of vehicles disappearing/looking broken sometimes", a red Model 3 from above,
+// its seats showing through the roof): the Model 3's roof and the MKZ's (lincoln, taxi2) are GLASS, 59-60 % of what each
+// shows from above, and glass cast no shadow, so the sun lit the seats through a pane 62 % opaque. Now the panes that
+// face up (roof, windscreen, rear screen) cast the cabin's shadow, from a copy 3 cm inside the cabin so the pane does not
+// shadow itself, and the roof panes are tinted like the real ones (93 % opaque where they face up; the MKZ's curved roof
+// has 20 % of its glass at a normal of 0.85-0.90).
+// `?rg32=0`: the old glass.
+const RG32 = QS.get('rg32') !== '0';
 // scene.environmentIntensity mirrored per frame: vehicle materials carry their OWN envMap (so their specular
 // reflection runs at full strength) but their env DIFFUSE is scaled back to what the rest of the scene gets
 const F24ENV = { value: 0.22 };
@@ -117,7 +125,7 @@ varying vec3 vObjPos;
 varying vec3 vObjN;
 `;
 
-function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = null, sizeY = 1.5, decal = null, plate = false } = {}) {
+function patch(mat, kind, { paint = false, lamp = false, glass = false, roof = false, hubs = null, sizeY = 1.5, decal = null, plate = false } = {}) {
   const prev = mat.onBeforeCompile;
   const sizeU = { value: sizeY };   // a uniform, not a literal: every kind shares its part programs (PF25 program census)
   const hubU = { value: (hubs || []).concat([0, 0, 0, 0].map(() => ({ p: [0, -100, 0], r: 0 }))).slice(0, 4).map((h) => new THREE.Vector4(h.p[0], h.p[1], h.p[2], h.r)) };
@@ -202,7 +210,9 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = n
     if (glass) {
       // premultiplied output: the pane's reflection is NOT attenuated by its opacity (a window is a mirror at
       // grazing angles and a dark tint head-on) — blending is ONE, ONE_MINUS_SRC_ALPHA (see mkGlass)
-      fs = fs.replace('#include <opaque_fragment>', `
+      fs = fs.replace('#include <opaque_fragment>', `${roof ? `
+      // RG32: a pane facing straight up is roof glass, tinted as the real ones are
+      diffuseColor.a = mix( diffuseColor.a, 0.93, smoothstep( 0.86, 0.96, dot( normal, normalize( ( viewMatrix * vec4( 0.0, 1.0, 0.0, 0.0 ) ).xyz ) ) ) );` : ''}
       vec3 f24Dif = reflectedLight.directDiffuse + reflectedLight.indirectDiffuse;
       vec3 f24Spec = reflectedLight.directSpecular + reflectedLight.indirectSpecular;
       gl_FragColor = vec4(f24Dif * diffuseColor.a + f24Spec + totalEmissiveRadiance, diffuseColor.a);`);
@@ -210,7 +220,7 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, hubs = n
     sh.fragmentShader = fs;
     prev?.call(mat, sh, r);
   };
-  const tag = `f24|${paint ? 'p' : ''}${lamp ? 'l' : ''}${glass ? 'g' : ''}${decal ? 'd' : ''}${plate ? (/taxi/.test(kind) ? 'P' : 'q') : ''}`;
+  const tag = `f24|${paint ? 'p' : ''}${lamp ? 'l' : ''}${glass ? 'g' : ''}${roof ? 'r' : ''}${decal ? 'd' : ''}${plate ? (/taxi/.test(kind) ? 'P' : 'q') : ''}`;
   const prevKey = mat.customProgramCacheKey?.bind(mat);
   mat.customProgramCacheKey = () => tag + (prevKey ? '|' + prevKey() : '');
   mat.needsUpdate = true;
@@ -480,7 +490,7 @@ function runtimeMaterial(kind, gm, meta) {
     patch(applySnowCap(m), kind, { paint: true, hubs, sizeY, decal: nypd });
     applySpecAA(m, { sigma2: 0.25, kappa: 0.2, clearcoat: true });
   } else if (cls === 'glass') {
-    m = patch(mkGlass(0x0a0d10, 0.62), kind, { glass: true, hubs, sizeY });
+    m = patch(mkGlass(0x0a0d10, 0.62), kind, { glass: true, roof: RG32, hubs, sizeY });
   } else if (cls === 'lens') {
     m = patch(mkGlass(0xdfe4e8, 0.10, 0.02), kind, { glass: true, hubs, sizeY });
   } else if (cls === 'lamp' || cls === 'siren') {
@@ -666,6 +676,27 @@ function planesFrom(camera, out) {
   for (let i = 0; i < 6; i++) { const p = _fr.planes[i]; out[i * 4] = p.normal.x; out[i * 4 + 1] = p.normal.y; out[i * 4 + 2] = p.normal.z; out[i * 4 + 3] = p.constant; }
 }
 
+// RG32: a glass part's shadow caster: its upward-facing panes (both skins; the side windows let the sun in), each vertex
+// pulled 3 cm toward the middle of the glass (the cabin), position only (the shadow pass draws the default depth material)
+function glassCaster(g) {
+  const P = g.attributes.position, I = g.index, cnt = I ? I.count : P.count;
+  g.computeBoundingBox();
+  const c = g.boundingBox.getCenter(new THREE.Vector3());
+  const v = [new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3()], e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), t = new THREE.Vector3();
+  const out = [];
+  for (let k = 0; k < cnt; k += 3) {
+    for (let j = 0; j < 3; j++) v[j].fromBufferAttribute(P, I ? I.getX(k + j) : k + j);
+    e1.subVectors(v[1], v[0]); e2.subVectors(v[2], v[0]); e1.cross(e2);
+    const l = e1.length();
+    if (l < 1e-10 || Math.abs(e1.y / l) < 0.45) continue;
+    for (const p of v) { t.subVectors(p, c); const d = t.length() || 1; out.push(p.x - (t.x / d) * 0.03, p.y - (t.y / d) * 0.03, p.z - (t.z / d) * 0.03); }
+  }
+  const G = new THREE.BufferGeometry();
+  G.setAttribute('position', new THREE.Float32BufferAttribute(out, 3));
+  G.computeBoundingSphere();
+  return G;
+}
+
 // one render set: every part of one LOD of one kind, sharing instance attributes
 class RenderSet {
   constructor(scene, parts, name, shadow) {
@@ -673,7 +704,8 @@ class RenderSet {
     this.shadow = shadow;
     this.cap = 0;
     this.meshes = [];
-    this.parts = shadow ? parts.filter((p) => p.cls === 'paint' || p.cls === 'detail' || p.cls === 'lampInner') : parts;
+    this.parts = shadow ? parts.filter((p) => p.cls === 'paint' || p.cls === 'detail' || p.cls === 'lampInner' || (RG32 && p.cls === 'glass'))
+      .map((p) => (p.cls === 'glass' ? (p.caster ||= { ...p, geometry: glassCaster(p.geometry) }) : p)) : parts;
     this._alloc(32);
     for (const p of this.parts) {
       const g = new THREE.BufferGeometry();

@@ -902,7 +902,11 @@ export function initPerception(engine, refs) {
           peds.mesh.getMatrixAt(p2.idx, pm);
           pv.setFromMatrixPosition(pm);
           if (p2.__percUid === undefined) p2.__percUid = ++uidSeq;
-          const id = newId(`ped:${p2.__percUid}`, CID.pedestrian, { pos: [+pv.x.toFixed(2), +pv.y.toFixed(2), +pv.z.toFixed(2)], dims: [0.55, 1.75, 0.4] });
+          // SW31 (sim/peds.js): a seated person's box runs from behind the seat to the toes, 1.3 m high, facing the seat's way
+          const S = p2.seat, fx = S ? Math.sin(S.yaw) : 0, fz = S ? Math.cos(S.yaw) : 0, L = S ? (p2.fx - S.x) * fx + (p2.fz - S.z) * fz + 0.27 : 0;
+          const id = newId(`ped:${p2.__percUid}`, CID.pedestrian, S
+            ? { pos: [+(S.x + fx * (L / 2 - 0.15)).toFixed(2), +pv.y.toFixed(2), +(S.z + fz * (L / 2 - 0.15)).toFixed(2)], dims: [0.55, 1.3, +L.toFixed(2)], yaw: +S.yaw.toFixed(3), seated: true }
+            : { pos: [+pv.x.toFixed(2), +pv.y.toFixed(2), +pv.z.toFixed(2)], dims: [0.55, 1.75, 0.4] });
           putCode(a, p2.idx, encodeId(id));
         }
       }
@@ -1050,6 +1054,10 @@ export function initPerception(engine, refs) {
     // a mesh that says what it is (src/city/namedShops.js: a shopfront is building, whatever its merged shape)
     const said = o.userData && o.userData.segClass;
     if (said && CID[said] != null) return CID[said];
+    // TF31 / BP31 (city/tsqPlaza.js, city/bryantParkKit.js): the plaza's and the park's furniture and structures (the park's
+    // merged stone, marble, metal, glass and matte meshes are its walls, steps, lamps, kiosks and fountain), its planting,
+    // and the lamp globes
+    if (/^(tf31|bp31):/.test(o.name || '')) return /:(shrub|leaf)$/.test(o.name) ? CID.vegetation : o.name === 'bp31:glow' ? CID.street_light : CID.street_furniture;
     const n = `${o.name || ''}|${(o.parent && o.parent.name) || ''}|${(o.material && o.material.name) || ''}`;
     if (/sign|text|blade/i.test(n)) return CID.street_sign;
     if (/tree|leaf|foliage|shrub|hedge|grass|lawn/i.test(n)) return CID.vegetation;

@@ -183,6 +183,13 @@ const PRESETS = {
   skyMidtown:    P(-73.980290, 40.741880, 321, -0.0513, -0.0986), // = mMidtownSky: Midtown from 1.63 km south at 321 m
   skyFidi:       P(-73.979000, 40.756500, 552,  2.6825, -0.0818), // = fSkyline: 552 m over Midtown, down the island to FiDi
   towerCrowns:   L(-1011, 3938, 210, -1011, 3278, 0.055),         // Bryant Park / 6th Ave crowns from 660 m S at 210 m (near-LoD towers)
+  // AM30 (the scanned Alma Mater, city/campus.js): her group stands at (764.39, -2748.12) facing yaw -0.484 (campus south)
+  almaFront:     L(761.13, -2741.92, 2.2, 764.39, -2748.12, 0.057),   // 7 m in front at 2.2 m
+  almaThreeQ:    L(755.90, -2745.14, 2.6, 764.39, -2748.12, -0.022),  // 9 m out, 43 deg to her left
+  almaFar:       L(746.22, -2721.78, 6.0, 764.39, -2748.12, -0.124),  // 32 m down the steps at 6 m (the fColumbia range)
+  // TF31 (the Times Square plaza's furniture, city/tsqPlaza.js): the t2Plaza lens between 43rd and 44th, and 25 m over it
+  tsqPlaza:      L(-1253.23, 2937.56, 4.2, -1219.35, 2827.28, 0.069),
+  tsqPlazaHigh:  L(-1262, 2962, 25, -1226, 2852, -0.22),
   esbCrown:      L(-779, 4301, 250, -1222, 3856, 0.157),          // Empire State + W 34th crowns from 630 m SE at 250 m
   parkAveTops:   L(-68, 3816, 190, -506, 3378, 0.097),            // Grand Central / One Vanderbilt / Chrysler from 620 m SE at 190 m
   crownClose:    L(-1011, 3470, 170, -1011, 3120, 0.06),          // 350 m N up 6th Ave at 170 m: crown geometry at ~0.35 m/px
@@ -249,18 +256,18 @@ try {
         await new Promise((s) => setTimeout(s, waitS * 1000));
       } else {
         try {
-          await page.waitForFunction('window.__READY === true', { timeout: 90000 });
+          await page.waitForFunction('window.__READY === true', undefined, { timeout: 90000 });
         } catch { console.log(name, ': READY timeout — capturing anyway'); }
       }
       // the WORLD must exist before the frame is trusted: READY and the dresser can
       // both fire on an empty scene (critic round 2: 35 % of frames were open water
       // or the splash screen). Invalid frames get an _INVALID suffix.
       let worldOk = true;
-      try { await page.waitForFunction('(function(){ const s = window.__STREAMER; if (!s || !s.tiles) return false; if (typeof s.readyUnder === "function" && s.readyUnder()) return true; let n = 0; for (const t of s.tiles.values()) if (t && t.state === "ready") n++; return n >= 6; })()', { timeout: 180000 }); }
+      try { await page.waitForFunction('(function(){ const s = window.__STREAMER; if (!s || !s.tiles) return false; if (typeof s.readyUnder === "function" && s.readyUnder()) return true; let n = 0; for (const t of s.tiles.values()) if (t && t.state === "ready") n++; return n >= 6; })()', undefined, { timeout: 180000 }); }
       catch { worldOk = false; console.log(name, ': INVALID FRAME — no tiles loaded after 180 s, re-run it'); }
       if (nodeSnap) {
         // give the sims up to 30 s to come up so the snap can use the traffic junction graph
-        try { await page.waitForFunction('!!(window.__gtRefs && window.__gtRefs.traffic && window.__gtRefs.traffic._nkGrid && window.__gtRefs.traffic._nkGrid.size > 0)', { timeout: 30000 }); } catch {}
+        try { await page.waitForFunction('!!(window.__gtRefs && window.__gtRefs.traffic && window.__gtRefs.traffic._nkGrid && window.__gtRefs.traffic._nkGrid.size > 0)', undefined, { timeout: 30000 }); } catch {}
         const [dx, dz, dy, pitch] = nodeSnap.split(',').map(Number);
         const r = await page.evaluate(([a, b2, c, d]) => window.__GOTO_NODE(a, b2, c, d), [dx, dz, dy, pitch]).catch((e) => String(e));
         console.log('  node snap:', JSON.stringify(r));
@@ -268,7 +275,7 @@ try {
       }
       // let the dresser drain its queue (budgeted builds, a few ms per frame)
       try {
-        await page.waitForFunction('!window.__DRESS || (function(){ const d = window.__DRESS(); return typeof d !== "object" || (d.queued === 0 && d.active > 0); })()', { timeout: 40000 });
+        await page.waitForFunction('!window.__DRESS || (function(){ const d = window.__DRESS(); return typeof d !== "object" || (d.queued === 0 && d.active > 0); })()', undefined, { timeout: 40000 });
       } catch { console.log(name, ': dresser queue did not drain'); }
       await new Promise((s) => setTimeout(s, 1500));
       // steady-state profile: reset after loading/dressing, sample 4 s
@@ -350,6 +357,15 @@ try {
       if (probe) {
         const pr = await page.evaluate(() => window.__LAYERS(3000)).catch((e) => String(e));
         console.log('  probe:', JSON.stringify(pr));
+      }
+      // LENS CLEAR (2026-09-28): a walker within 0.65 m of a standing lens is cut open by the 0.4 m near plane (the crowd
+      // worker's st42 finding: eyeballs, teeth and the inside of the hair where a face was); the walkers ignore a lens that is
+      // not recording, so wait (up to 12 s) for the sidewalk to move on
+      for (let k = 0; k < 30; k++) {
+        const hit = await page.evaluate(() => (typeof window.__LENS_HIT === 'function' ? window.__LENS_HIT() : null)).catch(() => null);
+        if (!hit) break;
+        if (k === 0) console.log('  lens hit, waiting:', JSON.stringify(hit));
+        await new Promise((s) => setTimeout(s, 400));
       }
       const gpu = await page.evaluate(() => { try { const c = document.createElement('canvas').getContext('webgl2'); const d = c.getExtension('WEBGL_debug_renderer_info'); return d ? c.getParameter(d.UNMASKED_RENDERER_WEBGL) : 'n/a'; } catch { return 'n/a'; } });
       let file = path.join(outDir, `${tag}${worldOk ? '' : '_INVALID'}.png`);

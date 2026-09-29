@@ -67,6 +67,9 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
   Avatars*, Frontiers in Virtual Reality 1, 2020, doi:10.3389/frvir.2020.561558.
   - `boundlessjs/public/models/peds24/rb27/`: 49 pedestrian bodies (45 adults, 4 children), re-bound to the pedestrian
     skeleton; the licence text travels with them in `rb27/NOTICE.md`.
+- **Alma Mater photogrammetry scan** by M. K. Turkcan (<https://doi.org/10.5281/zenodo.10312053>), **CC BY 4.0**:
+  `boundlessjs/public/models/landmarks/alma_mater.glb`, the statue on the Low Library steps (Daniel Chester French,
+  1903), cut to the bronze, its throne and the stone die and simplified by `tools/assets/alma_mater.mjs`.
 - **100STYLE** locomotion dataset: I. Mason, S. Starke and T. Komura, *Real-Time Style Modelling of Human Locomotion
   via Feature-Wise Transformations and Local Motion Phases*, 2022, Zenodo record 8127870. **CC BY 4.0.** Sixteen
   styles (walk and idle) and four further walks are retargeted onto the pedestrian skeleton
@@ -83,11 +86,15 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
 - **Poly Haven** (<https://polyhaven.com>), **CC0 1.0**:
   - PBR sets: `asphalt_02`, `dirty_concrete`, `leafy_grass`, `concrete_pavement_03`, `red_bricks_04`,
     `brown_brick_02`, `white_bricks`, `sandstone_blocks_04`, `plastered_wall_05`, `stone_wall_03`, `sandstone_blocks_08`,
-    `concrete_floor_worn_001` (the Columbia campus stone)
+    `concrete_floor_worn_001` (the Columbia campus stone), `asphalt_pit_lane`, `aerial_asphalt_01`, `gravel_floor_02`
+    (the ground's asphalt and crushed stone)
   - eight 4K sky HDRIs
-- **ambientCG** (<https://ambientcg.com>), **CC0 1.0**: Asphalt025C, Concrete031, Grass004, PavingStones128,
-  Bricks090.
+- **ambientCG** (<https://ambientcg.com>), **CC0 1.0**: Asphalt025C, Asphalt031, Concrete031, Concrete037, Concrete048,
+  Grass004, PavingStones128, Bricks090.
 - **Inter** by Rasmus Andersson, **SIL Open Font License 1.1** (`boundlessjs/public/fonts/OFL.txt`).
+- **Google Fonts** display families on the Times Square boards and shop signs, twenty families, each under the **SIL Open
+  Font License 1.1**; `boundlessjs/public/fonts/ta31/FONTS.txt` lists them with their copyright holders, and each
+  family's licence text is beside its files.
 - The colour-grade LUTs in `boundlessjs/public/luts/` and the storefront signage are generated in this repository.
 
 ## Software

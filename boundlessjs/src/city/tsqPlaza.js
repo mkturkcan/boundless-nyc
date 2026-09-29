@@ -8,6 +8,8 @@
 // ground shader (materials.js). Paint inside the plaza goes. `?tp28=0` restores the compiled ground.
 import * as THREE from 'three';
 import { ENV, applyLightTrim as LT } from '../world/materials.js';
+import { COLLIDERS } from './colliders.js';
+import { chairGeo31, tableGeo31 } from './bryantParkKit.js';   // the same folding bistro set, in the Alliance's red
 export const TP28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tp28') === '0');
 export const TP_MAT = 16;
 
@@ -238,10 +240,186 @@ export function tpPromenades(roads) {
   for (const r of roads) {
     if (!r.noTraffic || r.level > 0 || r.pts.length < 2 || !/BROADWAY/.test(r.name || '')) continue;
     if (!r.pts.some((p) => p[0] > BOX.x0 && p[0] < BOX.x1 && p[2] > BOX.z0 && p[2] < BOX.z1)) continue;
-    const half = r.width / 2 - 2.6;
+    // TF31: the outer lines come in off the benches that frame the plaza (their inner edge 2.65 m from its side)
+    const half = r.width / 2 - (TF31 && r.width / 2 >= 5.5 ? 4.2 : 2.6);
     for (const f of [-1, -1 / 3, 1 / 3, 1]) out.push({ pts: r.pts, off: f * half });
   }
   return out;
+}
+
+// ---- TF31 (owner 2026-09-28: "We need much higher quality and realism for Bryant Park and Times Square there are no
+// details, no sitting people on chairs, etc. it's extremely barebones"): the plaza's furniture, after Snohetta's 2017
+// reconstruction (Architectural Record 2017-04-19: ten 30-50 ft granite benches along the Broadway axis that "define and
+// frame the public plaza", dark precast pavers, most curbs gone), with the steel bollards where the plaza meets the cross
+// streets and the Times Square Alliance's red cafe tables and chairs in the pockets between the benches, planters at the
+// bench ends. Each piece is built by the tile that holds its centre, only where its whole footprint is plaza (not a
+// carriageway), registered as a collider, and every bench place and chair is a seat for the seated walkers (tpSeats).
+// `?tf31=0` leaves the plaza bare.
+export const TF31 = TP28 && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tf31') === '0');
+const SEATS31 = new Map();   // tile key -> [{ x, y, z, yaw (the way a seated person faces), h (seat height), kind, group }]
+let _seatsFlat = null;
+const KIT31 = new Set();   // pieces already registered as walker obstacles (a tile rebuilt does not add them again)
+export function tpSeats() { return _seatsFlat || (_seatsFlat = [].concat(...SEATS31.values())); }
+let _furnMats = null;
+function furnMats() {
+  if (_furnMats) return _furnMats;
+  return (_furnMats = {
+    granite: LT(new THREE.MeshStandardMaterial({ color: 0x5f5e5b, roughness: 0.78, metalness: 0.02 })),   // flamed grey granite
+    steel: LT(new THREE.MeshStandardMaterial({ color: 0x2a2d30, roughness: 0.42, metalness: 0.72 })),
+    red: LT(new THREE.MeshStandardMaterial({ color: 0xa3201b, roughness: 0.46, metalness: 0.35 })),   // the Alliance's red cafe set
+    planter: LT(new THREE.MeshStandardMaterial({ color: 0x33363a, roughness: 0.6, metalness: 0.45 })),
+    shrub: LT(new THREE.MeshStandardMaterial({ color: 0x2f4a24, roughness: 0.95, flatShading: true })),
+    wood: LT(new THREE.MeshStandardMaterial({ color: 0x7a5a3c, roughness: 0.74, metalness: 0.0 })),   // the benches' weathered hardwood slats
+  });
+}
+// template geometries (local: +z along the piece, y up, origin at the foot)
+let _furnGeo = null;
+function furnGeo() {
+  if (_furnGeo) return _furnGeo;
+  const merge = (parts) => {
+    const pos = [], nor = [];
+    for (const [g, m] of parts) { const gg = g.toNonIndexed(); gg.applyMatrix4(m); pos.push(...gg.getAttribute('position').array); nor.push(...gg.getAttribute('normal').array); }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    out.computeBoundingSphere();
+    return out;
+  };
+  const T = (x, y, z, sx = 1, sy = 1, sz = 1, rx = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, 0, 0)), new THREE.Vector3(sx, sy, sz));
+  const B = new THREE.BoxGeometry(1, 1, 1), C = (r0, r1, h, n = 12) => new THREE.CylinderGeometry(r0, r1, h, n);
+  // bench: a 1.5 m wide granite block on a recessed plinth (the shadow line), its top 0.415 m up; on it the seat of
+  // hardwood slats along the bench to 0.46 m (the photos: dark granite with a timber top), sixteen 7.5 cm slats with
+  // 1.9 cm gaps, drawn as their own kind (the wood material)
+  const bench = (L) => merge([[B, T(0, 0.2675, 0, 1.5, 0.295, L)], [B, T(0, 0.06, 0, 1.3, 0.12, L - 0.2)]]);
+  const benchTop = (L) => merge(Array.from({ length: 16 }, (_, i) => [B, T(-0.7425 + 0.0375 + i * 0.094, 0.4375, 0, 0.075, 0.045, L - 0.04)]));
+  // bollard: 0.22 m steel post 0.95 m tall with a domed cap and a collar
+  const bollard = merge([[C(0.11, 0.11, 0.9), T(0, 0.45, 0)], [new THREE.SphereGeometry(0.11, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), T(0, 0.9, 0)], [C(0.125, 0.125, 0.05), T(0, 0.78, 0)]]);
+  // the cafe set: the plaza's red folding bistro chairs and small round tables are the Bryant Park models (the reference
+  // photos: slatted seat, crossed legs; a 0.6 m top at 0.73 m), city/bryantParkKit.js, facing +z like these
+  const table = tableGeo31(false);
+  const chair = chairGeo31();
+  const planter = merge([[B, T(0, 0.38, 0, 1.1, 0.76, 2.2)]]);
+  const shrub = merge([[new THREE.IcosahedronGeometry(1, 1), T(0, 1.05, 0, 0.62, 0.42, 1.05)]]);
+  return (_furnGeo = { bench12: bench(12), bench9: bench(9), benchTop12: benchTop(12), benchTop9: benchTop(9), bollard, table, chair, planter, shrub });
+}
+export function tpBuildFurniture(group, roadsW, yAt, ox, oz, tileKey) {
+  if (!TF31) return 0;
+  const R = tpRegions(roadsW);
+  if (!R) return 0;
+  const M = furnMats(), G = furnGeo();
+  const seats = [];
+  SEATS31.set(tileKey, seats); _seatsFlat = null;
+  const inTile = (x, z) => x >= ox && x < ox + 512 && z >= oz && z < oz + 512;
+  const onP = (x, z) => tpOnPlaza(x, z, R);
+  const lists = { bench12: [], bench9: [], benchTop12: [], benchTop9: [], bollard: [], table: [], chair: [], planter: [], shrub: [] };
+  const put = (k, x, z, yaw, y) => lists[k].push([x, y ?? yAt(x, z), z, yaw]);
+  // a footprint (centre, along-unit u, half length hl, half width hw2) wholly on the plaza
+  const fits = (cx, cz, ux, uz, hl, hw2) => { const nx = -uz, nz = ux; for (const a of [-hl, 0, hl]) for (const b of [-hw2, hw2]) if (!onP(cx + ux * a + nx * b, cz + uz * a + nz * b)) return false; return true; };
+  // walker obstacles under 'kit31' (sim/peds.js reads it with the campus kit: walked round, never a building), once each
+  const box = (cx, cy, cz, ux, uz, hl, hw2, hh) => {
+    const k = `${Math.round(cx * 10)},${Math.round(cz * 10)}`;
+    if (KIT31.has(k)) return;
+    KIT31.add(k);
+    try { COLLIDERS.addBox('kit31', { x: cx, y: cy + hh, z: cz, hw: hw2, hh, hd: hl, rotY: Math.atan2(-ux, uz) }); } catch { /* colliders not loaded */ }
+  };
+  let nSeat = 0;
+  for (const r of roadsW) {
+    if (!r.noTraffic || r.level > 0 || r.pts.length < 2 || !/BROADWAY/.test(r.name || '')) continue;
+    if (!r.pts.some((p) => p[0] > BOX.x0 && p[0] < BOX.x1 && p[2] > BOX.z0 && p[2] < BOX.z1)) continue;
+    const hw = r.width / 2;
+    // stations every metre along the centre line
+    const st = [];
+    let sAcc = 0;
+    for (let k = 0; k < r.pts.length - 1; k++) {
+      const A = r.pts[k], Bp = r.pts[k + 1], dx = Bp[0] - A[0], dz = Bp[2] - A[2], L = Math.hypot(dx, dz);
+      if (L < 1e-3) continue;
+      for (let t = 0; t < L; t += 1) st.push({ x: A[0] + (dx / L) * t, z: A[2] + (dz / L) * t, ux: dx / L, uz: dz / L, s: sAcc + t });
+      sAcc += L;
+    }
+    if (st.length < 20) continue;
+    const at = (s) => st[Math.max(0, Math.min(st.length - 1, Math.round(s)))];
+    const Lt = st.length - 1;
+    // bollards across each end, 1.2 m in from it, every 1.6 m
+    for (const s of [1.2, Lt - 1.2]) {
+      const q = at(s), nx = -q.uz, nz = q.ux;
+      for (let t = -hw + 0.8; t <= hw - 0.8 + 1e-6; t += 1.6) {
+        const x = q.x + nx * t, z = q.z + nz * t;
+        if (!inTile(x, z) || !onP(x, z)) continue;
+        put('bollard', x, z, 0);
+        box(x, yAt(x, z), z, q.ux, q.uz, 0.12, 0.12, 0.48);
+      }
+    }
+    if (hw < 5.5) continue;
+    // the framing benches: 12 m slabs (9 m where a 12 does not fit) either side, 1.9 m in from the plaza's side, a 7 m
+    // gap between; cafe tables in the gaps, a planter at each run's ends
+    for (const side of [-1, 1]) {
+      const off = side * (hw - 1.9);
+      let s = 7;
+      let first = true;
+      while (s < Lt - 7) {
+        let placed = false;
+        for (const [key, L] of [['bench12', 12], ['bench9', 9]]) {
+          if (s + L > Lt - 7) continue;
+          const q = at(s + L / 2), nx = -q.uz, nz = q.ux, cx = q.x + nx * off, cz = q.z + nz * off;
+          if (!fits(cx, cz, q.ux, q.uz, L / 2, 0.75)) continue;
+          if (inTile(cx, cz)) {
+            const y = yAt(cx, cz);
+            put(key, cx, cz, Math.atan2(q.ux, q.uz), y);
+            put(key.replace('bench', 'benchTop'), cx, cz, Math.atan2(q.ux, q.uz), y);
+            box(cx, y, cz, q.ux, q.uz, L / 2, 0.75, 0.23);
+            // places on both long sides every 0.9 m (people sit on either face of these)
+            for (let a = -L / 2 + 0.6; a <= L / 2 - 0.6; a += 0.9) for (const f of [-1, 1]) {
+              seats.push({ x: cx + q.ux * a + nx * f * 0.55, y, z: cz + q.uz * a + nz * f * 0.55, yaw: Math.atan2(nx * f, nz * f), h: 0.46, kind: 'bench', group: -1 });
+              nSeat++;
+            }
+            // a planter off the run's first bench end
+            if (first) {
+              const px = cx - q.ux * (L / 2 + 1.6), pz = cz - q.uz * (L / 2 + 1.6);
+              if (onP(px, pz) && fits(px, pz, q.ux, q.uz, 1.1, 0.55)) { const py = yAt(px, pz); put('planter', px, pz, Math.atan2(q.ux, q.uz), py); put('shrub', px, pz, Math.atan2(q.ux, q.uz), py); box(px, py, pz, q.ux, q.uz, 1.1, 0.55, 0.9); }
+            }
+          }
+          s += L;
+          placed = true; first = false;
+          break;
+        }
+        // the gap: two cafe tables, three chairs each, facing the table
+        const gq = at(s + 3.5), gnx = -gq.uz, gnz = gq.ux;
+        for (const da of [-1.6, 1.6]) {
+          const tx = gq.x + gnx * off + gq.ux * da, tz = gq.z + gnz * off + gq.uz * da;
+          if (!onP(tx, tz) || !fits(tx, tz, gq.ux, gq.uz, 0.95, 0.95)) continue;
+          if (!inTile(tx, tz)) continue;
+          const ty = yAt(tx, tz), grp = seats.length;
+          put('table', tx, tz, 0, ty);
+          box(tx, ty, tz, gq.ux, gq.uz, 0.95, 0.95, 0.37);   // the table and its chairs: walkers go round the group
+          for (let c = 0; c < 3; c++) {
+            const ang = (c / 3) * Math.PI * 2 + (da > 0 ? 0.5 : 0.1);
+            const chx = tx + Math.sin(ang) * 0.66, chz = tz + Math.cos(ang) * 0.66, face = ang + Math.PI;   // facing the table, pulled in
+            put('chair', chx, chz, face, ty);
+            seats.push({ x: chx, y: ty, z: chz, yaw: face, h: 0.452, kind: 'chair', group: grp, tx, tz });   // h: the seat's top
+            nSeat++;
+          }
+        }
+        s += placed ? 7 : 2;
+      }
+    }
+  }
+  // one instanced mesh per kind
+  const kinds = { bench12: M.granite, bench9: M.granite, benchTop12: M.wood, benchTop9: M.wood, bollard: M.steel, table: M.red, chair: M.red, planter: M.planter, shrub: M.shrub };
+  let n = 0;
+  const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), v3 = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
+  for (const [k, L] of Object.entries(lists)) {
+    if (!L.length) continue;
+    const im = new THREE.InstancedMesh(G[k], kinds[k], L.length);
+    L.forEach(([x, y, z, yaw], i) => { q4.setFromAxisAngle(up, yaw); m4.compose(v3.set(x, y, z), q4, one); im.setMatrixAt(i, m4); });
+    im.instanceMatrix.needsUpdate = true;
+    im.computeBoundingSphere();
+    im.castShadow = true; im.receiveShadow = true;
+    im.name = 'tf31:' + k;
+    group.add(im);
+    n += L.length;
+  }
+  if (typeof window !== 'undefined') window.__TF31 = { seats: tpSeats().length, pieces: n };
+  return n;
 }
 
 // ---- Duffy Square (46th-47th St, between Broadway and Seventh Avenue) --------------------------------------------------

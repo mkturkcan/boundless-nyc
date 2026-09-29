@@ -21,6 +21,15 @@
 import * as THREE from 'three';
 import { lampSpots } from './life.js';
 import { fixtureOf, fixtureColor } from './night11.js';
+// TL31 (Times Square at night, the TA31 worker's probe at 45th St: the road near the lens read 203 of 255 with everything on,
+// 85 with the street lamps off; their gain was set on 122nd and 125th St, where nothing else lights the road): lamps near the
+// Square, whose screens light it, at 35 % inside 180 m of 45th St, back to full by 320 m. `?tl31=0` restores.
+const TL31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tl31') === '0');
+const tsqDim = (s) => {
+  if (!TL31) return 1;
+  const t = Math.max(0, Math.min(1, (Math.hypot(s[0] + 1215, s[2] - 2820) - 180) / 140));
+  return 0.35 + 0.65 * t * t * (3 - 2 * t);
+};
 
 export const CL24 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cl24') === '0');
 export const CL_N = 64;
@@ -219,7 +228,7 @@ export class CityLamps {
         if (!sl.s || sl.w <= 0.004) { P[o + 3] = 0; C[o] = C[o + 1] = C[o + 2] = 0; C[o + 3] = 99; n++; continue; }
         const s = sl.s, F = fixtureOf(s[3] ?? -1), FC = fixtureColor(s[3] ?? -1);
         P[o] = s[0]; P[o + 1] = s[1] + (s[4] ?? 8.2); P[o + 2] = s[2]; P[o + 3] = F.range;
-        const I = F.cd * this.gain * night * sl.w;
+        const I = F.cd * this.gain * night * sl.w * tsqDim(s);   // TL31
         C[o] = FC.r * I; C[o + 1] = FC.g * I; C[o + 2] = FC.b * I;
         C[o + 3] = s[5] === undefined || s[5] === null ? 99 : s[5];
         n++;
@@ -232,7 +241,7 @@ export class CityLamps {
       const F = fixtureOf(s[3] ?? -1), FC = fixtureColor(s[3] ?? -1);
       const o = n * 4;
       P[o] = s[0]; P[o + 1] = s[1] + (s[4] ?? 8.2); P[o + 2] = s[2]; P[o + 3] = F.range;
-      const I = F.cd * this.gain * night;
+      const I = F.cd * this.gain * night * tsqDim(s);   // TL31
       C[o] = FC.r * I; C[o + 1] = FC.g * I; C[o + 2] = FC.b * I;
       C[o + 3] = s[5] === undefined || s[5] === null ? 99 : s[5];
       n++;

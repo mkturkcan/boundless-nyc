@@ -25,6 +25,17 @@
 // once the footprint exceeds ~0.3 wall-metres per pixel (the project's stipple
 // rule), so nothing here can alias.
 import * as THREE from 'three';
+import { paintSign, citySign, TSQ_SHOPS } from './signArt.js';
+import { loadAdFonts } from './adArt.js';
+
+// ?ta31=0 restores the U10 artwork. TA31 (owner 2026-09-28: "I don't want to see big letters in shops"): the U10 cell
+// set the name at 54 % of the band height across 90 % of a 7 m shop, i.e. 0.5 m letters from end to end of every
+// fascia in the city. The TA31 cell is a sign (signArt.js): a mark, the name at about 40 % of the band (0.35-0.45 m on
+// a 0.9-1.1 m band) inside the middle 60 % of the shop, a small second line, the trade's own letterform, and plain
+// ground either side. The cell layout, the slot count and the shader's bijection are unchanged.
+const TA31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ta31') === '0');
+// a few chain-like shops from the Times Square roster turn up citywide, as the real ones do
+const FASCIA_CHAINS = [0, 1, 2, 13, 14, 16, 18, 22, 24, 25, 26, 27];   // nothing named Midtown outside Midtown
 
 // ?roof9=0 restores the pre-round-9 behaviour, i.e. mirrored sign text
 // (docs/notes/roofs-r9.md §6). See MIRROR below.
@@ -138,6 +149,14 @@ function drawSlot(c, i, ox, oy) {
   // runtime — this canvas is drawn once.
   c.save();
   if (ROOF9) { c.translate(ox * 2 + CW, 0); c.scale(-1, 1); }
+  if (TA31) {
+    // every fifth slot a chain; the rest the U10 place + trade roster, now as designed signs
+    const head = h(3) < 0.72 ? P1[(h(3) / 0.72 * P1.length) | 0] : '';
+    const spec = (i % 5 === 2) ? TSQ_SHOPS[FASCIA_CHAINS[((i / 5) | 0) % FASCIA_CHAINS.length]] : citySign(head, U10 ? P2[i % P2.length] : P2[(h(4) * P2.length) | 0], i);
+    paintSign(c, ox, oy, CW, CH, { ...spec, maxW: 0.6, capH: spec.sub ? 0.36 : 0.42 });
+    c.restore();
+    return;
+  }
   c.fillStyle = bg;
   c.fillRect(x0, y0, W, H);
   // the sign box's own frame: a bright top rail and a dark bottom shadow — this
@@ -227,6 +246,12 @@ function build() {
   t.minFilter = THREE.LinearMipmapLinearFilter;
   t.magFilter = THREE.LinearFilter;
   t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  // TA31: the facade material is built at boot, before the web fonts are in; paint again once they are (one upload)
+  if (TA31) loadAdFonts().then(() => {
+    c.fillStyle = '#8a8a8a'; c.fillRect(0, 0, AW, AH);
+    for (let r = 0; r < ROWS; r++) for (let k = 0; k < COLS; k++) drawSlot(c, r * COLS + k, k * CW, r * CH);
+    t.needsUpdate = true;
+  });
   return t;
 }
 

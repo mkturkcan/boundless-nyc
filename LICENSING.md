@@ -16,7 +16,8 @@ photoreal pedestrians additionally fall under Epic Games' MetaHuman terms (see t
 | Pedestrian motion clips | dataset `Content/models/peds24/clips_*.bin` | CC BY 4.0, 100STYLE |
 | Bag and backpack models | baked into `Content/models/peds24/` | CC BY 4.0, individual authors ([ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)) |
 | Textures and sky HDRIs | dataset `Content/textures/` (except `cityao.*`) | CC0 1.0, Poly Haven and ambientCG |
-| Inter typeface | `boundlessjs/public/fonts/` | SIL Open Font License 1.1 |
+| Alma Mater statue model | dataset `Content/models/landmarks/alma_mater.glb` | CC BY 4.0, M. K. Turkcan, photogrammetry scan ([doi:10.5281/zenodo.10312053](https://doi.org/10.5281/zenodo.10312053)) |
+| Inter typeface and the Times Square display typefaces | `boundlessjs/public/fonts/`, the display families in `boundlessjs/public/fonts/ta31/` (listed with their copyright holders in `FONTS.txt`, each licence beside its files) | SIL Open Font License 1.1 |
 | Libraries bundled in the built client | dataset `Content/assets/` | three.js MIT, postprocessing Zlib, n8ao ISC, ez-tree MIT, meshoptimizer MIT, Basis Universal Apache-2.0 |
 | Electron and Chromium runtime | release builds | MIT (`LICENSE.electron.txt`) and the Chromium licences (`LICENSES.chromium.html`) |
 

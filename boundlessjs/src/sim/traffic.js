@@ -97,7 +97,12 @@ const IDM = { a: 1.9, b: 2.6, T: 1.15, s0: 2.2, delta: 4 };
 // body lengths for following gaps: a fixed 4.6 m had followers parked inside the back half of a
 // bus (audit 2026-09-10: "micra d128 x bus d135", 10 same-lane pairs per 30 s)
 const VLEN = { bus: 11.6, boxtruck: 7.2, sprinter: 5.9, vwvan: 4.9, van: 5.2, cybertruck: 5.7, suburban: 5.7, ambulance: 6.4, jeep: 4.7 };
-const vlen = (c) => VLEN[c.kind] || 4.6;
+// FG31: the fleet's own model lengths where fleet24 has published them (traffic.vehDims, filled in by update()). The table
+// had no fire truck or minibus, which queued at a car's 4.6 m and stood inside the vehicle ahead (scratchpad qc2: a
+// minibus and a fire truck 7.2 m apart centre to centre, bodies 3 m into each other, for the whole 40 s). `?fg31=0` restores.
+const FG31 = typeof location === 'undefined' || new URLSearchParams(location.search).get('fg31') !== '0';
+let VLEN_FLEET = null;
+const vlen = (c) => (VLEN_FLEET && VLEN_FLEET[c.kind]) || VLEN[c.kind] || 4.6;
 const followGap = (a, b) => (vlen(a) + vlen(b)) / 2 + 0.4;   // centre-to-centre distance at which bumpers touch (+0.4 m)
 
 const nk = (x, z) => `${Math.round(x)}_${Math.round(z)}`;
@@ -182,6 +187,34 @@ const VT29 = typeof location === 'undefined' || new URLSearchParams(location.sea
 // their turning frames; overlaps as before. `?vt30=0` restores VT29.
 const VT30 = VT29 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vt30') !== '0');
 const BIGV = /^(bus|boxtruck|firetruck|ambulance|minibus|van)$/;
+// VQ30 (owner 2026-09-28: "There are still cars that stay rotated in the lane when they are waiting in a queue which
+// never happens in real life"): a lane change moves a car sideways only while it drives forward (VT28, v tan 8 deg),
+// and the turn-lane rule started one whenever a car was more than 6 m from the junction, so a car waiting in a queue
+// took its new lane and inched across it at 8 deg with every creep forward; a passing change could also be caught by a
+// leader braking. Probe (scratchpad stopdev_eval.js, 30 s within 600 m of 125th & Lenox): 36 % of stopped car-frames
+// stood more than 2 deg off their lane and 28 % more than 5 deg, 94 % of those mid lane change. A car now moves over
+// only while rolling and into a gap (10 m of its new lane clear for a turn, 14 m to pass), and one about to stop mid
+// change either finishes it more steeply, up to 14 deg, square 5 m short, or eases its sideways motion out over its last
+// metres and stops parallel to the lanes, straddling. (Holding every change to 25 m of clear road left cars short of
+// their turn lanes, and those that turned from the wrong lane crossed the others in the box.) `?vq30=0` restores VT30.
+const VQ30 = VT29 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq30') !== '0');
+// VQ31: VQ30 still left 5.6 % of the stopped car-frames more than 2 deg off their lane (stopdev3; VQ30 v1's 25 m rule
+// had 0.65 %), nine in ten of them mid lane change. A car learnt its next turn only 34 m from the junction, inside the
+// queue when the queue was longer, and then moved over between stops; and a change needs room to finish (one lane at
+// 8 deg is 23 m of travel) plus room for the towed axle to straighten (a 14 deg body keeps 2 deg after 5 m). A car now
+// picks its turn on entering the street (up to 160 m out); a turn-lane or passing change starts only with its own road
+// and the new lane clear for the whole change plus 6 m; at a crawl it noses over more steeply, up to 15 deg below 3 m/s
+// (8 deg from 8 m/s, as before), the way drivers edge over in slow traffic; and one about to stop finishes 8 m short
+// (was 5) or ends its sideways motion 6 m short (was 3). A car kept out of its turn lane goes straight at the mouth, as
+// before. `?vq31=0` restores VQ30.
+const VQ31 = VQ30 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31') !== '0');
+// its parts, for the A/Bs: `?vq31e=0` picks the turn 34 m out as before, `?vq31t=0` keeps the 8 deg path at a crawl
+const VQ31E = VQ31 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31e') !== '0');
+const VQ31T = VQ31 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31t') !== '0');
+// VQ31: the tangent of the steepest lane-change path at speed v, and the forward room a change of `lanes` lanes of width
+// lw needs at it, plus the 6 m a towed axle takes to come square
+const lcTan = (v) => (VQ31T ? 0.268 - (0.268 - 0.1405) * Math.max(0, Math.min(1, (v - 3) / 5)) : 0.1405);
+const lcRoom = (v, lw, lanes = 1) => (Math.abs(lw) * lanes) / lcTan(v) + 6;
 const CG = 10;   // car grid cell (m)
 
 export class Traffic {
@@ -655,7 +688,7 @@ export class Traffic {
       return;
     }
   }
-  _pickNext(car, nodeKey, exitDirx, exitDirz, straightOnly = false) {
+  _pickNext(car, nodeKey, exitDirx, exitDirz, straightOnly = false, accept = null) {   // accept(turn): VQ31's lane-kept fallback
     // merged junction cluster when one exists (scattered CSCL arms), else the
     // plain canonical node
     const n = this.junction?.get(nodeKey) ?? this.nodes.get(nodeKey);
@@ -683,6 +716,7 @@ export class Traffic {
       if (straightOnly && ang >= 0.5) continue;   // a car stuck in the wrong lane for its turn goes straight instead
       const w = (ang < 0.5 ? 0.62 : ang < 2.0 ? 0.33 : 0.05) * (blocked ? 0.05 : 1);
       const turn = ang < 0.5 ? 'straight' : ang >= 2.0 ? 'uturn' : (exitDirx * ndz - exitDirz * ndx > 0 ? 'right' : 'left');
+      if (accept && !accept(turn)) continue;
       opts.push({ o, ne, w, turn });
     }
     if (!opts.length) return null;
@@ -776,6 +810,20 @@ export class Traffic {
     }
     return h;
   }
+  // VQ30: how far lane nl of edge e is clear ahead of the car (to the nearest body in or still across that lane, less
+  // its follow gap); 1e9 when nothing is ahead on this edge
+  // (VQ31 slowOnly: bodies still doing 3 m/s or more beyond 11 m are no limit; the 11 m test beside the call covers the near ones)
+  _freeAhead(car, e, nl, slowOnly = false) {
+    let best = 1e9;
+    for (const o of e.cars) {
+      if (o === car || o.dir !== car.dir) continue;
+      if (o.lane !== nl && !(Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;
+      const g = (o.d - car.d) * car.dir;
+      if (slowOnly && (o.v || 0) >= 3 && g > 11) continue;
+      if (g > -1 && g - followGap(o, car) < best) best = g - followGap(o, car);
+    }
+    return best;
+  }
   // VT29: half the body's extent ACROSS its lane: the half width, and what its angle to the lane adds (a car keeps the
   // angle of a lane change it stopped in)
   _latHalf(c) {
@@ -786,7 +834,7 @@ export class Traffic {
     return h[0] * Math.abs(Math.cos(a)) + h[1] * Math.abs(Math.sin(a));
   }
   // THE PATH A CAR WILL DRIVE: points from its centre forward (s = distance along the path) over the braking horizon,
-  // through its lane, the turn connector it is on or will take (car.next is chosen 34 m out), and the next edge.
+  // through its lane, the turn connector it is on or will take (car.next is chosen 34 m out; VQ31: on entering the street, up to 160 m), and the next edge.
   // Cached per frame; the connector of a turn not yet begun is the same k = 0.36 cubic update() builds.
   carPath(car) {
     if (car._cpF === this._frame && car._cp) return car._cp;
@@ -1032,6 +1080,10 @@ export class Traffic {
   update(dt, px, pz) {
     this.time += dt;
     dt = Math.min(dt, 0.05);
+    if (FG31 && this.vehDims && this._vdSeen !== this.vehDims) {   // FG31: the lengths the follow gap uses, once per fleet
+      this._vdSeen = this.vehDims;
+      VLEN_FLEET = Object.fromEntries(Object.entries(this.vehDims).filter(([, d]) => d && d[2] > 2).map(([k, d]) => [k, d[2]]));
+    }
     this._frame = (this._frame || 0) + 1;
     if (PY25) this._pedPass(dt);
     if (this._compDirty) this._relabelComponents();
@@ -1098,7 +1150,7 @@ export class Traffic {
       const stopD = mEnd > 0 ? Math.min(mEnd + XW_DEPTH(e.rclass, e.width) + 0.7, Math.max(2, e.len * 0.45)) : 5.5;
       // ---- route early so we can see queues, signal phase and yield conflicts
       if (car.next && !this.edges.has(car.next.ne.id)) car.next = null;
-      if (endD < 34 && !car.next) {
+      if (endD < (VQ31E ? Math.max(34, Math.min(160, e.len)) : 34) && !car.next) {   // VQ31: on entering the street
         const ex = this.dirAt(e, car.dir > 0 ? e.len - 0.5 : 0.5, car.dir);
         car.next = this._pickNext(car, nodeKey, ex[0], ex[1]) || null;
         car.nextNone = !car.next;
@@ -1118,9 +1170,15 @@ export class Traffic {
       // PY25: the wish is bounded by THIS edge's lanes (it was computed on the previous one, which may have had four)
       if (PY25 && car.turnLaneWant >= 0) car.turnLaneWant = Math.min(car.turnLaneWant, Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1));
       if (PY25 && car.lane > Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1)) car.lane = Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1);
-      if (car.turnLaneWant >= 0 && car.lane !== car.turnLaneWant && !car._lcT && endD > 6 && !car._dwell) {
+      // VQ30: a car moves over for its turn only while rolling and into a gap (10 m of its new lane clear ahead); one
+      // standing in a queue waits for the queue to move
+      if (car.turnLaneWant >= 0 && car.lane !== car.turnLaneWant && !car._lcT && endD > 6 && !car._dwell
+          && (!VQ30 || car.v > 0.5)) {
         const nl = car.lane + (car.turnLaneWant > car.lane ? 1 : -1);
-        let clear = true;
+        // VQ31: the new lane free of slow bodies for the whole change, my own road too when my leader is slow, and the
+        // change done before the junction's mouth (stopdev5: the cars still stopped at a steep angle all stood in its last 10 m)
+        const room = VQ31 ? lcRoom(car.v, this._laneOffsetAt(e, car, car.lane + 1) - this._laneOffsetAt(e, car, car.lane) || 3.2) : 0;
+        let clear = !VQ30 || (VQ31 ? endD - (mEnd || 0) > room && this._freeAhead(car, e, nl, true) > room && ((car._leadQ ?? 99) >= 3 || (car._gapQ ?? 1e9) > room) : this._freeAhead(car, e, nl) > 10);
         for (const o of e.cars) {
           if (o === car || o.dir !== car.dir) continue;
           if (o.lane !== nl && !(VT29 && Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;   // VT29: or still in it
@@ -1180,11 +1238,15 @@ export class Traffic {
       }
       // ---- lane change: a blocked car slides to a clear adjacent lane
       const lanesDirNow = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
+      // VQ30: and only into a gap it can finish in (14 m of the new lane clear ahead)
       if (lanesDirNow > 1 && gap < 14 && leadV < car.v * 0.65 && car.v > 2 && !car._lcT) {
         for (const dl of [1, -1]) {
           const nl = car.lane + dl;
           if (nl < 0 || nl >= lanesDirNow) continue;
-          let clear = true;
+          // VQ31: room for the whole change in the new lane and before the junction's mouth, and a leader still rolling or
+          // far enough to finish behind
+          const room = VQ31 ? lcRoom(car.v, this._laneOffsetAt(e, car, car.lane + 1) - this._laneOffsetAt(e, car, car.lane) || 3.2) : 0;
+          let clear = !VQ30 || (VQ31 ? endD - (mEnd || 0) > room + 2 && this._freeAhead(car, e, nl, true) > room + 2 && (leadV > 1 || gap > room) : this._freeAhead(car, e, nl) > 14);
           for (const o of e.cars) {
             if (o === car || o.dir !== car.dir) continue;
             if (o.lane !== nl && !(VT29 && Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;   // VT29: or still in it
@@ -1243,6 +1305,7 @@ export class Traffic {
       }
       if (hold && endD - stopD < gap) { gap = Math.max(0.1, endD - stopD); leadV = 0; }
       { const pg = this._pedGap(car); if (pg < gap) { gap = Math.max(0.05, pg); leadV = 0; } }
+      car._gapQ = gap; car._leadQ = leadV;   // VQ30: what the lane-change spring below has left before the car stops
       const dv = car.v - leadV;
       const sStar = IDM.s0 + Math.max(0, car.v * IDM.T + (car.v * dv) / (2 * Math.sqrt(IDM.a * IDM.b)));
       const acc = IDM.a * (1 - Math.pow(car.v / Math.max(1, v0), IDM.delta) - (gap < 1e8 ? (sStar / Math.max(0.5, gap)) ** 2 : 0));
@@ -1263,7 +1326,13 @@ export class Traffic {
         // neighbours — take the straight continuation when there is one
         if (pick && car.turnLaneWant >= 0 && car.lane !== car.turnLaneWant && Math.abs(this._turnCross(car, e, pick)) > 0.4) {
           const exH = this.dirAt(e, car.dir > 0 ? e.len - 0.5 : 0.5, car.dir);
-          const alt = this._pickNext(car, nodeKey, exH[0], exH[1], true);
+          let alt = this._pickNext(car, nodeKey, exH[0], exH[1], true);
+          // VQ31: no straight on (a T): the turn the car's own lane makes (left from the inner lane, right from the curb
+          // lane) rather than across the others (the mouth cap leaves more cars short of their turn lane)
+          if (!alt && VQ31) {
+            const lnH = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
+            alt = this._pickNext(car, nodeKey, exH[0], exH[1], false, (t) => (t === 'left' && car.lane === 0) || (t === 'right' && car.lane === lnH - 1));
+          }
           if (alt) pick = alt;
         }
         // ---- junction box occupancy (traffic-law audit 2026-09-10: 128 collision pairs in 30 s,
@@ -1286,7 +1355,7 @@ export class Traffic {
           }
         }
         car.next = null;
-        if (PY25) car.turnLaneWant = -1;   // the next edge picks its own turn lane 34 m before ITS junction
+        if (PY25) car.turnLaneWant = -1;   // the next edge picks its own turn lane (34 m before ITS junction; VQ31: on entering it)
         e.cars.delete(car);
         if (!pick) {
           if (e.oneway === 0) this._uTurn(car, e, mEnd);
@@ -1467,7 +1536,18 @@ export class Traffic {
           const lw = this._laneOffsetAt(e, car, car.laneF + 1) - this._laneOffsetAt(e, car, car.laneF);
           if (VT28) {
             // sideways only while going forward: lateral <= v tan(8 deg)
-            const vf = Math.max(0, car.v || 0), cap = (vf * 0.1405) / Math.max(0.5, Math.abs(lw));
+            let tanA = VQ31 ? lcTan(car.v || 0) : 0.1405;   // VQ31: steeper at a crawl
+            // VQ30: a car about to stop mid lane change (its leader or the stop bar near) either finishes it more steeply,
+            // up to 14 deg, square 5 m short of the stop, or, when that is too steep, eases the sideways motion out over
+            // its last metres and stops parallel to the lanes (straddling, a leader in both: VT28) instead of at an angle;
+            // the towed axle straightens over the 3 m it still rolls
+            if (VQ30 && Math.abs(gap) > 0.01 && (car._leadQ ?? 99) < 3) {
+              // (VQ31: square 8 m short, or the sideways motion over 6 m short, so the towed axle comes straight before the stop)
+              const dAv = Math.max(0, (car._gapQ ?? 1e9) - IDM.s0), need = (Math.abs(gap) * Math.abs(lw)) / Math.max(0.5, dAv - (VQ31 ? 8 : 5));
+              if (need <= (VQ31 ? 0.268 : 0.2493)) tanA = Math.max(tanA, need);
+              else tanA *= Math.max(0, Math.min(1, (dAv - (VQ31 ? 6 : 3)) / 6));
+            }
+            const vf = Math.max(0, car.v || 0), cap = (vf * tanA) / Math.max(0.5, Math.abs(lw));
             if (car._lfv > cap) car._lfv = cap; else if (car._lfv < -cap) car._lfv = -cap;
           }
           car.laneF += car._lfv * dt;
@@ -1887,6 +1967,10 @@ export class Traffic {
       const swapped = this.cars.find((c) => c.kind === car.kind && c.idx === lastIdx);
       if (swapped) {
         swapped.idx = car.idx;
+        // SB31: the moved car's pose goes with it. Its slot held the removed car's matrix until its next placement, and
+        // when the moved car had been placed already this update (half the time: the loop runs backwards over this.cars)
+        // it was drawn one frame at the removed car's place, 400 m out: a car near the lens blinked out for a frame
+        for (const m of [pool.mb, pool.md, ...pool.mx]) m.instanceMatrix.array.copyWithin(swapped.idx * 16, lastIdx * 16, lastIdx * 16 + 16);
         this._c.set(swapped.color);
         pool.mb.setColorAt(swapped.idx, this._c);
         pool.mb.instanceColor.needsUpdate = true;

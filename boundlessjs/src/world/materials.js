@@ -222,12 +222,23 @@ export const NEARMASK_GLSL = `
           return texture2D(nearMask, (t + 0.5) / ${NEAR_MASK_N}.0).r > 0.5;
         }`;
 
+// The program cache key of a wrapped material. three shares ONE compiled program between materials whose keys match,
+// and these wrappers keyed on String(prev), the source text of the onBeforeCompile they wrap, which is the same for
+// every material a given wrapper wraps: a stone material wrapped in applyCityAO and applyLightTrim had the key of the
+// metal and matte ones beside it (docs/notes/bryant-park.md, "a shared-program trap"), and whichever compiled first
+// lent the others its shader. A custom key already on the material (applyStoneDetail's, applySpecAA's, a kit's own) is
+// chained now; only a material with three's default key falls back to the source text, which is what it was before.
+const BASE_KEY = THREE.Material.prototype.customProgramCacheKey;
+function wrappedKey(mat, prev, prevKey) {
+  return prevKey && prevKey !== BASE_KEY ? prevKey.call(mat) : (prev ? String(prev) : '');
+}
+
 // Snow-cap any lit material: up-facing fragments whiten with ENV.snow. Uses
 // the fully-transformed VIEW-SPACE normal, so it's correct for skinned rigs,
 // instanced cars/peds/furniture and static props alike with zero vertex work.
 // Composes with an existing onBeforeCompile (tree crowns, etc).
 export function applySnowCap(mat, amount = 1) {
-  const prev = mat.onBeforeCompile;
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
   const std = !!mat.isMeshStandardMaterial;
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
@@ -242,7 +253,7 @@ export function applySnowCap(mat, amount = 1) {
         ${std ? 'roughnessFactor = mix(roughnessFactor, 0.62, capM);' : ''}
       }`);
   };
-  mat.customProgramCacheKey = () => (prev ? String(prev) : '') + '|snowcap' + amount + std;
+  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|snowcap' + amount + std;
   mat.needsUpdate = true;
   return mat;
 }
@@ -260,7 +271,7 @@ export function applySnowCap(mat, amount = 1) {
 // darker than the pavement.
 export function applyLightTrim(mat, scale = 1) {
   const sc = Array.isArray(scale) ? scale : [scale, scale, scale];
-  const prev = mat.onBeforeCompile;
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
     sh.uniforms.ltNight = ENV.night;
@@ -269,7 +280,7 @@ export function applyLightTrim(mat, scale = 1) {
       .replace('#include <color_fragment>', `#include <color_fragment>
       diffuseColor.rgb *= mix(0.30, 0.88, ltNight) * vec3(${sc.map((v) => v.toFixed(3)).join(', ')});`);
   };
-  mat.customProgramCacheKey = () => (prev ? String(prev) : '') + '|lighttrim' + sc.join(',');
+  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|lighttrim' + sc.join(',');
   mat.needsUpdate = true;
   return mat;
 }
@@ -279,7 +290,7 @@ export function applyLightTrim(mat, scale = 1) {
 // full ambient with height above LOCAL TERRAIN (G channel) so towers escape
 // their own street's gloom. Composes with existing onBeforeCompile.
 export function applyCityAO(mat) {
-  const prev = mat.onBeforeCompile;
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
     sh.uniforms.cityAO = ENV.cityAO;
@@ -344,7 +355,7 @@ export function applyCityAO(mat) {
         reflectedLight.indirectSpecular *= mix(0.65, 1.0, caoF);
       }`);
   };
-  mat.customProgramCacheKey = () => (prev ? String(prev) : '') + '|cityao' + (N11 ? 'n' : '');
+  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|cityao' + (N11 ? 'n' : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -655,6 +666,19 @@ export const GR28 = !(typeof location !== 'undefined' && new URLSearchParams(loc
 // rarely rises past 26 m, so on a building over 36 m the wall above 26 m is exposed and is drawn as the building's own
 // windowed facade; below it, and on everything lower, the blind wall stays. `?bw28=0` restores.
 export const BW28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('bw28') === '0');
+// RS30 (owner 2026-09-28: "Rooftop shimmering is still a problem for Columbia University in the main ad", and "rooftops
+// shimmer" in Times Square): the roof patterns are lines a few percent of their period wide (copper standing seams,
+// membrane roll laps, paver joints, slate courses) and random values one per sheet, roll, paver or shingle, and they
+// were faded only once the period itself fell under 1.3-5 px, so from the aerials a seam or a joint was a sub-pixel line
+// that a frame's jittered samples caught on some frames and missed on others. Each now fades by its own width in pixels
+// (whole from ~1.8 px, gone under ~0.7 px) with its mean tone kept, and the granule noises by their own period.
+// `?rs30=0` restores.
+export const RS30 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('rs30') === '0');
+// SG31 (the TA31 worker's night probe at 45th St: the storefront band under the screens bloomed into one white glow, the
+// lit shop glass reaching 2.0 against the night bloom threshold of 0.85): near Times Square a lit shop front is held at 0.85
+// on its brightest channel, its hue kept (inside 180 m of 45th St, easing out by 320 m; the rest of the city as before).
+// `?sg31=0` restores.
+export const SG31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sg31') === '0');
 const STONE_SETS = {
   cgranite:   { mean: [0.3769, 0.2992, 0.1664], size: 2.17 },   // stone_wall_03: speckled, jointless (steps, walls, rims)
   climestone: { mean: [0.3772, 0.2890, 0.1764], size: 3.00 },   // sandstone_blocks_08: ashlar coursing (Low Library)
@@ -802,7 +826,25 @@ export function initGTEX(renderer) {
       const un = 't_' + k;
       for (const u of GTEX_UNIFORM_REFS) if (u[un]) u[un].value = t;
     };
+    if (GP31) {
+      // GP31: the two ground arrays (tools/assets/encode_ground_pbr.mjs). There is no JPG fallback for an array: until
+      // both land gpReady stays 0 and the ground draws its calibrated tones without detail.
+      let n = 0;
+      for (const [slot, file, srgb] of [['alb', 'gp31_alb', true], ['nrm', 'gp31_nrm', false]]) {
+        loader.load('textures/' + file + '.ktx2', (t) => {
+          t.wrapS = t.wrapT = THREE.RepeatWrapping;
+          t.anisotropy = (AAFIX && srgb) ? 16 : 8;   // the r8 rule above: colour sharp, data at 8
+          GP31_TEX[slot].value = t;
+          const depth = (t.image && t.image.depth) || 1;
+          if (slot === 'nrm') GP31_TEX.macroL.value = depth - 1;
+          else GP31_TEX.gravelL.value = depth >= 6 ? 5 : 3;
+          if (++n === 2) GP31_TEX.ready.value = 1;
+        }, undefined, (e) => console.warn('[gp31] ground array failed:', file, e && e.message));
+      }
+    }
     for (const [k, name, srgb] of GTEX_DEFS) {
+      // GP31: nothing samples the six GM28 asphalt/concrete maps any more (4096^2 each: 128 MiB of VRAM as BC7); they stay 1 px
+      if (GP31 && /^(asC|asN|asR|asD|coC|coN)$/.test(k)) continue;
       loader.load('textures/' + name + '.ktx2', (t) => install(k, t, srgb), undefined, () => {
         // fallback: uncompressed jpg (dev before encoding / exotic GPU)
         const t = tl.load('textures/' + name + '.jpg');
@@ -1085,6 +1127,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
         uniform vec3 sunDirW; uniform vec3 sunColW;
         uniform float lbRoof;   // LB13 — silver-membrane albedo trim (docs/notes/light-r13.md)
         uniform float lb14Roof; // LB14 — per-roof membrane value + speckle-scale spread (docs/notes/lb14.md)
+        const bool RS30 = ${RS30 ? 'true' : 'false'};   // RS30 — roof patterns faded by their own width in pixels
         // per-building/per-wall constants MUST interpolate flat: perspective-correct
         // interpolation of equal vertex values wobbles by ~1 ulp per pixel, and a hash
         // amplifies that wobble on large seeds (cvar*511, wallSeed*53...) into per-pixel
@@ -1217,7 +1260,8 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
           // a 2-5m blotch layer carries the visible variation instead —
           // real membranes are SMOOTH with soft coating blotches
           float rFp = max(fwidth(rp.x), fwidth(rp.y));
-          float microVis = smoothstep(0.5, 0.12, rFp);
+          // RS30: vnoise(rp * 5) has a 0.2 m period, so at a 0.12 m footprint it was under 2 px a period and still whole
+          float microVis = RS30 ? smoothstep(0.08, 0.025, rFp) : smoothstep(0.5, 0.12, rFp);
           // LB14 (docs/notes/lb14.md, critic r14 runner-up): the membrane speckle was ONE noise at ONE
           // SCALE on every roof in the frame — only its phase varied (cvar), which reads as the same
           // material stamped over the whole block. Two decorrelated per-building draws give each roof
@@ -1236,8 +1280,13 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
           float rollW = 0.914;
           float rollV = rp.y / rollW;
           float rollAA = max(fwidth(rollV), 1e-4);
-          float rollVis = smoothstep(0.6, 0.18, rollAA);
-          float seamL = smoothstep(0.045 + rollAA, 0.0, abs(fract(rollV) - 0.5) * 2.0 - 0.93) * rollVis;
+          // RS30: the lap line is 7 % of a roll, so at 5.5 px a roll (the old full-strength limit) it was 0.4 px wide
+          // (seamL is 1 across ~95 % of a roll and 0 on the lap, so the fade keeps that mean under the old envelope and
+          // takes out only the lap pattern: the calibrated LB13/LB14 roof tones stay at every distance)
+          float rollEnv = smoothstep(0.6, 0.18, rollAA);
+          float rollVis = RS30 ? smoothstep(0.15, 0.05, rollAA) : rollEnv;
+          float seamRaw = smoothstep(0.045 + rollAA, 0.0, abs(fract(rollV) - 0.5) * 2.0 - 0.93);
+          float seamL = (RS30 ? mix(0.95, seamRaw, rollVis) : seamRaw) * rollEnv;
           float rollTint = (hash12(vec2(floor(rollV), cvar * 53.0)) - 0.5) * 0.06 * rollVis;   // roll-to-roll batch tint
           vec3 roofC;
           bool patterned = false; // pavers/sedum/slate carry their own detail
@@ -1249,21 +1298,29 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
             // gutter line is where the drip darkens it. Patina is a matte mineral crust: dielectric, rough, no sheen.
             float sx = vFUv.x / 0.46;
             float sAA = max(fwidth(sx), 1e-4);
-            float sVis = smoothstep(0.75, 0.22, sAA);
+            // RS30 (owner 2026-09-28: "rooftop shimmering is still a problem for Columbia University"): the rib is ~12 %
+            // of a pan, so at the aerial's 2-3 px a pan it was a quarter-pixel line that the six jittered samples of a
+            // recorded frame caught on some frames and missed on others; it now fades out before it is under 0.7 px
+            // wide and is whole only from 1.8 px (a pan of 15 px), its mean darkening kept where it is gone. The
+            // sheet-to-sheet tint (one random value a pan) and the run-off streaks (0.6 m) fade by their own size too.
+            float sEnv = smoothstep(0.75, 0.22, sAA);
+            float sVis = RS30 ? smoothstep(0.171, 0.0667, sAA) : sEnv;
             float sd = abs(fract(sx) - 0.5) * 2.0;                        // 0 mid-pan, 1 on the seam
             float rib = smoothstep(0.86 - sAA, 0.95, sd) * sVis;
             float ribLit = smoothstep(0.80 - sAA, 0.88, sd) * (1.0 - rib) * sVis;
             float pan = floor(sx);
             float hy = vFUv.y;
             vec3 base = diffuseColor.rgb;
-            float pT = hash12(vec2(pan, cvar * 97.0)) - 0.5;               // sheet-to-sheet patina batch
+            float pT = (hash12(vec2(pan, cvar * 97.0)) - 0.5) * (RS30 ? smoothstep(0.5, 0.2, sAA) : 1.0);   // sheet-to-sheet patina batch
             float blt = fbm(vec2(vFUv.x, hy) * 0.28 + cvar * 13.0);         // soft weathering blotches
             float strk = vnoise(vec2(vFUv.x * 1.6 + cvar * 31.0, hy * 0.20)); // run-off streaks down the slope
+            float strkV = RS30 ? smoothstep(0.45, 0.15, fwidth(vFUv.x * 1.6)) : 1.0;
             vec3 cu = base * (0.92 + 0.12 * pT + 0.22 * (blt - 0.5));
-            cu = mix(cu, base * vec3(0.70, 0.80, 0.74), smoothstep(0.58, 0.88, strk) * 0.42);
+            cu = mix(cu, base * vec3(0.70, 0.80, 0.74), mix(0.10, smoothstep(0.58, 0.88, strk), strkV) * 0.42);
             cu = mix(cu, base * vec3(0.46, 0.44, 0.38), smoothstep(0.55, 0.0, hy) * 0.40);   // the drip over the gutter
             cu *= 1.0 - rib * 0.24;
             cu *= 1.0 + ribLit * 0.07;
+            if (RS30) cu *= 1.0 - (sEnv - sVis) * 0.017;   // the ribs' mean where the new fade has taken them and the old had not
             roofC = cu;
             FAC_rough = 0.76 + 0.08 * blt;
             patterned = true;
@@ -1273,7 +1330,11 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
             float cAA = max(fwidth(crs), 1e-4);
             float cLine = smoothstep(0.1 + cAA, 0.0, abs(fract(crs) - 0.5) * 2.0 - 0.8);
             float shTint = hash12(vec2(floor(crs), floor(rp.x * 1.4) + cvar * 31.0));
-            roofC = mix(vec3(0.14, 0.15, 0.17), vec3(0.2, 0.21, 0.24), shTint) * (1.0 - cLine * 0.35);
+            // RS30: 0.34 m courses were drawn at full contrast at any distance; they and the shingle tints fade from 8 px
+            // a course to 3 px, to their means (the course line darkens ~85 % of a course by 0.35)
+            float cVis = RS30 ? smoothstep(0.34, 0.12, cAA) : 1.0;
+            shTint = mix(0.5, shTint, cVis);
+            roofC = mix(vec3(0.14, 0.15, 0.17), vec3(0.2, 0.21, 0.24), shTint) * (1.0 - mix(0.30, cLine * 0.35, cVis));
             FAC_rough = 0.75;
             patterned = true;
           } else if (membF > 4.5) {  // sedum: mottled planting with dry patches
@@ -1281,7 +1342,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
             float dry = smoothstep(0.72, 0.95, vnoise(rp * 1.7 + cvar * 9.0));
             vec3 g1 = vec3(0.20, 0.28, 0.12), g2 = vec3(0.36, 0.34, 0.16), g3 = vec3(0.32, 0.24, 0.15);
             roofC = mix(mix(g1, g2, smoothstep(0.3, 0.72, sed)), g3, dry);
-            roofC *= 0.92 + 0.2 * mix(0.5, vnoise(rp * 7.0), microVis);
+            roofC *= 0.92 + 0.2 * mix(0.5, vnoise(rp * 7.0), RS30 ? smoothstep(0.05, 0.016, rFp) : microVis);
             FAC_rough = 0.97;
             patterned = true;
           } else if (membF > 3.5) {  // pavers on pedestals: 0.6m grid, AA'd joints
@@ -1290,7 +1351,11 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
             float jx = smoothstep(0.05 + pAA.x, 0.0, abs(fract(pv.x) - 0.5) * 2.0 - 0.9);
             float jz = smoothstep(0.05 + pAA.y, 0.0, abs(fract(pv.y) - 0.5) * 2.0 - 0.9);
             float pTint = hash12(floor(pv) + cvar * 43.0);
-            roofC = mix(vec3(0.42, 0.405, 0.38), vec3(0.52, 0.5, 0.468), pTint) * (1.0 - max(jx, jz) * 0.3) * (0.8 + 0.25 * wear);
+            // RS30: the joint pattern (max(jx, jz) is 1 over all but the joint crossings, mean ~0.99) and the per-paver tint
+            // fade from 15 px a paver to 5 px, to their means
+            float pVis = RS30 ? smoothstep(0.2, 0.067, max(pAA.x, pAA.y)) : 1.0;
+            pTint = mix(0.5, pTint, pVis);
+            roofC = mix(vec3(0.42, 0.405, 0.38), vec3(0.52, 0.5, 0.468), pTint) * (1.0 - mix(0.297, max(jx, jz) * 0.3, pVis)) * (0.8 + 0.25 * wear);
             FAC_rough = 0.9;
             patterned = true;
           } else if (kindR < 0.34) { // aged silver coating: smooth, soft blotches
@@ -1319,7 +1384,7 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
             roofC *= 0.94 + 0.12 * micro;
             FAC_rough = 0.62 + blotch * 0.2; // sheen varies at blotch scale, not per pixel
           } else if (kindR < 0.85) { // gravel ballast: real granularity, mip-faded
-            float grv = mix(0.5, vnoise(rp * 11.0), microVis);
+            float grv = mix(0.5, vnoise(rp * 11.0), RS30 ? smoothstep(0.035, 0.011, rFp) : microVis);
             roofC = mix(vec3(0.28, 0.255, 0.222), vec3(0.39, 0.365, 0.322), grv) * (0.84 + 0.22 * wear);
             roofC *= 0.94 + 0.12 * blotch;
             FAC_rough = 0.98;
@@ -1753,7 +1818,11 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
                 float filmS = 0.12 + dust0 * 0.2;
                 vec3 shopGlass = vec3(0.8, 0.83, 0.81);
                 albedo = mix(room * shopGlass, vec3(0.08, 0.09, 0.095), max(filmS, (1.0 - grazeS) * 0.75));
-                FAC_emis += room * shopGlass * glowS * 2.0 * (1.0 - filmS) * grazeS;
+                ${SG31 ? `{
+                  vec3 seS = room * shopGlass * glowS * 2.0 * (1.0 - filmS) * grazeS;
+                  float tsqS = 1.0 - smoothstep(180.0, 320.0, length(vWP.xz - vec2(-1215.0, 2820.0)));   // SG31
+                  FAC_emis += seS * mix(1.0, min(1.0, 0.85 / max(1e-3, max(seS.r, max(seS.g, seS.b)))), tsqS);
+                }` : `FAC_emis += room * shopGlass * glowS * 2.0 * (1.0 - filmS) * grazeS;`}
                 FAC_rough = 0.1 + filmS * 0.3;
                 FAC_rough = mix(FAC_rough, 0.7, smoothstep(0.15, 0.5, fwidth(u))); // specular-AA
               }
@@ -3434,8 +3503,1117 @@ const GND_GLSL = /* glsl */ `
     return mix(vec3(1.0), clamp(mix(vec3(1.0), tc * invMean, k), 0.34, 2.1), det);
   }
 `;
+// ------------------------------------------------------------------ GP31 GROUND PBR
+// (owner 2026-09-28: "the simulator is starting to look PS1/PS2 like instead of the complex realistic materials ... right
+// now it seems like there is a basic dirt overlay on the textures only ... we need proper high quality PBR"). What the
+// GM28 ground actually was: the sidewalk's photo set was Poly Haven dirty_concrete, a slab strewn with leaf litter and soil
+// clumps (the brown flecks on every flag), and the asphalt set (Poly Haven asphalt_02, a 3.0 m scan) was tiled at 6.25 m,
+// so its 6-12 mm chips drew at 13-25 mm. Both entered only as a mean-preserving grain over a procedural grey, under two
+// fbm stain clouds, soot, skin patches and oil blotches, and those clouds were the dirt overlay. GP31 makes scanned CC0
+// sets the material itself, at their true size: ambientCG Asphalt031 (weathered) and Poly Haven asphalt_pit_lane (a young
+// pour, new utility cuts), ambientCG Concrete048 (broom finish) and Concrete037 (an old flag walked down to its
+// aggregate), Poly Haven stone_wall_03 (the granite kerb face, the plaza's smooth pavers), gravel_floor_02 (Bryant Park's
+// walks) and aerial_asphalt_01 (a 30 m scan of a real road surface: tyre marks, stains and weathering at 0.1-10 m).
+// tools/assets/encode_ground_pbr.mjs packs them into two KTX2 arrays (docs/notes/ground-pbr.md has every source and
+// licence). A 2 m tile is hex-tiled (Mikkelsen 2022) so it never repeats, every texel is taken relative to its set's mean
+// so the calibrated tones (LB14/GT13) hold at every distance, and the owner's second note on the first previews ("complex
+// procedural materials ... potholes, mud, imperfections, weathering ... extreme AAA quality", two fab.com stills as the
+// bar) is answered by a height field: near the lens the eye ray is marched into the scan's relief and a second march
+// toward the sun shades the crevices; potholes are marched in their own height field with base course, silt and murky
+// water at a flat level; everything else is laid out from the kerbs (gpKerbWorker): tyre tracks and the oil line per
+// lane, sealed and open crack runs of a constant width, alligator cracking and raveling in old wheel tracks, utility cuts
+// behind a dark saw cut with a settled or proud edge, dust at the kerb. `?gp31=0` restores GM28.
+export const GP31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gp31') === '0');
+// per-layer linear albedo mean (after the encoder's low-frequency flattening), roughness mean and AO mean: gp31_stats.json
+const GP31_SETS = [
+  { key: 'asphA', mean: [0.1991, 0.1991, 0.1990], rough: 0.524, ao: 0.910, hMean: 0.590 },   // 0 ambientCG Asphalt031, 2.0 m
+  { key: 'asphB', mean: [0.0591, 0.0478, 0.0384], rough: 0.832, ao: 0.903, hMean: 0.609 },   // 1 Poly Haven asphalt_pit_lane, 2.0 m
+  { key: 'concA', mean: [0.3635, 0.3154, 0.2443], rough: 0.608, ao: 0.929, hMean: 0.534 },   // 2 ambientCG Concrete048, 2.0 m
+  { key: 'concB', mean: [0.3364, 0.3114, 0.2662], rough: 0.608, ao: 0.885, hMean: 0.395 },   // 3 ambientCG Concrete037, 1.6 m
+  { key: 'granite', mean: [0.3848, 0.3062, 0.1717], rough: 0.871, ao: 1.000, hMean: 0.502 }, // 4 Poly Haven stone_wall_03, 2.17 m
+  { key: 'gravel', mean: [0.4288, 0.4075, 0.3519], rough: 0.473, ao: 0.671, hMean: 0.566 },   // 5 Poly Haven gravel_floor_02, 2.0 m
+];                                                                              // 6 (nrm array only) aerial_asphalt_01, 30 m
+// macroL / gravelL: the aerial scan's and the gravel's layers, read off the arrays that actually loaded (a 5-layer bank
+// from before the gravel set keeps working: the aerial scan at 5, the park's walks on the worn-concrete set)
+export const GP31_TEX = { alb: { value: null }, nrm: { value: null }, ready: { value: 0 }, macroL: { value: 5 }, gravelL: { value: 3 } };
+if (typeof document !== 'undefined') {
+  const ph = (n) => { const t = new THREE.DataArrayTexture(new Uint8Array(4 * n).fill(128), 1, 1, n); t.needsUpdate = true; return t; };
+  GP31_TEX.alb.value = ph(6); GP31_TEX.nrm.value = ph(7);
+}
+const f4 = (v) => v.toFixed(4);
+// ?gpdefect=N multiplies the pothole and alligator densities (an inspection aid for stills; 1 = the NYC density)
+const GP_DEFECT = typeof location !== 'undefined' ? +(new URLSearchParams(location.search).get('gpdefect') || 1) : 1;
+// GP31 kerb frame. The ground mesh carries only position and matId (docs/notes/surfaces.md section 1): no lane position
+// and not even the street's bearing, which GM28 guessed per ~130 m block from a noise mask, so on about half the blocks
+// its wheel paths ran across the street. world/gpKerbWorker.js derives both from the kerb faces (matId 2) and hands each
+// roadway, paint and sidewalk vertex four Uint16 (8 bytes): the across-street coordinate from the street's canonical kerb,
+// the distance to the nearest kerb, the street width and the bearing. It runs in a worker: on the main thread the first
+// version blocked a frame for about a second per tile (the fps sample of the first GPU batch read 0). Until a tile's
+// result lands, its ground draws with the block-mask fallback. The attribute is always added between frames, never
+// inside a draw: three caches a mesh's vertex bindings on the draw that first sees an attribute and does not rebind a
+// buffer uploaded after that draw (found in the CPU preview: every fragment fell back).
+let _gpW = null;
+const _gpJobs = new Map();
+let _gpJob = 0;
+function gpKerbAsync(g, st) {
+  if (_gpW === null) {
+    try {
+      _gpW = new Worker(new URL('./gpKerbWorker.js', import.meta.url), { type: 'module' });
+      _gpW.onmessage = (e) => {
+        const { id, out, segs, tris, ms } = e.data;
+        const geo = _gpJobs.get(id); _gpJobs.delete(id);
+        st.pending--; st.meshes++; st.segs += segs; st.tris += tris; st.ms += ms; st.maxMs = Math.max(st.maxMs, ms);
+        if (geo && geo.attributes.position && !geo.userData.gpDisposed) geo.setAttribute('gpK', new THREE.BufferAttribute(out, 4));
+      };
+      _gpW.onerror = (e) => { console.warn('[gp31] kerb worker failed:', e.message); _gpW = false; };
+    } catch (e) { console.warn('[gp31] kerb worker unavailable:', e.message); _gpW = false; }
+  }
+  if (!_gpW) return;
+  const id = ++_gpJob;
+  _gpJobs.set(id, g);
+  g.addEventListener('dispose', () => { g.userData.gpDisposed = true; });
+  const pos = g.attributes.position.array.slice(), mat = g.attributes.matId.array.slice();
+  st.pending++;
+  _gpW.postMessage({ id, pos, mat }, [pos.buffer, mat.buffer]);
+}
+const GP31_GLSL = /* glsl */ `
+  uniform highp sampler2DArray t_gpA;   // GP31: sRGB albedo, A = height
+  uniform highp sampler2DArray t_gpN;   // GP31: normal xy (OpenGL), B = roughness, A = AO; the last layer (gpMacroL) = the 30 m scan
+  uniform float gpReady; uniform float gpMacroL; uniform float gpGravelL;
+  const vec3 GP_MEAN[6] = vec3[6](${GP31_SETS.map((s) => `vec3(${s.mean.map(f4).join(', ')})`).join(', ')});
+  const float GP_RGH[6] = float[6](${GP31_SETS.map((s) => f4(s.rough)).join(', ')});
+  const float GP_AO[6] = float[6](${GP31_SETS.map((s) => f4(s.ao)).join(', ')});
+  const float GP_HM[6] = float[6](${GP31_SETS.map((s) => f4(s.hMean)).join(', ')});   // mean of the stretched height
+  float GP_layer;   // the scanned set this fragment takes (GP31_SETS order)
+  float GP_seal;    // crack sealant / sealed saw cut coverage: a smooth satin skin, no aggregate
+  float GP_sealE;   // its outer third, where the squeegeed film is thin enough for chip tops to poke through
+  vec2 GP_sealN;    // the sealant's raised lip, as a slope in the street frame q
+  vec2 GP_off;      // per-flag texture offset (sidewalk)
+  vec2 GP_jn;       // tooled-joint slope, gG frame (sidewalk)
+  float GP_wear;    // thermoplastic wear, 0 fresh .. 1 worn through
+  vec3 GP_asph;     // the asphalt tone under a paint film
+  float GP_crack;   // unsealed hairline cracks
+  float GP_cut;     // inside a utility cut
+  float GP_dust;    // grit and dust drifted against the kerb
+  vec2 GP_qT; vec2 GP_qN;   // world directions of the street frame q (along, across)
+  // the asphalt height field's layers (GP31 round 2, owner 2026-09-28: "complex procedural materials ... potholes, mud,
+  // imperfections, weathering")
+  uniform vec3 gpSun;       // ENV.sunDir, toward the sun
+  float GP_potD;            // depth below the road of the surface the eye sees (a pothole's wall, floor or water)
+  float GP_potIn;           // 1 = inside a pothole
+  float GP_potF;            // 1 = on its floor (base course and silt), 0 = up its broken wall
+  float GP_water;           // standing water coverage
+  float GP_wDepth;          // its depth, metres
+  float GP_rim;             // the ring of mud and damp round a pothole
+  vec2 GP_pomXZ;            // parallax: world xz from the fragment to where the eye ray meets the surface
+  vec2 GP_slopeW;           // macro slope (pothole walls, patch seams, crack walls), world xz
+  float GP_shadow;          // direct-light factor: pothole walls and crevices shading their own floor
+  float GP_ravel;           // raveling: the fines worn out, the aggregate standing proud
+  float GP_allig;           // alligator (fatigue) cracking net
+  float GP_open;            // open (unsealed) cracks, 5-14 mm, with depth
+  float GP_bleach;          // sun-oxidised binder away from the tyres
+  float GP_trk;             // tyre track (polish)
+  float GP_flake;           // thermoplastic flaked off along a crack
+  float GP_castPat;         // a cover's cast face: 1 = raised (polished) iron, 0 = the lows between; 0.5 = none
+  float GP_castSlot;        // a vented cover's slots, open to the dark vault
+  float GP_pEdge;           // metres to a marking's long edge (gpKerbWorker's rectangle frame; 1 = none)
+  float GP_hp;              // the scan's chip relief at the visible point, -0.5 (lows) .. 0.5 (tops)
+  // a pothole cell of the street frame (9 m along x one 3.35 m lane across): xy centre, z radius, w depth; 0 = none.
+  // In a tyre track by preference (0.85 m either side of the cell's centre line), on old pours only.
+  vec4 gpPotCell(vec2 cid, float lotH) {
+    if (hash12(cid + 91.3) > 0.034 * ${GP_DEFECT.toFixed(3)} * smoothstep(0.40, 0.66, lotH)) return vec4(0.0);
+    float s = hash12(cid + 17.1), r1 = hash12(cid + 3.3), r2 = hash12(cid + 5.5);
+    float R = s < 0.68 ? 0.13 + 0.10 * r1 : s < 0.94 ? 0.25 + 0.17 * r1 : 0.46 + 0.24 * r1;
+    float D = s < 0.68 ? 0.022 + 0.018 * r2 : s < 0.94 ? 0.040 + 0.030 * r2 : 0.065 + 0.035 * r2;
+    float side = hash12(cid + 7.7) < 0.5 ? -0.85 : 0.85;
+    return vec4((cid.x + 0.2 + 0.6 * hash12(cid + 9.9)) * 9.0, (cid.y + 0.5) * 3.35 + side + (hash12(cid + 11.1) - 0.5) * 0.4, R, D);
+  }
+  // the pothole's surface below the road (metres, <= 0) at street-frame point q: a broken, near-vertical wall ~3 cm wide
+  // on a ragged outline (three noise octaves on the radius), a bowl deepest in the middle, base-course rubble on the floor
+  float gpPotH(vec2 q, vec4 P, float seed) {
+    vec2 d = q - P.xy; d.x /= 1.25;                               // tyres open them along the street
+    float r = length(d);
+    vec2 u = d / P.z;                                             // the outline's noise in the pothole's own units
+    float edge = P.z * (0.62 + 0.42 * vnoise(u * 1.6 + seed) + 0.22 * vnoise(u * 4.3 + seed * 1.7) + 0.10 * vnoise(u * 11.0 + seed * 2.3));
+    float inside = smoothstep(edge + 0.012, edge - 0.03, r);
+    float bowl = 1.0 - 0.35 * smoothstep(0.0, edge, r);
+    return -P.w * inside * bowl * (0.86 + 0.28 * vnoise(q * 11.0 + seed));
+  }
+  varying vec4 vK;  // the kerb frame (world/gpKerbWorker.js): across-street, to-kerb, width, bearing (paint: its rectangle)
+  vec2 gpH2(vec2 p) { return vec2(hash12(p + 0.37), hash12(p * 1.71 + 5.13)); }
+  // value noise with its analytic gradient (n, dn/dx, dn/dy): the same field as vnoise()
+  vec3 vnoiseD(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f), du = 6.0 * f * (1.0 - f);
+    float a = hash12(i), b = hash12(i + vec2(1.0, 0.0)), c = hash12(i + vec2(0.0, 1.0)), d = hash12(i + vec2(1.0, 1.0));
+    float k1 = b - a, k2 = c - a, k4 = a - b - c + d;
+    return vec3(a + k1 * u.x + k2 * u.y + k4 * u.x * u.y, du * vec2(k1 + k4 * u.y, k2 + k4 * u.x));
+  }
+  // box-filtered coverage of a band |sd| < hw over a pixel footprint 2h: a line thinner than a pixel keeps its ink, not
+  // its contrast, so a crack or a joint fades to its true mean instead of widening into a grid
+  float gpBand(float sd, float hw, float h) { return clamp((min(sd + h, hw) - max(sd - h, -hw)) / (2.0 * h), 0.0, 1.0); }
+  // hex tiling (Mikkelsen, "Practical Real-Time Hex-Tiling", JCGT 11(2), 2022) with rotation off (the broom and the
+  // paving run with the street): three randomly offset taps of one layer blended by a sharpened barycentric weight (see
+  // gpHex for why the blend preserves variance). gs scales the hex cells (0.29 / gs tiles apart).
+  void gpTri(vec2 s, out vec3 w, out vec2 v1, out vec2 v2, out vec2 v3) {
+    s *= 3.4641016;
+    vec2 sk = vec2(s.x - 0.57735027 * s.y, 1.15470054 * s.y);
+    vec2 b = floor(sk), f = fract(sk);
+    float tz = 1.0 - f.x - f.y, sg = step(0.0, -tz), s2 = 2.0 * sg - 1.0;
+    w = vec3(-tz * s2, sg - f.y * s2, sg - f.x * s2);
+    v1 = b + vec2(sg); v2 = b + vec2(sg, 1.0 - sg); v3 = b + vec2(1.0 - sg, sg);
+  }
+  void gpHex(float L, vec2 st, float gs, vec2 gx, vec2 gy, out vec4 A, out vec4 N) {
+    vec3 w; vec2 v1, v2, v3; gpTri(st * gs, w, v1, v2, v3);
+    vec2 s1 = st + gpH2(v1), s2 = st + gpH2(v2), s3 = st + gpH2(v3);
+    vec4 a1 = textureGrad(t_gpA, vec3(s1, L), gx, gy), a2 = textureGrad(t_gpA, vec3(s2, L), gx, gy), a3 = textureGrad(t_gpA, vec3(s3, L), gx, gy);
+    // w^7 and a variance-preserving blend (Heitz and Neyret, HPG 2018): mean + sum w (tap - mean) / sqrt(sum w^2). A plain
+    // weighted average loses contrast where the taps blend, which drew the hex cells as soft, washed patches (the 2 m
+    // stills of the first GPU batch); Mikkelsen's brighter-tap weighting keeps contrast but lifts the mean over the
+    // layer's (a 125th St lane measured 22 levels lighter than GM28), and the mean is the calibration. This keeps both.
+    int Li = int(L + 0.5);
+    vec3 w2 = w * w, W = w2 * w2 * w2 * w;
+    W /= max(W.x + W.y + W.z, 1e-6);
+    float vs = inversesqrt(max(dot(W, W), 1e-4));
+    vec4 mA = vec4(GP_MEAN[Li], GP_HM[Li]), mN = vec4(0.5, 0.5, GP_RGH[Li], GP_AO[Li]);
+    A = clamp(mA + ((a1 - mA) * W.x + (a2 - mA) * W.y + (a3 - mA) * W.z) * vs, 0.0, 1.0);
+    vec4 n1 = textureGrad(t_gpN, vec3(s1, L), gx, gy), n2 = textureGrad(t_gpN, vec3(s2, L), gx, gy), n3 = textureGrad(t_gpN, vec3(s3, L), gx, gy);
+    N = clamp(mN + ((n1 - mN) * W.x + (n2 - mN) * W.y + (n3 - mN) * W.z) * vs, 0.0, 1.0);
+  }
+  // the longitudinal crack line of the street frame q (tar snakes and open cracks share it, and the paint over them):
+  // signed metres to the zero isoline of a warped noise, its distance taken as |f| / |grad f| with the gradient analytic
+  // (warp included), so a band drawn round it keeps a constant width in metres. p = the noise coordinate (for the width
+  // and run masks), gd = the unit gradient in q.
+  float gpCrackL(vec2 q, vec2 lotId, out vec2 p, out vec2 gd) {
+    vec3 w1 = vnoiseD(q * 0.09 + 3.0), w2 = vnoiseD(q * 0.09 + 17.0);
+    const vec2 S = vec2(0.11, 0.30);
+    p = q * S + vec2(w1.x, w2.x) * 1.2 + lotId * 7.31;
+    vec3 nf = vnoiseD(p);
+    vec2 g = vec2(nf.y * (S.x + 0.108 * w1.y) + nf.z * 0.108 * w2.y, nf.y * 0.108 * w1.z + nf.z * (S.y + 0.108 * w2.z));
+    // the meander a real crack has at 0.1-1 m (the warp alone draws smooth 5-10 m arcs): two finer noises added to the
+    // field, their gradients too, so the width stays constant through every wiggle
+    vec3 f1 = vnoiseD(q * 1.3 + 41.0), f2 = vnoiseD(q * 4.7 + 13.0);
+    float f = nf.x + 0.060 * (f1.x - 0.5) + 0.016 * (f2.x - 0.5);
+    g += 0.078 * f1.yz + 0.075 * f2.yz;
+    float gl = max(length(g), 1e-4);
+    gd = g / gl;
+    return (f - 0.5) / gl;
+  }
+  // the 30 m aerial scan (the nrm array's last layer): R = luminance / mean x 0.5, hex-tiled on ~12 m cells (the field of view of a
+  // single aerial tile would repeat three times along one block face)
+  float gpMacro(vec2 st, vec2 gx, vec2 gy) {
+    vec3 w; vec2 v1, v2, v3; gpTri(st * 0.72, w, v1, v2, v3);
+    vec3 w2 = w * w, W = w2 * w2 * w; W /= max(W.x + W.y + W.z, 1e-6);   // w^5, variance-preserving as gpHex
+    float vs = inversesqrt(max(dot(W, W), 1e-4));
+    return max(1.0 + 2.0 * ((textureGrad(t_gpN, vec3(st + gpH2(v1 + 7.7), gpMacroL), gx, gy).r - 0.5) * W.x
+                           + (textureGrad(t_gpN, vec3(st + gpH2(v2 + 7.7), gpMacroL), gx, gy).r - 0.5) * W.y
+                           + (textureGrad(t_gpN, vec3(st + gpH2(v3 + 7.7), gpMacroL), gx, gy).r - 0.5) * W.z) * vs, 0.2);
+  }
+`;
+// GP31 asphalt (matId 0 and its gutter / bus-lane variants). The tone is still the block-face lottery GT13 calibrated
+// (lotAge between the fresh and the ten-summer binder, AM120 values); what changed is what draws inside it.
+const GP31_ASPH_GLSL = /* glsl */ `
+          vec2 lotQ = gG / vec2(82.0, 76.0) + vec2(fbm(gG * 0.013 + 4.0), fbm(gG * 0.015 + 21.0)) * vec2(0.075, 0.075);
+          vec2 lotId = floor(lotQ);
+          float lotH = (hash12(lotId + 3.3) + hash12(lotId + 11.7) + hash12(lotId + 27.1) + hash12(lotId + 41.9)) * 0.25;
+          float lotAge = clamp(lotH * 0.86 + n1 * 0.28, 0.0, 1.0);
+          albedo = mix(vec3(0.0649, 0.0781, 0.0868), vec3(0.2050, 0.2120, 0.2220), lotAge);
+          GND_age = lotAge;
+          GND_rough = 0.92 + lotAge * 0.05;
+          GND_spec = 0.62;
+          // the scan a block face is laid in: a quarter of them (lotH < 0.40, the darkest quarter of the lottery) are a
+          // young pour, tight binder over fine chips (asphalt_pit_lane); the rest the weathered set with its aggregate out
+          // (Asphalt031). lotH, not lotAge: n1 varies inside a lot and would switch the scan mid-block.
+          GP_layer = lotH < 0.40 ? 1.0 : 0.0;
+          ${GP_DEFECT > 50 ? 'lotH = max(lotH, 0.8);   // ?gpdefect > 50: every pour old enough for every defect (inspection only)' : ''}
+          {
+            // the cold joint where two pours meet (GT13), its AA width in the lot's own cell units
+            vec2 lf = abs(fract(lotQ) - 0.5);
+            vec2 lw = (abs(gGx) + abs(gGy)) / vec2(82.0, 76.0) * 1.5 + 0.0016;
+            float seam = max(smoothstep(0.5 - lw.x, 0.5 - lw.x * 0.25, lf.x), smoothstep(0.5 - lw.y, 0.5 - lw.y * 0.25, lf.y));
+            albedo *= 1.0 - seam * 0.12 * gMid;
+          }
+          // broad traffic soot (a 28 m field): the one noise darkening kept, at two thirds of its GM28 depth
+          albedo *= 1.0 - smoothstep(0.55, 0.95, fbm(vWPos.xz * 0.035 + 9.1)) * 0.12;
+          // the street frame: along the street and metres out from the kerb (gpKerbFrame), or the block mask without one
+          vec2 q = kOk ? vec2(kqx, kQ) : (gAx > 0.5 ? gG.yx : gG);
+          #ifndef GNDCHEAP
+          {
+            // tyre tracks: two per travel lane, their centres 0.85 m either side of the lane's (a 1.7 m track), polished
+            // smoother and a shade darker by rubber, the oil drip line between them. With the kerb frame the lanes are
+            // laid out from the kerb as a NYC street is: an 8 ft (2.4 m) parking lane each side and the travel lanes
+            // sharing the rest; parked cars drip in the parking lane instead. A lane period fades to its mean before it
+            // reaches a pixel, and the tracks come and go along the street (traffic wanders; a queue polishes an approach).
+            float lv = smoothstep(1.4, 0.35, gFw);
+            float trk = 0.0, drip = 0.0, laneId = 0.0;
+            if (kOk) {
+              float W = kOk2 ? kW : 40.0;
+              float dk = kDn;
+              float nL = max(1.0, floor((W - 4.8) / 3.2 + 0.35));
+              float lw = max((W - 4.8) / nL, 2.8);
+              float lc = (kQ - 2.4) / lw;
+              float dl = abs(fract(lc) - 0.5) * lw;         // metres from the lane centre
+              float inL = smoothstep(2.2, 2.6, dk);
+              laneId = floor(lc);
+              trk = inL * smoothstep(0.62, 0.28, abs(dl - 0.85));
+              drip = inL * smoothstep(0.36, 0.10, dl);
+              // the parking lane: a parked car's drip every car length or so, 1.1-1.6 m out from the kerb
+              float side = step(W * 0.5, kQ) * (kOk2 ? 1.0 : 0.0);
+              float pc = q.x / 6.3 + side * 0.37;
+              vec2 pid = vec2(floor(pc), side);
+              if (hash12(pid + 3.1) < 0.55) {
+                vec2 pd = vec2((fract(pc) - 0.25 - 0.5 * hash12(pid + 7.7)) * 6.3, dk - 1.1 - 0.5 * hash12(pid + 1.9));
+                float pk = smoothstep(0.42, 0.12, length(pd * vec2(0.7, 1.0))) * (1.0 - inL);
+                GND_oil = max(GND_oil, pk * 0.5 * lv);
+              }
+              GP_dust = smoothstep(1.3, 0.35, dk);
+            } else {
+              float lane = q.y / 3.35 + hash12(lotId + 61.3);
+              float dl = abs(fract(lane) - 0.5) * 3.35;
+              laneId = floor(lane);
+              trk = smoothstep(0.62, 0.28, abs(dl - 0.85));
+              drip = smoothstep(0.36, 0.10, dl);
+            }
+            trk *= smoothstep(0.22, 0.62, vnoise(vec2(q.x * 0.035, laneId * 3.1 + 5.0))) * (0.45 + 0.55 * hash12(vec2(laneId, lotId.x + 3.0 * lotId.y)));
+            drip *= smoothstep(0.35, 0.78, vnoise(vec2(q.x * 0.09, laneId * 7.3 + 1.0)));
+            GND_wheel = trk * lv;
+            albedo *= 1.0 - GND_wheel * 0.09;
+            GND_rough -= GND_wheel * 0.16;
+            GND_oil = max(GND_oil, drip * lv * 0.28);        // darker by 14 %, a little glossier (the shared oil composite)
+          }
+          // utility cuts: saw-cut rectangles 1-3 m across, back-filled a few levels off the road (a new one far darker, in
+          // the fresh scan), behind a dark 1 cm kerf, a sealant overband on a third of them, the patch settled or proud
+          {
+            vec2 cs = vec2(13.0, 8.0);
+            vec2 cc = floor(gG / cs), cf = fract(gG / cs);
+            float cr = hash12(cc + 17.9);
+            if (cr < 0.26 * mix(0.45, 1.0, step(0.40, lotH))) {   // a young pour has had less time to be dug up
+              vec2 p0 = vec2(hash12(cc + 3.1), hash12(cc + 5.7)) * 0.52 + 0.08;
+              vec2 sz = vec2(cr < 0.13 ? 0.075 + hash12(cc + 9.3) * 0.085 : 0.135 + hash12(cc + 9.3) * 0.150,
+                             cr < 0.13 ? 0.175 + hash12(cc + 11.1) * 0.200 : 0.080 + hash12(cc + 11.1) * 0.090);
+              vec2 pc = cf * cs, lo = p0 * cs, hi = (p0 + sz) * cs;
+              vec2 dq = max(lo - pc, pc - hi);
+              float sd = length(max(dq, 0.0)) + min(max(dq.x, dq.y), 0.0);    // metres to the cut line, < 0 inside
+              float h = max(gFw * 0.5, 0.0008);
+              float inner = clamp(0.5 - sd / (2.0 * h), 0.0, 1.0);
+              // refs 03/04: an old restoration differs from the road by only ~10 sRGB levels, lighter or darker, and
+              // reads by its saw cut, a dark 1 cm line; only a new one is the 0.35x black of fresh binder
+              float fresh = hash12(cc + 23.0);
+              vec3 fill = albedo * (fresh < 0.18 ? 0.42 + 0.9 * fresh : 0.86 + 0.26 * (fresh - 0.18) / 0.82);
+              albedo = mix(albedo, fill, inner);
+              GP_cut = inner;
+              GND_patch = inner * 0.3;
+              if (inner > 0.5) { GP_layer = fresh < 0.5 ? 1.0 : 0.0; GND_rough = 0.90 + 0.05 * fresh; }
+              // the saw cut: a dark kerf ~1 cm, ravelled at the corners, and on half the cuts a 3.5-5.5 cm sealant overband
+              float kerf = gpBand(sd, 0.004 + 0.003 * vnoise(pc * 9.0 + cc), h);
+              albedo *= 1.0 - kerf * 0.65;
+              if (hash12(cc + 29.0) < 0.35) {
+                float kw = 0.018 + 0.010 * hash12(cc + 31.0);
+                GP_seal = max(GP_seal, gpBand(sd, kw, h) * (0.55 + 0.45 * smoothstep(0.3, 0.6, vnoise(pc * 1.7 + cc * 3.0))));
+              }
+              // a settled or a proud patch: a 3-8 mm step over the 2 cm next to the cut, in the normal
+              {
+                vec2 gb = dq.x > dq.y ? vec2(sign(pc.x - 0.5 * (lo.x + hi.x)), 0.0) : vec2(0.0, sign(pc.y - 0.5 * (lo.y + hi.y)));
+                float stepH = (hash12(cc + 37.0) < 0.7 ? -1.0 : 1.0) * (0.003 + 0.005 * hash12(cc + 41.0));
+                float wall = gpBand(sd + 0.010, 0.010, h) * smoothstep(0.012, 0.004, gFw);
+                GP_slopeW += (gb.x * MG_A + gb.y * MG_B) * (stepH / 0.02) * wall;   // the normal leans off the higher side
+              }
+            }
+          }
+          // crack sealant ("tar snakes"): the zero isoline of a warped noise drawn at a constant width in metres (the
+          // distance is |f| / |grad f| with the gradient analytic, warp included, so compression cannot fatten a band into
+          // the r3 "black smoke snakes"), stretched along the street as NYC cracks mostly follow the paving passes,
+          // present on stretches of the line only, and only on pours old enough to crack. A squeegeed overband: 4.4-7 cm,
+          // darker than the road, satin, feathered at the edge (the surface pass sets its tone and sheen).
+          {
+            float aged = smoothstep(0.38, 0.62, lotH);
+            if (aged > 0.01 && gFw < 0.15) {   // past a 15 cm footprint a 5 cm band is a third of a pixel of ink: skipped
+              vec2 p, gq;
+              float sd = gpCrackL(q, lotId, p, gq);                                   // signed metres to the crack line
+              float gl = 1.0;
+              float hw = 0.022 + 0.013 * vnoise(p * 3.1 + 11.0) + 0.007 * (vnoise(q * 22.0 + 3.0) - 0.5);   // a squeegee edge is ragged
+              // sealed or not (a crew seals a whole run): age raises the share of the line that is sealed, not its opacity
+              float on = smoothstep(0.0, 0.035, vnoise(p * 0.55 + 29.0) - mix(0.74, 0.46, aged));
+              float h = max(gFw * 0.5, 0.0008);
+              float band = gpBand(sd, hw, h) * on;
+              GP_seal = max(GP_seal, band);
+              GP_sealE = max(GP_sealE, max(band - gpBand(sd, hw * 0.62, h) * on, 0.0));
+              // a squeegeed band is flat with feathered edges, 1-2 mm proud: the edge rolls off over its outer third (a
+              // rounded tube read as a plastic worm lying on the road in the first GPU stills)
+              float lip = smoothstep(hw * 0.62, hw, abs(sd)) * band * smoothstep(0.012, 0.003, gFw);
+              GP_sealN += sign(sd) * (gq / gl) * lip * 0.10;
+              // unsealed hairline cracks, 2-4 mm, a finer net on the older pours: dark lines inside ~8 m, their mean beyond
+              if (gFw < 0.014) {
+                vec3 h1 = vnoiseD(q * 0.16 + 9.0);
+                vec2 p2 = q * vec2(0.55, 0.85) + h1.x * 1.2 + lotId * 3.7;
+                vec3 n2 = vnoiseD(p2);
+                vec2 g2 = vec2(n2.y * (0.55 + 0.192 * h1.y) + n2.z * 0.192 * h1.y, n2.y * 0.192 * h1.z + n2.z * (0.85 + 0.192 * h1.z));
+                float sd2 = (n2.x - 0.5) / max(length(g2), 1e-4);
+                float cr2 = gpBand(sd2, 0.0012 + 0.0010 * vnoise(p2 * 4.0), max(gFw * 0.5, 0.0004));
+                GP_crack = cr2 * smoothstep(0.40, 0.58, vnoise(p2 * 0.8 + 13.0)) * smoothstep(0.40, 0.62, lotH) * smoothstep(0.014, 0.006, gFw);
+              }
+              // the same line where no crew came: an open crack 5-14 mm wide and about as deep, dark at the bottom, its
+              // walls tilting the normal toward it; and transverse cracks across the street every 6-20 m (thermal)
+              float h2 = max(gFw * 0.5, 0.0006);
+              float offC = smoothstep(0.0, 0.035, mix(0.70, 0.40, aged) - vnoise(p * 0.55 + 29.0)) * smoothstep(0.45, 0.62, lotH);
+              float ow = 0.0025 + 0.0045 * vnoise(p * 2.3 + 5.0);
+              float oc = gpBand(sd, ow, h2) * offC;
+              vec3 w3 = vnoiseD(q * vec2(0.08, 0.05) + 31.0);
+              vec2 p3 = q * vec2(0.16, 0.035) + w3.x * 0.8 + lotId * 5.1;
+              vec3 n3 = vnoiseD(p3);
+              vec2 g3 = vec2(n3.y * (0.16 + 0.064 * w3.y) + n3.z * 0.064 * w3.y, n3.y * 0.04 * w3.z + n3.z * (0.035 + 0.04 * w3.z));
+              float gl3 = max(length(g3), 1e-4), sd3 = (n3.x - 0.5) / gl3;
+              float on3 = smoothstep(0.0, 0.03, vnoise(p3 * 0.7 + 3.0) - mix(0.82, 0.55, aged));
+              float cw3 = 0.0025 + 0.005 * vnoise(p3 * 4.0 + 1.0);
+              float tc3 = gpBand(sd3, cw3, h2) * on3;
+              // a third of the transverse ones were sealed (a squeegeed band over them), the rest stand open
+              if (hash12(floor(p3 * vec2(0.5, 0.25)) + 71.0) < 0.33) { GP_seal = max(GP_seal, gpBand(sd3, 0.028, h) * on3); tc3 = 0.0; }
+              GP_open = max(oc, tc3);
+              float wall = smoothstep(0.012, 0.003, gFw);
+              GP_slopeW += (sign(sd) * (gq / gl).x * GP_qT + sign(sd) * (gq / gl).y * GP_qN) * -0.55 * max(gpBand(sd, ow * 2.2, h2) - oc, 0.0) * offC * wall;
+              GP_slopeW += (sign(sd3) * (g3 / gl3).x * GP_qT + sign(sd3) * (g3 / gl3).y * GP_qN) * -0.55 * max(gpBand(sd3, cw3 * 2.2, h2) - tc3, 0.0) * on3 * wall;
+            }
+          }
+          // raveling (the fines worn out of an old surface, the aggregate standing proud and the lows open) and
+          // oxidation (the binder bleached to a pale grey where no tyre scrubs it); both old-pour only
+          float rv = smoothstep(0.50, 0.72, vnoise(q * vec2(0.09, 0.30) + lotId * 3.1 + 7.0));
+          GP_ravel = rv * smoothstep(0.45, 0.72, lotH) * (0.55 + 0.45 * GND_wheel);
+          GP_bleach = smoothstep(0.35, 0.80, lotAge) * (1.0 - GND_wheel);
+          GP_trk = GND_wheel;
+          albedo *= 1.0 + 0.05 * GP_bleach;
+          // alligator (fatigue) cracking: stretches of an old wheel track broken into 10-35 cm chunks, each a little
+          // raised or sunk and tilted on its own, the gaps 5-15 mm wide down to the dark base course. The chunk tilt goes
+          // into the normal (each chunk catches the light on its own), the gaps are box-filtered, and past ~8 m the net
+          // is its mean darkening
+          {
+            float az = smoothstep(0.60 - 0.05 * ${Math.log2(GP_DEFECT).toFixed(3)}, 0.74 - 0.05 * ${Math.log2(GP_DEFECT).toFixed(3)}, vnoise(vec2(q.x * 0.11, q.y * 0.35) + lotId * 2.7 + 17.0)) * smoothstep(0.50, 0.72, lotH) * smoothstep(0.25, 0.6, GND_wheel + 0.25 * GP_ravel);
+            if (az > 0.01) {
+              if (gFw < 0.014) {
+                vec2 vp = (q + vec2(vnoise(q * 2.1 + 3.0), vnoise(q * 2.1 + 11.0)) * 0.09) / 0.21;
+                vec2 ci = floor(vp), cf = fract(vp);
+                float f1 = 9.0, f2 = 9.0; vec2 m1 = vec2(0.0), m2 = vec2(0.0), i1 = vec2(0.0);
+                for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+                  vec2 o = vec2(float(i), float(j));
+                  vec2 pt = o + gpH2(ci + o) * 0.8 + 0.1 - cf;
+                  float dd2 = dot(pt, pt);
+                  if (dd2 < f1) { f2 = f1; m2 = m1; f1 = dd2; m1 = pt; i1 = ci + o; } else if (dd2 < f2) { f2 = dd2; m2 = pt; }
+                }
+                vec2 bn = normalize(m2 - m1);
+                float eb = dot(0.5 * (m1 + m2), bn) * 0.21;          // metres to the chunk's border
+                float gw = 0.0025 + 0.005 * hash12(i1 + 4.4);
+                float gap = gpBand(eb, gw, max(gFw * 0.5, 0.0004));
+                GP_allig = gap * az;
+                vec2 tilt = (gpH2(i1 + 8.8) - 0.5) * 0.22;           // each chunk tilted by up to ~6 deg
+                float lift = (hash12(i1 + 2.6) - 0.5) * 0.010;       // and raised or sunk by up to 5 mm
+                float fade = smoothstep(0.014, 0.005, gFw) * az;
+                GP_slopeW += (tilt.x * GP_qT + tilt.y * GP_qN) * fade * (1.0 - gap);
+                // the chunk's edge rounds down into the gap (the lip catches the light, the far side is in shadow)
+                float lip = smoothstep(gw * 3.5, gw, eb) * (1.0 - gap);
+                GP_slopeW += (bn.x * GP_qT + bn.y * GP_qN) * (0.35 + 20.0 * lift) * lip * fade;
+                albedo *= 1.0 + lift * 6.0 * az;                      // a raised chunk is scrubbed lighter, a sunk one holds grime
+              } else {
+                albedo *= 1.0 - 0.10 * az;
+              }
+            }
+          }
+          // potholes: in the near field the eye ray is marched down the pothole's height field (16 steps and a secant
+          // refine: the broken far wall hides the floor, the near wall shows), the visible point's world offset feeds every
+          // texture lookup (parallax), standing water sits at a flat fill level, and the walls shadow the floor from the
+          // sun. Past a 5 cm footprint (~15-20 m from a street-level eye) a pothole is drawn where it lies, without the march.
+          GP_potD = 0.0; GP_potIn = 0.0; GP_potF = 0.0; GP_water = 0.0; GP_wDepth = 0.0; GP_rim = 0.0; GP_pomXZ = vec2(0.0); GP_shadow = 1.0;
+          if (kOk) {
+            vec2 cid = floor(vec2(q.x / 9.0, q.y / 3.35));
+            vec4 P = gpPotCell(cid, lotH);
+            if (P.w > 0.0) {
+              float seed = hash12(cid + 2.2) * 50.0;
+              float wl = -P.w * min(0.30 + 0.45 * hash12(cid + 13.3) + 0.25 * wet, 0.92);   // the water's fill level, higher in rain
+              bool hasW = hash12(cid + 19.9) < 0.50 + 0.50 * clamp(wet * 2.0, 0.0, 1.0);
+              vec2 rr = (q - P.xy) / vec2(1.25, 1.0);
+              GP_rim = smoothstep(P.z * 2.3, P.z * 1.0, length(rr)) * (0.55 + 0.45 * vnoise(q * 3.0 + seed));
+              // the broken rim: loose fragments of the wearing course round the hole, 3-6 cm, each lifted and tilted on
+              // its own with a dark gap round it, thinning out away from the edge (ref 1)
+              if (gFw < 0.010) {
+                float ring = smoothstep(P.z * 1.75, P.z * 1.05, length(rr)) * smoothstep(P.z * 0.80, P.z * 1.02, length(rr));
+                if (ring > 0.01) {
+                  vec2 vp = q / 0.045;
+                  vec2 ci = floor(vp), cf = fract(vp);
+                  float f1 = 9.0, f2 = 9.0; vec2 m1 = vec2(0.0), m2 = vec2(0.0), i1 = vec2(0.0);
+                  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+                    vec2 o = vec2(float(i), float(j));
+                    vec2 pt = o + gpH2(ci + o + seed) * 0.8 + 0.1 - cf;
+                    float dd2 = dot(pt, pt);
+                    if (dd2 < f1) { f2 = f1; m2 = m1; f1 = dd2; m1 = pt; i1 = ci + o; } else if (dd2 < f2) { f2 = dd2; m2 = pt; }
+                  }
+                  float loose = step(hash12(i1 + seed + 3.3), ring * 0.75);
+                  if (loose > 0.5) {
+                    float eb = dot(0.5 * (m1 + m2), normalize(m2 - m1)) * 0.045;
+                    float gap = gpBand(eb, 0.0025, max(gFw * 0.5, 0.0004));
+                    GP_allig = max(GP_allig, gap);
+                    vec2 tilt = (gpH2(i1 + seed + 8.8) - 0.5) * 0.45;
+                    GP_slopeW += (tilt.x * GP_qT + tilt.y * GP_qN) * (1.0 - gap) * smoothstep(0.010, 0.004, gFw);
+                  }
+                }
+              }
+              float h0 = gpPotH(q, P, seed);
+              float dVis = -h0, wetK = 0.0;
+              vec2 qv = q;
+              vec3 Vd = normalize(vWPos - cameraPosition);
+              float vy = max(-Vd.y, 0.05);
+              vec2 vq = vec2(dot(Vd.xz, GP_qT), dot(Vd.xz, GP_qN)) / vy;     // q travel per metre of depth
+              if (gFw < 0.05) {
+                // march: reject rays that stay clear of the pothole's reach between depth 0 and its depth
+                vec2 a0 = q - P.xy, a1 = a0 + vq * P.w;
+                vec2 ab = a1 - a0; float tt = clamp(-dot(a0, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
+                vec2 cl = (a0 + ab * tt) / vec2(1.25, 1.0);
+                if (length(cl) < P.z * 1.5 + 0.03) {
+                  const int NS = 16;
+                  float dz = P.w * 1.15 / float(NS);
+                  float dPrev = 0.0, fPrev = -h0;       // f(d) = ray height - surface = -d - h
+                  float dHit = 0.0;
+                  if (h0 < -1e-4) {
+                    dHit = P.w * 1.15;
+                    for (int k = 1; k <= NS; k++) {
+                      float dd = dz * float(k);
+                      float f = -dd - gpPotH(q + vq * dd, P, seed);
+                      if (f <= 0.0) { dHit = mix(dPrev, dd, fPrev / max(fPrev - f, 1e-6)); break; }
+                      dPrev = dd; fPrev = f;
+                    }
+                  }
+                  // the ray meets the water first when it would reach the ground below the water level. The waterline is
+                  // soft over the last 4 mm: a hard switch drew a 1 px line of wall normal round the pool, and once wet
+                  // that line mirrored the sky as a white ring
+                  float dW = -wl;
+                  wetK = hasW ? smoothstep(dW - 0.004, dW + 0.0005, dHit) : 0.0;
+                  dVis = wetK > 0.5 ? dW : dHit;
+                  qv = q + vq * dVis;
+                }
+              }
+              if (hasW && gFw >= 0.05) wetK = step(-wl, dVis);             // past the march: the pool where it lies
+              GP_potD = dVis;
+              GP_potIn = smoothstep(0.003, 0.010, dVis);
+              GP_pomXZ = (qv.x - q.x) * GP_qT + (qv.y - q.y) * GP_qN;
+              if (GP_potIn > 0.0) {
+                float hv = gpPotH(qv, P, seed);
+                GP_potF = smoothstep(0.55, 0.85, -hv / P.w);
+                GP_water = wetK;
+                GP_wDepth = max(wl - hv, 0.0);
+                if (GP_water < 0.999) {
+                  // wall and floor slope from the height field, and the wall's shadow toward the sun
+                  float e = 0.012;
+                  vec2 gh = vec2(gpPotH(qv + vec2(e, 0.0), P, seed) - hv, gpPotH(qv + vec2(0.0, e), P, seed) - hv) / e;
+                  // the wall slope, softened and clamped: a wall is 1-3 px tall from a street-level eye, and at full slope its
+                  // sun-facing side lit up as a bright outline round the hole (?gpdbg=2 shows the terms)
+                  vec2 gsw = -(gh.x * GP_qT + gh.y * GP_qN) * 0.4;
+                  float gsl = length(gsw);
+                  GP_slopeW += gsw * min(1.0, 0.5 / max(gsl, 1e-4)) * (1.0 - GP_water);
+                  vec2 sq = vec2(dot(gpSun.xz, GP_qT), dot(gpSun.xz, GP_qN));
+                  float sl = max(length(sq), 1e-3), tanE = gpSun.y / sl;
+                  float occ = 0.0;
+                  for (int j = 1; j <= 4; j++) {
+                    float s = 0.025 * float(j * j);
+                    float hs = gpPotH(qv + sq / sl * s, P, seed);
+                    occ = max(occ, smoothstep(0.0, 0.006, hs - (hv + s * tanE)));
+                  }
+                  GP_shadow = mix(1.0, 0.18, occ * GP_potIn * (1.0 - GP_water));
+                }
+              }
+            }
+          }
+          // castings: manhole, valve box and the collar patched round them (the GM28 layer as it was)
+          {
+            vec2 mc = floor(vWPos.xz / 15.0);
+            float mr = hash12(mc);
+            if (mr < 0.42) {
+              vec2 mo = vec2(hash12(mc + 1.7), hash12(mc + 2.9)) * 0.7 + 0.15;
+              float md = length((fract(vWPos.xz / 15.0) - mo) * 15.0);
+              float R = mr < 0.28 ? 0.36 : 0.16;
+              float ae = max(0.5 * (length(gPx.xz) + length(gPy.xz)), 0.004);
+              float collar = 1.0 - smoothstep(R + 0.34, R + 0.62, md);
+              albedo *= 1.0 + collar * mix(-0.16, 0.22, step(0.5, hash12(mc + 41.0))) * gMid;
+              float rim = smoothstep(R + 0.09 + ae, R + 0.09 - ae, md);
+              float cover = smoothstep(R + ae, R - ae, md);
+              GND_manhole = max(cover, rim * 0.45);
+              GND_cast = max(GND_manhole, collar * 0.85);
+              GP_seal *= 1.0 - smoothstep(R + 0.12, R + 0.02, md);   // no sealant over the iron
+              // the cast face (ref 03): a flat cover read as a painted disc at 2-4 m. A 4 cm raised rim, then either a
+              // DEP waffle (a square grid of raised bosses, 5 cm pitch) or a Con Ed vented pattern (radial slots through
+              // to the dark vault below); tyres polish the high points to bare metal, grit fills the lows
+              if (cover > 0.01 && gFw < 0.02) {
+                vec2 lp = (fract(vWPos.xz / 15.0) - mo) * 15.0;
+                float vent = step(0.5, hash12(mc + 53.0)) * step(0.30, R);
+                float ringR = smoothstep(R - 0.045, R - 0.035, md);
+                float pat, pdx = 0.0, pdy = 0.0;
+                if (vent > 0.5) {
+                  float th = atan(lp.y, lp.x) * 5.0929582;               // 32 slots round
+                  float slot = smoothstep(0.30, 0.18, abs(fract(th) - 0.5)) * step(0.08, md) * step(md, R - 0.06);
+                  pat = 1.0 - slot;
+                  GP_castSlot = slot;
+                } else {
+                  vec2 g = abs(fract(lp / 0.05) - 0.5);
+                  pat = smoothstep(0.30, 0.18, max(g.x, g.y));           // bosses
+                  vec2 sg = vec2(fract(lp.x / 0.05) < 0.5 ? 1.0 : -1.0, fract(lp.y / 0.05) < 0.5 ? 1.0 : -1.0);
+                  float edge = smoothstep(0.34, 0.26, max(g.x, g.y)) - pat;
+                  pdx = g.x > g.y ? sg.x * edge : 0.0; pdy = g.y >= g.x ? sg.y * edge : 0.0;
+                }
+                pat = max(pat, ringR);
+                GP_castPat = mix(0.5, pat, cover * smoothstep(0.02, 0.006, gFw));
+                GP_slopeW += (vec2(pdx, pdy) * 0.45 + (lp / max(md, 1e-3)) * (smoothstep(R - 0.045, R - 0.03, md) - smoothstep(R - 0.015, R, md)) * 0.5) * cover * smoothstep(0.012, 0.005, gFw);
+              }
+            }
+          }
+          #endif
+`;
+// GP31 sidewalk (matId 1, the flag and the curb top).
+const GP31_WALK_GLSL = /* glsl */ `
+          // ---- NYC sidewalk: 5 ft (1.524 m) flags on the street grid (DOT Street Works Manual 4.4), each its own pour.
+          // A flag takes one of the two scanned finishes at its own random offset (no two neighbours share a patch of
+          // texture), the broom grooves running across the walk, curb to building line, as a finisher drags them. The
+          // tone keeps the round-3/LB14 calibration; the two fbm stain clouds and the tree-pit halo GM28 laid over every
+          // walk (7-20 m blotches) are gone. Stains are discrete (one flag cell in six), gum spots are their real 1-3 cm,
+          // and grime sits where it collects: packed into the tooled joints.
+          albedo = mix(vec3(0.496, 0.437, 0.261), vec3(0.571, 0.501, 0.299), n1);
+          vec2 sco = gG / 1.524;
+          vec2 sid = floor(sco);
+          float slab = hash12(sid);
+          vec2 sfr = fract(sco);
+          vec2 jm = min(sfr, 1.0 - sfr) * 1.524;                // metres to the nearest joint, per axis
+          vec2 pxm = abs(gGx) + abs(gGy);                       // pixel footprint along each grid axis, metres
+          float swAx = smoothstep(0.38, 0.62, vnoise(gG * 0.0075 + 41.0));
+          vec2 jW = vec2(mix(1.0, 0.42, swAx), mix(0.42, 1.0, swAx));   // strong joints run curb-to-building (round 3)
+          // the tooled joint: a 1 cm groove packed with grit, box-filtered so a joint past resolution keeps only its ink
+          vec2 jc = vec2(gpBand(jm.x, 0.005, max(pxm.x * 0.5, 0.0005)), gpBand(jm.y, 0.005, max(pxm.y * 0.5, 0.0005))) * jW;
+          albedo *= 1.0 - max(jc.x, jc.y) * 0.74;   // refs 07/08: the joints read as dark lines from 1 to 10 m
+          // grime spreading 2-5 cm either side of it
+          vec2 jh = vec2(gpBand(jm.x, 0.035, max(pxm.x * 0.5, 0.0005)), gpBand(jm.y, 0.035, max(pxm.y * 0.5, 0.0005))) * jW;
+          albedo *= 1.0 - max(jh.x, jh.y) * 0.10;
+          {
+            // the groove walls and the edger's 1.5 cm radius tilt the normal toward the joint; gone before it is sub-pixel
+            float fade = smoothstep(0.008, 0.002, gFw);
+            vec2 sgn = vec2(sfr.x < 0.5 ? -1.0 : 1.0, sfr.y < 0.5 ? -1.0 : 1.0);
+            vec2 sl = 0.60 * smoothstep(0.0, 0.0015, jm) * smoothstep(0.0065, 0.004, jm)
+                    + 0.16 * smoothstep(0.005, 0.008, jm) * smoothstep(0.02, 0.012, jm);
+            GP_jn = sgn * sl * jW * fade;
+            // no flag lies quite flat: settled a little each way, and one in sixteen heaved by a root or a vault (2-4 deg),
+            // so neighbouring flags take the sun a shade differently
+            GP_jn += (gpH2(sid + 21.0) - 0.5) * (hash12(sid + 23.0) < 0.06 ? 0.12 : 0.022);
+          }
+          // expansion joints every 4th flag (20 ft): a wider bitumen-filled recess, again box-filtered
+          vec2 e4 = min(fract(sco / 4.0), 1.0 - fract(sco / 4.0)) * 4.0 * 1.524;
+          float ej = max(gpBand(e4.x, 0.010, max(pxm.x * 0.5, 0.0005)) * jW.x, gpBand(e4.y, 0.010, max(pxm.y * 0.5, 0.0005)) * jW.y);
+          albedo = mix(albedo, vec3(0.115, 0.104, 0.083), ej * 0.55);
+          // per-flag pour: value and a warm/cool cement cast, the finish, and the flag's own patch of the scan
+          albedo *= 0.86 + 0.26 * slab;   // refs 07/08: neighbouring flags step visibly in tone (134-178 in one frame)
+          albedo *= mix(vec3(1.016, 0.998, 0.972), vec3(0.978, 0.992, 1.018), hash12(sid + 11.7));
+          GND_rough = 0.86 + 0.08 * slab; GND_spec = 0.72;
+          GP_layer = hash12(sid + 5.1) < 0.72 ? 2.0 : 3.0;   // most flags broom-finished, about a quarter worn to the aggregate
+          GP_off = vec2(hash12(sid + 1.7), hash12(sid + 9.2));
+          // replacements: ~7 % fresh flags (lighter, broom-finished), ~2 % cold-patch asphalt, bluestone in block runs
+          float srep = hash12(sid + 7.3);
+          float bsBlk = step(0.82, hash12(floor(gG / 126.0) + 5.9));
+          if (srep < 0.07) { albedo = mix(albedo, vec3(0.693, 0.627, 0.400), 0.55); GND_rough = 0.72; GP_layer = 2.0; }
+          else if (srep > 0.978) { albedo = mix(albedo, vec3(0.168, 0.152, 0.124), 0.80); GND_rough = 0.9; GP_layer = 1.0; }
+          else if (bsBlk > 0.5 && srep > 0.12) {
+            float bs = vnoise(gG * 6.0 + slab * 31.0);
+            albedo = mix(albedo, mix(vec3(0.318, 0.330, 0.338), vec3(0.412, 0.424, 0.426), bs), 0.88);
+            GND_rough = 0.74; GP_layer = 3.0;
+          }
+          // pull-box lids and utility locate marks (the round-3 hardware, as it was)
+          if (gNear > 0.02) {
+            vec2 hc = gG / 4.4;
+            vec2 hid = floor(hc);
+            float hr = hash12(hid + 19.3);
+            if (hr < 0.30) {
+              vec2 hp = (fract(hc) - vec2(hash12(hid + 2.3), hash12(hid + 6.1)) * 0.7 - 0.15) * 4.4;
+              float hd = length(hp);
+              float lid = smoothstep(0.145, 0.115, hd) * gNear;
+              albedo = mix(albedo, vec3(0.141, 0.093, 0.059), lid * 0.9);
+              albedo *= 1.0 - smoothstep(0.175, 0.148, hd) * (1.0 - lid) * 0.35;
+              GND_rough = mix(GND_rough, 0.52, lid * 0.8);
+            } else if (hr > 0.86) {
+              float ma = hash12(hid + 41.3) * 6.2832;
+              vec2 mp = (fract(hc) - vec2(hash12(hid + 2.3), hash12(hid + 6.1)) * 0.7 - 0.15) * 4.4;
+              vec2 mq = mat2(cos(ma), -sin(ma), sin(ma), cos(ma)) * mp;
+              float mw = 0.012;
+              float mk2 = smoothstep(0.045 + mw, 0.03, abs(mq.y)) * smoothstep(0.42, 0.36, abs(mq.x))
+                        + smoothstep(0.045 + mw, 0.03, abs(mq.x - 0.28)) * smoothstep(0.16, 0.12, abs(mq.y));
+              mk2 = clamp(mk2, 0.0, 1.0) * (0.75 + 0.25 * vnoise(gG * 9.0));
+              vec3 lc = hash12(hid + 31.7) > 0.45 ? vec3(0.55, 0.19, 0.030) : vec3(0.53, 0.13, 0.210);
+              albedo = mix(albedo, lc, mk2 * 0.30 * gNear);
+            }
+          }
+          // one or two thin cracks on ~22 % of flags (SW26)
+          if (hash12(sid + 3.9) < 0.22 && gNear > 0.01) {
+            float rdg = gridge(gG * 1.3 + slab * 17.0);
+            albedo *= 1.0 - smoothstep(0.965, 0.995, rdg) * 0.22 * gNear;
+          }
+          // discrete stains: a spilt coffee, a soda, a grease drip; one cell in six of 2.6 m, 0.1-0.45 m, a ragged rim
+          {
+            vec2 sc2 = gG / 2.6; vec2 si = floor(sc2);
+            float sh = hash12(si + 71.7);
+            if (sh < 0.17) {
+              vec2 sp = (fract(sc2) - vec2(hash12(si + 3.3), hash12(si + 8.8)) * 0.6 - 0.2) * 2.6;
+              float lr = length(sp);
+              float r0 = 0.10 + 0.35 * hash12(si + 13.1);
+              float rim = r0 * (0.70 + 0.45 * vnoise(sp / max(lr, 1e-3) * 1.4 + sh * 37.0) + 0.15 * vnoise(sp * 9.0 + 3.0));
+              float stn = smoothstep(rim, rim * 0.55, lr) * (0.55 + 0.45 * vnoise(sp * 5.0 + 1.0));
+              albedo *= 1.0 - stn * (0.08 + 0.16 * hash12(si + 5.5));
+              albedo = mix(albedo, albedo * vec3(0.985, 0.965, 0.93), stn * 0.6);   // spills dry a little warm
+              GND_rough = mix(GND_rough, 0.70, stn * 0.35);
+            }
+          }
+          // a faint broad drift so a long walk is not one value at 60 m (a third of the GM28 cloud)
+          albedo *= 1.0 - smoothstep(0.5, 0.9, fbm(vWPos.xz * 0.05 + 4.2)) * 0.08;
+          // gum: flattened discs 1-3 cm across, black to mid grey, glossier than the flag, thicker where people wait
+          {
+            float dens = 0.10 + 0.30 * smoothstep(0.3, 0.8, vnoise(gG * 0.035 + 7.0));
+            float gv = smoothstep(0.016, 0.005, gFw);   // ref 08: 2 cm spots still read as dots at 5-6 m
+            if (gv > 0.01) {
+              vec2 mc = gG / 0.15; vec2 mid2 = floor(mc);
+              float mh2 = hash12(mid2 + 91.7);
+              if (mh2 < dens) {
+                vec2 mp = (fract(mc) - vec2(hash12(mid2 + 4.7), hash12(mid2 + 12.1)) * 0.7 - 0.15) * 0.15;
+                float r = 0.005 + 0.010 * fract(mh2 * 53.0);
+                float dd = length(mp * vec2(1.0, 0.8 + 0.4 * fract(mh2 * 17.0))) / r;
+                float aw = clamp(0.7 * gFw / r, 0.28, 1.0);            // the edge widens with the footprint: no 1 px sparkle
+                float gum = smoothstep(1.0 + 0.5 * aw, 1.0 - aw, dd) * gv;
+                albedo = mix(albedo, mix(vec3(0.030, 0.029, 0.028), vec3(0.110, 0.106, 0.100), fract(mh2 * 7.0)), gum * 0.92);
+                GND_rough = mix(GND_rough, 0.55, gum * 0.6);
+              }
+            }
+            albedo *= 1.0 - (1.0 - gv) * dens * 0.012;       // their mean once they are past resolution
+          }
+`;
+// GP31 Times Square plaza (matId 16, TP28's re-kinded Broadway 42nd-47th). From 24 m at night (the teaser's t2Seventh)
+// the plaza read as more grey asphalt: TP28 authored a charcoal field (0.150 against the asphalt's 0.065-0.205), its
+// joints faded out at a 6 cm pixel footprint (about 15 m away), one paver in ten was the light tone, and the dry-night
+// pass roughened it like a roadway. Photographs of the plaza (Commons, 2017 and 2023; docs/notes/ground-pbr.md) show a
+// light-grey field in sun, smooth units (144,144,136) and speckled ones (162,162,155), 30 cm strips of many lengths,
+// 5-10 mm joints darker than both, dense gum, and the discs in lines and arcs that cross the units. Now: that field,
+// every unit its own value and its own patch of a scan (exposed aggregate or granite), box-filtered joints with a chamfer
+// each side (a joint past resolution keeps its ink rather than vanishing), and a foot-polished sheen that varies unit to
+// unit and survives the night pass (see roadPlane below), so it throws the screens back softly the way the real one does.
+const GP31_PAVER_GLSL = /* glsl */ `
+          // units: 30 cm strips along Broadway in a running bond, each row cut into its own lengths (12-19 cm strips in one
+          // row in six, 27-57 cm in most, 44-80 cm in one in four), two finishes (smooth, and speckled with exposed white
+          // aggregate) in runs along the axis
+          vec2 A1 = vec2(0.2646, -0.9644), B1 = vec2(0.9644, 0.2646);
+          vec2 pq = vec2(dot(vWPos.xz, A1), dot(vWPos.xz, B1));   // along, across
+          float row = floor(pq.y / 0.30);
+          float rh = hash12(vec2(row, 7.1));
+          float per = rh < 0.17 ? 0.155 : (rh < 0.75 ? 0.42 : 0.62);
+          float a = pq.x / per + hash12(vec2(row, 3.3)) * 7.0;
+          float k0 = floor(a);
+          float bk0 = k0 + 0.35 * (hash12(vec2(k0, row) + 1.7) - 0.5), bk1 = k0 + 1.0 + 0.35 * (hash12(vec2(k0 + 1.0, row) + 1.7) - 0.5);
+          float ku = a < bk0 ? k0 - 1.0 : (a >= bk1 ? k0 + 1.0 : k0);
+          float lo = ku + 0.35 * (hash12(vec2(ku, row) + 1.7) - 0.5), hi = ku + 1.0 + 0.35 * (hash12(vec2(ku + 1.0, row) + 1.7) - 0.5);
+          vec2 pid = vec2(ku, row);
+          float ph = hash12(pid + 3.7);
+          float runs = vnoise(vec2(pq.x * 0.07, pq.y * 0.8) + 31.0);
+          float speck = step(0.62 - 0.30 * smoothstep(0.55, 0.90, runs), ph);
+          // ref 15 (full sun, 2-3 m): smooth (144,144,136), speckled (162,162,155); ref 14 (dawn): 15 % apart. Authored so
+          // that the walk calibration (lb14Walk) lands them neutral, about 0.75 and 0.9 of a concrete flag: a light-grey
+          // field, clearly lighter than the asphalt beside it by day and under the screens at night
+          albedo = mix(vec3(0.335, 0.330, 0.303), vec3(0.405, 0.398, 0.368), speck);
+          albedo *= (0.91 + 0.16 * hash12(pid + 9.1)) * (0.97 + 0.05 * n1);
+          // joints 5-10 mm, swept with dark grit, darker than both finishes; a 4 mm chamfer each side. Box-filtered, so a
+          // joint past resolution keeps its ink as a fine line down the axis instead of vanishing
+          vec2 pxq = vec2(abs(dot(gPx.xz, A1)) + abs(dot(gPy.xz, A1)), abs(dot(gPx.xz, B1)) + abs(dot(gPy.xz, B1)));
+          vec2 jm = vec2(min(a - lo, hi - a) * per, min(fract(pq.y / 0.30), 1.0 - fract(pq.y / 0.30)) * 0.30);
+          vec2 hq = max(pxq * 0.5, vec2(0.0004));
+          float jw0 = 0.0025 + 0.0020 * hash12(pid + 2.2);
+          float jn = max(gpBand(jm.x, jw0, hq.x), gpBand(jm.y, jw0, hq.y));
+          float chf = max(gpBand(jm.x, jw0 + 0.004, hq.x), gpBand(jm.y, jw0 + 0.004, hq.y));
+          albedo *= 1.0 - jn * 0.62 - max(chf - jn, 0.0) * 0.18;
+          {
+            float fade = smoothstep(0.008, 0.002, gFw);
+            vec2 sgn = vec2(a - lo < hi - a ? -1.0 : 1.0, fract(pq.y / 0.30) < 0.5 ? -1.0 : 1.0);
+            vec2 sl = 0.55 * smoothstep(jw0 - 0.0005, jw0 + 0.0008, jm) * smoothstep(jw0 + 0.005, jw0 + 0.003, jm) * sgn * fade;
+            GP_jn = sl.x * A1 + sl.y * B1;                           // world xz (the flags use gG; the surface pass knows)
+          }
+          // the walked lines along the axis a little lighter and smoother; each unit its own polish
+          float trod = vnoise(vec2(pq.x * 0.05, pq.y * 0.35) + 7.0);
+          albedo *= 0.96 + 0.08 * trod;
+          GND_rough = mix(0.66, 0.52, trod) + 0.12 * hash12(pid + 5.3) + 0.08 * speck;
+          GND_spec = 0.90;
+          GP_layer = speck > 0.5 ? 3.0 : 4.0;                        // speckled: the exposed-aggregate scan; smooth: granite
+          GP_off = vec2(hash12(pid + 1.3), hash12(pid + 7.9));
+          // gum, dense on a plaza: dark grey blotches 2-6 cm (ref 13), their mean once past resolution
+          {
+            float gv = smoothstep(0.012, 0.004, gFw);
+            vec2 gc = pq / 0.16; vec2 gi = floor(gc);
+            float gh = hash12(gi + 51.7);
+            if (gv > 0.01 && gh < 0.34) {
+              vec2 gp = (fract(gc) - vec2(hash12(gi + 4.1), hash12(gi + 8.3)) * 0.6 - 0.2) * 0.16;
+              float gr = 0.010 + 0.020 * fract(gh * 37.0);
+              float gd = length(gp * vec2(1.0, 0.8 + 0.4 * fract(gh * 11.0))) / gr;
+              float gum = smoothstep(1.0, 0.70, gd + 0.25 * (vnoise(gp * 180.0 + gh * 9.0) - 0.5)) * gv;
+              albedo = mix(albedo, albedo * mix(0.30, 0.52, fract(gh * 5.0)), gum * 0.9);
+              GND_rough = mix(GND_rough, 0.58, gum * 0.5);
+            }
+            albedo *= 1.0 - (1.0 - gv) * 0.045;
+          }
+          // the steel discs (Snohetta: "nickel-sized", 1.6-2.2 cm): straight lines and arcs of them at a 6 cm pitch that run
+          // across unit boundaries, one 3.6 m cell in three; resolvable inside ~8 m only, faded out before they alias
+          float jw = max(pxq.x, pxq.y) + 1e-4;
+          float dk = 0.0;
+          if (jw < 0.012) {
+            vec2 dc = floor(pq / 3.6);
+            float dh = hash12(dc + 13.1);
+            if (dh < 0.34) {
+              vec2 lp = pq - (dc + 0.5) * 3.6;                        // cell-centred
+              float an = hash12(dc + 2.7) * 3.14159;
+              vec2 dir = vec2(cos(an), sin(an)), nrm = vec2(-dir.y, dir.x);
+              float s, t;
+              if (dh < 0.17) { s = dot(lp, dir); t = dot(lp, nrm); }  // a line
+              else {                                                 // an arc of radius 2-5 m
+                float Rc = 2.0 + 3.0 * hash12(dc + 5.9);
+                vec2 cc = nrm * Rc;
+                vec2 dv = lp - cc;
+                float rl = length(dv);
+                t = rl - Rc; s = atan(dv.y, dv.x) * Rc;
+              }
+              float along = abs(s) < 1.4 ? 1.0 : 0.0;
+              vec2 dp = vec2((fract(s / 0.06) - 0.5) * 0.06, t);
+              float dd = length(dp);
+              dk = (1.0 - smoothstep(0.0095 - jw * 0.7, 0.0095 + jw * 0.7, dd)) * along;
+            }
+            dk *= smoothstep(0.012, 0.005, jw);
+          }
+          albedo = mix(albedo, vec3(0.50, 0.51, 0.52), dk);
+          GND_rough = mix(GND_rough, 0.16, dk);
+          GND_spec = mix(GND_spec, 2.4, dk);
+          GND_paint = dk;
+`;
+// GP31 surface pass: the scanned sets as the material. Every colour term is the texel over its set's linear mean and every
+// AO term over its mean, so the mip chain converges to 1 and a surface holds its calibrated tone at any distance while
+// the scan supplies all the detail inside it. The normal maps are OpenGL (+Y up the image); the arrays are not flipped,
+// so texture rows run +gG.y and the map's Y is negated into the grid frame.
+const GP31_SURF_GLSL = /* glsl */ `
+          if (gpReady > 0.5 && fw < 6.0 && (m == 0 || m == 1 || m == 2 || m == 3 || m == 4 || m == 6 || m == 9 || m == 16 || m == 17 || (m == 7 && GND_rock < 0.5))) {
+            gpDone = true;
+            float far = smoothstep(6.0, 4.0, fw);                 // everything is ~1 by here: this only hides the gate
+            float nW = smoothstep(2.2, 0.25, fw);                 // normal maps gone before their relief is sub-pixel noise
+            vec2 tw = vec2(0.0);                                  // slope field, world xz
+            if (m == 0 || m == 3 || m == 4 || m == 9) {
+              int L = int(GP_layer + 0.5);
+              vec2 pomG = vec2(dot(GP_pomXZ, MG_A), dot(GP_pomXZ, MG_B));   // the pothole march's visible point
+              vec2 st0 = (gG + pomG) * 0.5, sgx = gGx * 0.5, sgy = gGy * 0.5;   // 2.0 m tiles
+              vec3 tone = albedo;                                   // the block face's calibrated tone, before the scan
+              // ---- the aggregate's relief. The eye ray is marched into the scan's height field (10 steps and a secant
+              // refine on the dominant hex tap, all on one mip): the chips stand up to 6.5 mm (10 mm raveled) proud of
+              // the binder, a chip's far side hides the binder behind it, and every texture read below takes the point the
+              // ray actually meets. From that point a second march toward the sun finds the chips that shade it: long
+              // crevice shadows at golden hour, almost none at a high noon sun. Inside ~6 m (a 1 cm footprint) only; past
+              // that the chips are a few pixels and the normal map, the cavity term and the mean shadow carry them.
+              float pomK = (m == 0 ? 1.0 : 0.0) * smoothstep(0.010, 0.0045, fw) * (1.0 - GP_potIn) * (1.0 - GP_seal);
+              vec2 stV = st0;
+              if (pomK > 0.02) {
+                vec3 w; vec2 v1, v2, v3; gpTri(st0 * 0.60, w, v1, v2, v3);
+                vec2 o = (w.x > w.y && w.x > w.z) ? gpH2(v1) : (w.y > w.z ? gpH2(v2) : gpH2(v3));
+                vec3 Vd = normalize(vWPos - cameraPosition);
+                vec2 dSt = vec2(dot(Vd.xz, MG_A), dot(Vd.xz, MG_B)) * 0.5 / max(-Vd.y, 0.08);   // st per metre of depth
+                float D = (L == 1 ? 0.0030 : 0.0065) * (1.0 + 0.55 * GP_ravel) * pomK;
+                const int NS = 10;
+                vec2 du = dSt * D / float(NS);
+                vec2 u = st0, uP = st0; float rd = 0.0, rP = 0.0;
+                float sd = 1.0 - textureGrad(t_gpA, vec3(u + o, GP_layer), sgx, sgy).a, sP = sd;
+                for (int k = 0; k < NS; k++) {
+                  if (rd >= sd) break;
+                  uP = u; rP = rd; sP = sd;
+                  u += du; rd += 1.0 / float(NS);
+                  sd = 1.0 - textureGrad(t_gpA, vec3(u + o, GP_layer), sgx, sgy).a;
+                }
+                float a0 = sP - rP, a1 = sd - rd;
+                float tt = clamp(a0 / max(a0 - a1, 1e-4), 0.0, 1.0);
+                stV = mix(uP, u, tt);
+                float rHit = mix(rP, rd, tt);
+                if (gpSun.y > 0.03) {
+                  float sl = max(length(gpSun.xz), 1e-3), tanE = gpSun.y / sl;
+                  vec2 sSt = vec2(dot(gpSun.xz, MG_A), dot(gpSun.xz, MG_B)) / sl * 0.5;   // st per metre, toward the sun
+                  float span = min(rHit * D / tanE, 0.03);
+                  float occ = 0.0;
+                  for (int j = 1; j <= 5; j++) {
+                    float t = span * float(j) * 0.2;
+                    float rayR = rHit - t * tanE / max(D, 1e-4);
+                    float sj = 1.0 - textureGrad(t_gpA, vec3(stV + o + sSt * t, GP_layer), sgx, sgy).a;
+                    occ = max(occ, clamp((rayR - sj) * 7.0, 0.0, 1.0));
+                  }
+                  GP_shadow *= 1.0 - occ * 0.88 * pomK;
+                }
+              }
+              vec4 A, N; gpHex(GP_layer, stV, 0.60, sgx, sgy, A, N);   // ~1 m hex cells
+              vec3 ratio = mix(vec3(1.0), A.rgb / GP_MEAN[L], far);
+              float ao = mix(1.0, N.a / GP_AO[L], far);
+              float rr = N.b / GP_RGH[L];
+              float hc = A.a - GP_HM[L];                           // height over the layer's mean: + chip tops, - binder
+              float tnS = 1.0;
+              if (m == 3 || m == 4) {
+                // thermoplastic: exposed where a chip stands clear of the film. Only the chips: the height over its own
+                // local mean (the same hex taps three mips down), or a 20 cm swell of the binder punches a hole through a
+                // bar. A mip-averaged height is not a height distribution, so the threshold widens with the footprint.
+                vec4 Ab, Nb; gpHex(GP_layer, st0, 0.60, gGx * 4.0, gGy * 4.0, Ab, Nb);
+                float e = mix(0.04, 0.22, smoothstep(0.002, 0.05, fw));
+                float t = 0.30 - GP_wear * 0.26;
+                float expo = smoothstep(t - e, t + e, A.a - Ab.a) * step(0.01, GP_wear);
+                // the road's own cracks run on through the film: an open one splits it and flakes it off either side
+                expo = max(expo, GP_flake * 0.9);
+                vec3 film = albedo * mix(vec3(1.0), ratio, 0.20) * mix(1.0, ao, 0.60);   // draped over the chips: dirt in the lows
+                // the long edges wear back first (refs: 1-5 cm, ragged and scalloped, breaking into islands), and the film
+                // cracks into blocks a fifth to a half of a bar across, 1-3 mm hairlines, the odd block lost
+                if (vK.y > 100.5 && vK.z > 100.5) {
+                  GP_pEdge = mod(vK.z - 1.0, 100.0) * 0.01 - abs((vK.y - 1.0) * 0.01 - 300.0);
+                  float hE = max(gFw * 0.5, 0.0006);
+                  float rag = 0.55 * vnoise(vWPos.xz * 16.0 + 3.0) + 0.30 * vnoise(vWPos.xz * 47.0 + 9.0) + 0.15 * vnoise(vWPos.xz * 130.0);
+                  float ew = (0.008 + 0.045 * GP_wear) * (0.35 + 1.3 * rag);
+                  float lost = clamp((ew - GP_pEdge) / (2.0 * hE) + 0.5, 0.0, 1.0);
+                  // islands: past the ragged front, flakes that let go
+                  lost = max(lost, step(0.72 - 0.25 * GP_wear, vnoise(vWPos.xz * 90.0 + 17.0)) * smoothstep(ew * 2.2, ew, GP_pEdge));
+                  expo = max(expo, lost);
+                  film *= 1.0 - 0.10 * smoothstep(0.18, 0.05, GP_pEdge);   // tyre grime along the edge
+                }
+                float blk = smoothstep(0.30, 0.60, GP_wear + 0.25 * (vnoise(vWPos.xz * 0.9 + 5.0) - 0.5));
+                if (blk > 0.01 && gFw < 0.012) {
+                  vec2 vp = (vWPos.xz + vec2(vnoise(vWPos.xz * 9.0), vnoise(vWPos.xz * 9.0 + 7.0)) * 0.03) / 0.11;
+                  vec2 ci = floor(vp), cf = fract(vp);
+                  float f1 = 9.0, f2 = 9.0; vec2 m1 = vec2(0.0), m2 = vec2(0.0), i1 = vec2(0.0);
+                  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+                    vec2 o = vec2(float(i), float(j));
+                    vec2 pt = o + gpH2(ci + o) * 0.8 + 0.1 - cf;
+                    float dd2 = dot(pt, pt);
+                    if (dd2 < f1) { f2 = f1; m2 = m1; f1 = dd2; m1 = pt; i1 = ci + o; } else if (dd2 < f2) { f2 = dd2; m2 = pt; }
+                  }
+                  float eb = dot(0.5 * (m1 + m2), normalize(m2 - m1)) * 0.11;
+                  float crk = gpBand(eb, 0.0007 + 0.0006 * hash12(i1 + 3.1), max(gFw * 0.5, 0.0004)) * blk * smoothstep(0.012, 0.005, gFw);
+                  film = mix(film, film * 0.35, crk);
+                  expo = max(expo, step(hash12(i1 + 7.3), 0.10 * blk * GP_wear));    // a block let go
+                }
+                vec3 bareA = GP_asph * ratio * mix(1.0, ao, 0.65);
+                albedo = mix(film, bareA, expo);
+                albedo = mix(albedo, albedo * 0.30, GP_open);
+                // a sealant crew's squeegee runs straight over the paint
+                vec3 sc = GP_asph * 0.45 * mix(0.35, 0.80, smoothstep(0.25, 0.85, vnoise(gG * 0.9 + 5.0)));
+                albedo = mix(albedo, sc, GP_seal);
+                GND_paint = (1.0 - expo) * (1.0 - GP_seal) * (1.0 - GP_open);
+                GND_rough = mix(GND_rough, 0.90 * mix(1.0, rr, 0.5), expo);
+                // sealant over the film takes the road sealant's satin response: with the film's gloss it mirrored the sky
+                GND_rough = mix(GND_rough, mix(0.78, 0.90, smoothstep(0.012, 0.06, gFw)), GP_seal);
+                GND_spec = mix(mix(0.50, 1.0, GND_paint), 0.62, GP_seal);
+                tnS = mix(0.40, 1.0, max(expo, GP_open));
+              } else if (m == 9) {
+                albedo *= mix(vec3(1.0), ratio * mix(1.0, ao, 0.6), mix(1.0, 0.45, GND_paint));
+                tnS = mix(1.0, 0.5, GND_paint);
+              } else {
+                // the road surface's own layers do not reach into a pothole
+                float outP = 1.0 - GP_potIn;
+                GP_seal *= outP;
+                // the thin edge of a squeegeed band: the chip tops stand through it (the band reads as poured over the road,
+                // not laid on it as a strip)
+                GP_seal *= 1.0 - GP_sealE * smoothstep(-0.02, 0.14, hc) * 0.9;
+                float bare = 1.0 - GP_seal;
+                float hp = A.a - 0.5;                                     // chip relief of the scan, -0.5 (lows) .. 0.5 (tops)
+                GP_hp = hc;
+                // raveling: the aggregate proud of the binder, its contrast up and the lows deeper
+                ratio = mix(ratio, min(pow(max(ratio, vec3(0.0)), vec3(1.25)), vec3(2.2)), GP_ravel * far);
+                ao = mix(ao, ao * ao, GP_ravel * far);
+                // the 30 m aerial scan: tyre marks, stains and weathering at 0.1-10 m; half of it inside a newer cut
+                float mcr = gpMacro(gG / 30.0, gGx / 30.0, gGy / 30.0);
+                // (its 0.5-2 m spread is +-15-20 %: at full strength a roadway past ~10 m went blotchy, where the refs show
+                // a uniform carriageway with bands of a few percent, so it fades to 0.38 with distance). It is the one
+                // source of 5-50 cm tone on the road: measured cv at 12 / 25 / 50 cm, Asphalt031 0.030 / 0.012 / 0.008
+                // (processed flat for tiling), the aerial scan 0.160 / 0.136 / 0.119, GM28's asphalt_02 0.084 / 0.061 /
+                // 0.042. So it peaks where those scales resolve (2-15 m), and eases off at the lens, where its 1.5 cm texels
+                // would blur over the chips
+                float mcK = mix(0.38, mix(0.88, 0.55, smoothstep(0.008, 0.003, gFw)), smoothstep(0.06, 0.012, gFw));
+                albedo *= mix(1.0, mcr, (mcK - 0.35 * GP_cut) * bare * far * outP);
+                // the scan's contrast raised (linear about 1, so the mean holds), most where the chips resolve: measured on
+                // the display at 1.5-3 m the first GP31 stills had p10/p90 0.80/1.21 of the mean where the photographs have
+                // 0.77/1.34 (ref 01, 0.7 m) and 0.59/1.40 (ref 03, 2-4 m): light chips on a darker binder
+                float nearC = smoothstep(0.02, 0.006, gFw);
+                ratio = max(1.0 + (ratio - 1.0) * mix(1.0, mix(1.25, 1.60, nearC), far), vec3(0.12));
+                albedo *= mix(vec3(1.0), ratio * mix(1.0, ao, 0.85), bare);
+                // the cavity: a height-linear term, so it is mean-preserving and a minified road keeps its tone. Chip tops
+                // a little lighter, the binder between them darker, most in a raveled surface
+                albedo *= max(1.0 + hc * (mix(0.75, 1.15, nearC) + 0.35 * GP_ravel) * bare * far, 0.28);
+                albedo *= 1.0 - GP_crack * 0.72 * bare * outP;
+                // open cracks and alligator gaps: down to the dark, damp base course
+                float gapK = max(GP_open, GP_allig) * bare * outP;
+                albedo = mix(albedo, albedo * vec3(0.26, 0.245, 0.23), gapK);
+                // grit and road dust: drifted into the lows (height-blended: the chip tops tyres and feet reach stay
+                // clean), a film everywhere and a drift against the kerb, pale and warm, and matte
+                float lowH = smoothstep(0.08, -0.22, hc);
+                float dustK = GP_dust * mix(0.35, 1.0, lowH) * (1.0 - 0.7 * GP_trk) * bare * outP;
+                albedo = mix(albedo, tone * vec3(1.32, 1.24, 1.06), dustK * 0.42);
+                GND_rough = min(1.0, GND_rough + dustK * 0.06);
+                // the sealant: darker than the road (refs 02, 04: 10-25 % below it in the photographs' display values, a
+                // fresh band blacker), no chips, no relief, a satin sheen. Its ALBEDO has to sit well under the road's: at a
+                // grazing view the sheen adds sky, and at 0.35-0.80 of the road's tone the first stills drew it as a pale tube;
+                // at 0.26-0.55 the batch-4 stills still put it at the road's own display tone, a flat grey strip. Trafficked
+                // sealant is sanded: road grit pressed into it, the scan's grain at a fifth of its contrast
+                float sDust = smoothstep(0.25, 0.85, vnoise(gG * 0.9 + 5.0));   // fresh (black, satin) .. dusty (grey, matte)
+                vec3 sc = tone * mix(0.17, 0.40, sDust);
+                sc *= mix(vec3(1.0), ratio, 0.20);
+                albedo = mix(albedo, sc, GP_seal);
+                // roughness by height: the chip tops tyres reach are polished and glint, the binder between stays matte
+                GND_rough = clamp(GND_rough * mix(1.0, rr, 0.55 * far), 0.45, 1.0);
+                GND_rough -= smoothstep(0.06, 0.26, hc) * (0.16 + 0.24 * GP_trk) * bare * far;
+                GND_rough = mix(GND_rough, 0.70, gapK);
+                // its satin sheen is a near-field read: at a grazing 20-60 m a smooth band mirrors the sky as a white line
+                // down the road, so it roughens with the footprint
+                // the sheen goes with the age: in the batch-5 stills the whole band at a satin 0.72-0.84 reflected enough bright
+                // sky at a 1.5 m eye to sit at the road's own display tone (the road's chips are in their own crevice shadow,
+                // the smooth band is not), where the photographs put a band 10-25 % darker
+                GND_rough = mix(GND_rough, mix(mix(0.74, 0.90, sDust), 0.92, smoothstep(0.012, 0.06, gFw)), GP_seal);
+                GND_spec = mix(GND_spec, mix(mix(0.52, 0.34, sDust), 0.45, smoothstep(0.012, 0.06, gFw)), GP_seal);
+                tnS = (1.0 - GP_seal * 0.85) * (1.0 + 0.45 * GP_ravel) * mix(1.0, 1.25, pomK);
+                // silt and damp in the lows round a pothole (height-blended: the chip tops stay clean)
+                float low = lowH;
+                float mud = GP_rim * outP * mix(0.25, 1.0, low);
+                albedo = mix(albedo, vec3(0.080, 0.066, 0.048), mud * 0.90 * bare);
+                GND_rough = mix(GND_rough, mix(0.50, 0.22, low), mud * 0.7);   // silt-damp in the lows round a wet hole
+                GND_spec = mix(GND_spec, 1.0, mud * low);
+                // damp patches (a drained puddle, a hosed stoop, a leaking hydrant): the lows hold a water film and go dark
+                // and glossy, the tops dry first; a few per block face, stronger the wetter the day
+                float dmp = smoothstep(0.80, 0.90, vnoise(gG * 0.11 + 13.0)) * outP;
+                dmp = max(dmp * mix(0.35, 1.0, low), 0.0);
+                albedo *= 1.0 - 0.30 * dmp;
+                GND_rough = mix(GND_rough, mix(0.30, 0.10, low), dmp);
+                GND_spec = mix(GND_spec, 1.0, dmp);
+                if (GP_potIn > 0.01) {
+                  // inside the pothole: the broken wall is fresh-fractured binder (darker than the weathered top), the floor
+                  // the base course, grey gravel and grit, with silt settled in its own lows
+                  vec2 offG = vec2(dot(GP_pomXZ, MG_A), dot(GP_pomXZ, MG_B));
+                  vec4 Bf, Nf; gpHex(3.0, (gG + offG) / 1.6, 0.60, gGx / 1.6, gGy / 1.6, Bf, Nf);
+                  vec3 base = vec3(0.066, 0.061, 0.054) * (Bf.rgb / GP_MEAN[3]) * mix(1.0, Nf.a / GP_AO[3], 0.8);
+                  base = mix(base, vec3(0.068, 0.055, 0.040), 0.55 * smoothstep(0.05, -0.20, Bf.a - 0.5));
+                  vec3 wallC = albedo * vec3(0.44, 0.42, 0.40);   // fresh-broken binder, and the pit's own occlusion
+                  albedo = mix(albedo, mix(wallC, base, GP_potF), GP_potIn);
+                  GND_rough = mix(GND_rough, 0.88, GP_potIn);
+                  GND_spec = mix(GND_spec, 0.75, GP_potIn);
+                  if (GP_water > 0.001) {
+                    // standing water at its fill level: murky with depth (the floor shows through a centimetre, silt-brown
+                    // water swallows it by three), a mirror surface for the sky and the street
+                    float murk = 1.0 - exp(-GP_wDepth / 0.011);
+                    albedo = mix(albedo, mix(albedo * 0.55, vec3(0.120, 0.100, 0.074), murk), GP_water);   // silt-laden water scatters like thin mud
+                    albedo *= 1.0 - 1.6 * GP_water * (1.0 - GP_water);                  // the wet silt at the meniscus
+                    // the wall's tilt goes before the water's gloss comes in: a pixel half wall, half water with the wall's
+                    // normal and the water's roughness mirrored the sky as a bright line round the pool
+                    float wFlat = smoothstep(0.0, 0.3, GP_water), wGloss = GP_water * GP_water;
+                    GND_rough = mix(GND_rough, 0.035, wGloss); GND_spec = mix(GND_spec, 0.5, wGloss);   // water: F0 0.02
+                    tnS *= 1.0 - wFlat; GP_slopeW *= 1.0 - wFlat; GP_sealN *= 1.0 - wFlat;
+                  }
+                }
+                // litter where the sweeper misses it, in the gutter and against the kerb: cigarette butts (2.5 x 0.8 cm,
+                // a tan filter end), bottle caps, leaves and scraps of paper, one 13 cm cell in twenty at the kerb;
+                // resolvable inside ~6 m only, and its mean past that is nothing
+                if (GP_dust > 0.05 && gFw < 0.008 && outP > 0.5) {
+                  vec2 lc = gG / 0.13; vec2 li = floor(lc);
+                  float lh = hash12(li + 61.7);
+                  if (lh < 0.05 * GP_dust) {
+                    vec2 lp = (fract(lc) - 0.5) * 0.13 * 0.8;
+                    float la = hash12(li + 3.1) * 6.2832;
+                    vec2 lq = mat2(cos(la), -sin(la), sin(la), cos(la)) * lp;
+                    float kind = hash12(li + 9.7), sh = 0.0; vec3 lcol = vec3(0.5);
+                    float aw = max(gFw, 0.0008);
+                    if (kind < 0.45) {
+                      sh = smoothstep(0.0040 + aw, 0.0040 - aw, length(vec2(max(abs(lq.x) - 0.0085, 0.0), lq.y)));
+                      lcol = lq.x > 0.004 ? vec3(0.36, 0.22, 0.10) : vec3(0.62, 0.60, 0.56);
+                    } else if (kind < 0.62) {
+                      sh = smoothstep(0.013 + aw, 0.013 - aw, length(lq));
+                      lcol = vec3(0.18, 0.18, 0.19) * (0.6 + 0.9 * hash12(li + 5.5));
+                    } else if (kind < 0.85) {
+                      sh = smoothstep(1.0 + aw * 60.0, 1.0 - aw * 60.0, length(lq / vec2(0.022, 0.011)));
+                      lcol = mix(vec3(0.12, 0.070, 0.030), vec3(0.20, 0.13, 0.04), hash12(li + 7.1));
+                    } else {
+                      sh = smoothstep(aw, -aw, max(abs(lq.x) - 0.018, abs(lq.y) - 0.012));
+                      lcol = vec3(0.60, 0.59, 0.56);
+                    }
+                    albedo = mix(albedo, lcol, sh);
+                    GND_rough = mix(GND_rough, 0.80, sh);
+                    GP_shadow = mix(GP_shadow, 1.0, sh);
+                  }
+                }
+                // past the relief march, the mean of the crevice shadow a low sun casts (golden hour, a winter noon)
+                float lowSun = 1.0 - smoothstep(0.15, 0.60, gpSun.y);
+                GP_shadow *= 1.0 - lowSun * 0.08 * (1.0 - pomK) * bare * (1.0 - GP_water);
+              }
+              vec2 tn = (N.xy * 2.0 - 1.0) * vec2(1.0, -1.0) * tnS;
+              tw = tn.x * MG_A + tn.y * MG_B + GP_sealN.x * GP_qT + GP_sealN.y * GP_qN + GP_slopeW;   // + the sealant lip, macro slopes
+            } else if (m == 1) {
+              int L = int(GP_layer + 0.5);
+              float sz = L == 3 ? 1.6 : 2.0;
+              vec2 fq = gAx > 0.5 ? gG.yx : gG;                 // flag frame: x along the kerb, y across the walk
+              vec2 fx = (gAx > 0.5 ? gGx.yx : gGx) / sz, fy = (gAx > 0.5 ? gGy.yx : gGy) / sz;
+              vec4 A = textureGrad(t_gpA, vec3(fq / sz + GP_off, GP_layer), fx, fy);
+              vec4 N = textureGrad(t_gpN, vec3(fq / sz + GP_off, GP_layer), fx, fy);
+              float kw = L == 3 ? 0.70 : 1.0;                    // the worn set's pebbles are strong: a worn flag, not gravel
+              albedo *= mix(vec3(1.0), (A.rgb / GP_MEAN[L]) * mix(1.0, N.a / GP_AO[L], 0.6), far * kw);
+              GND_rough = clamp(GND_rough * mix(1.0, N.b / GP_RGH[L], 0.5 * far), 0.45, 1.0);
+              vec2 tn = (N.xy * 2.0 - 1.0) * vec2(1.0, -1.0) * kw;
+              vec2 tg = (gAx > 0.5 ? tn.yx : tn) + GP_jn;
+              tw = tg.x * MG_A + tg.y * MG_B;
+            } else if (m == 16) {
+              vec2 A1 = vec2(0.2646, -0.9644), B1 = vec2(0.9644, 0.2646);
+              int L = int(GP_layer + 0.5);
+              float tsz = L == 3 ? 1.6 : 2.17;
+              vec2 st = vec2(dot(vWPos.xz, A1), dot(vWPos.xz, B1)) / tsz + GP_off;
+              vec2 fx = vec2(dot(gPx.xz, A1), dot(gPx.xz, B1)) / tsz, fy = vec2(dot(gPy.xz, A1), dot(gPy.xz, B1)) / tsz;
+              vec4 A = textureGrad(t_gpA, vec3(st, GP_layer), fx, fy);
+              vec4 N = textureGrad(t_gpN, vec3(st, GP_layer), fx, fy);
+              float k = (L == 3 ? 0.95 : 0.45) * far * (1.0 - GND_paint);   // speckled units the exposed aggregate; not on the discs
+              albedo *= mix(vec3(1.0), (A.rgb / GP_MEAN[L]) * mix(1.0, N.a / GP_AO[L], 0.5), k);
+              GND_rough = clamp(GND_rough * mix(1.0, N.b / GP_RGH[L], 0.45 * k), 0.12, 1.0);
+              vec2 tn = (N.xy * 2.0 - 1.0) * vec2(1.0, -1.0) * 0.8 * (1.0 - GND_paint);
+              tw = tn.x * A1 + tn.y * B1 + GP_jn;                  // GP_jn is world xz here
+            } else if (m == 2) {
+              // the granite kerb face, in the (along-kerb, height) frame; a wall takes no ground-frame normal
+              vec2 ct = normalize(vec2(-GND_wn.z, GND_wn.x) + 1e-5);
+              vec2 st = vec2(dot(vWPos.xz, ct), vWPos.y) / 2.17;
+              vec2 fx = vec2(dot(gPx.xz, ct), gPx.y) / 2.17, fy = vec2(dot(gPy.xz, ct), gPy.y) / 2.17;
+              vec4 A = textureGrad(t_gpA, vec3(st, 4.0), fx, fy);
+              vec4 N = textureGrad(t_gpN, vec3(st, 4.0), fx, fy);
+              albedo *= mix(vec3(1.0), A.rgb / GP_MEAN[4], 0.8 * far);
+              GND_rough = clamp(GND_rough * mix(1.0, N.b / GP_RGH[4], 0.4 * far), 0.45, 1.0);
+            } else {
+              // park path, Bryant Park gravel, the paved backlot. The gravel is the crushed-stone scan at full strength with
+              // its stones' own relief: a height-linear cavity (mean-preserving) and the crevice shadow a low sun casts,
+              // roughness by height (stone faces catch the light, the grit between is matte), damp ground holding its fines
+              bool grv = m == 17 && gpGravelL > 4.5;
+              float L = grv ? gpGravelL : 3.0, tsz = grv ? 2.0 : 1.6;
+              int Li = int(L + 0.5);
+              vec4 A, N; gpHex(L, gG / tsz, 0.60, gGx / tsz, gGy / tsz, A, N);
+              float k = (m == 7 ? 0.45 : m == 6 ? 0.80 : grv ? 0.85 : 0.70) * far;
+              albedo *= mix(vec3(1.0), (A.rgb / GP_MEAN[Li]) * mix(1.0, N.a / GP_AO[Li], grv ? 0.85 : 0.6), k);
+              vec2 tn = (N.xy * 2.0 - 1.0) * vec2(1.0, -1.0) * k;
+              if (grv) {
+                float hcg = A.a - GP_HM[Li];
+                albedo *= max(1.0 + hcg * 0.6 * k * (1.0 - 0.5 * GP_ravel), 0.3);
+                GND_rough = clamp(GND_rough * mix(1.0, N.b / GP_RGH[Li], 0.5 * k) - smoothstep(0.05, 0.25, hcg) * 0.10 * k, 0.45, 1.0);
+                float lowSun = 1.0 - smoothstep(0.15, 0.60, gpSun.y);
+                GP_shadow *= 1.0 - lowSun * mix(0.10, 0.55 * smoothstep(0.02, -0.20, hcg), smoothstep(0.012, 0.004, gFw));
+                tn *= 1.1 * (1.0 - 0.4 * GP_ravel) * (1.0 + 0.5 * GP_dust);
+              }
+              tw = tn.x * MG_A + tn.y * MG_B;
+              if (m == 7) GND_rough = 0.88;
+            }
+            // the tilts add up (scan normal, pothole wall, chunk tilt, sealant lip, joint bevel): capped at 0.8 (53 deg), past
+            // which a rim pixel's normal ran near-perpendicular to the view and Fresnel turned it into a sky mirror
+            float twl = length(tw);
+            tw *= min(1.0, 0.8 / max(twl, 1e-4));
+            GND_tn = vec3(tw, sqrt(max(1.0 - dot(tw, tw), 0.09)));
+            GND_tnW = nW * (1.0 - GND_wall);
+          }
+`;
 export function makeGroundMaterial() {
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.0 });
+  if (GP31) {
+    const st = GP31_TEX.kerb = { meshes: 0, pending: 0, segs: 0, tris: 0, ms: 0, maxMs: 0 };
+    if (typeof window !== 'undefined') window.__GP31 = GP31_TEX;
+    mat.onBeforeRender = (r, s, c, geometry) => {
+      if (geometry.userData.gpK || !geometry.attributes.matId || geometry.attributes.gpK) return;
+      geometry.userData.gpK = true;
+      gpKerbAsync(geometry, st);
+    };
+  }
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.playerXZ = FAR_UNIFORMS.playerXZ;
     sh.uniforms.nearR = FAR_UNIFORMS.nearR;
@@ -3446,6 +4624,7 @@ export function makeGroundMaterial() {
     sh.uniforms.snowA = ENV.snow;
     for (const k of ['asC', 'asN', 'asR', 'asD', 'coC', 'coN', 'grC', 'grN', 'pvC', 'pvN']) sh.uniforms['t_' + k] = { value: GTEX[k] };
     GTEX_UNIFORM_REFS.push(sh.uniforms); // async KTX2 arrivals refresh these
+    if (GP31) { sh.uniforms.t_gpA = GP31_TEX.alb; sh.uniforms.t_gpN = GP31_TEX.nrm; sh.uniforms.gpReady = GP31_TEX.ready; sh.uniforms.gpSun = ENV.sunDir; sh.uniforms.gpMacroL = GP31_TEX.macroL; sh.uniforms.gpGravelL = GP31_TEX.gravelL; }
     sh.uniforms.lb14StCal = ENV.lb14StCal;   // LB14
     sh.uniforms.lb14Walk = ENV.lb14Walk;     // LB14
     sh.uniforms.lb14Paint = ENV.lb14Paint;   // LB14
@@ -3460,9 +4639,9 @@ export function makeGroundMaterial() {
     if (typeof location !== 'undefined' && new URLSearchParams(location.search).has('gndcheap')) sh.defines.GNDCHEAP = 1;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', `#include <common>
-        attribute float matId; varying float vMat; varying vec3 vWPos;`)
+        attribute float matId; varying float vMat; varying vec3 vWPos;${GP31 ? '\n        attribute vec4 gpK; varying vec4 vK;   // GP31 kerb frame (gpKerbFrame)' : ''}`)
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
-        vMat = matId;
+        vMat = matId;${GP31 ? '\n        vK = gpK;' : ''}
         vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`)
       // per-layer depth bias (docs/notes/zfight.md 6.1): paint / plates win over the asphalt and
       // the gutter / bus-lane strips over the cap fan by a fixed number of 24-bit depth LSBs,
@@ -3484,8 +4663,8 @@ export function makeGroundMaterial() {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         uniform vec2 playerXZ; uniform float nearR; uniform float night;${NEARMASK_GLSL}
-        uniform sampler2D t_asC; uniform sampler2D t_asN; uniform sampler2D t_asR; uniform sampler2D t_asD;
-        uniform sampler2D t_coC; uniform sampler2D t_coN;
+        ${GP31 ? '// GP31: the six asphalt/concrete maps are replaced by the two t_gp arrays below' : `uniform sampler2D t_asC; uniform sampler2D t_asN; uniform sampler2D t_asR; uniform sampler2D t_asD;
+        uniform sampler2D t_coC; uniform sampler2D t_coN;`}
         uniform sampler2D t_grC; uniform sampler2D t_grN;
         uniform sampler2D t_pvC; uniform sampler2D t_pvN;
         uniform vec3 lb14StCal; uniform vec3 lb14Walk; uniform vec3 lb14Paint; uniform float lb14Road;   // LB14 (docs/notes/lb14.md)
@@ -3493,6 +4672,7 @@ export function makeGroundMaterial() {
         ${HASH_GLSL}
         ${TEX_GLSL}
         ${GND_GLSL}
+        ${GP31 ? GP31_GLSL : ''}
         float GND_rough; float GND_patch; float GND_manhole; float GND_oil;
         float GND_paint;  // 1 = intact thermoplastic film (fills the aggregate)
         float GND_wall;   // 1 = near-vertical face (curb face, park rock cut)
@@ -3532,7 +4712,39 @@ export function makeGroundMaterial() {
         float gMid  = smoothstep(1.10, 0.22, gFw);   // coarse detail visibility
         // grid-frame coordinates (metres along the street / along the avenue)
         vec2 gG = vec2(dot(vWPos.xz, MG_A), dot(vWPos.xz, MG_B));
-        if (m == 0) {
+        ${GP31 ? `// GP31: screen gradients taken here, in uniform control flow, for every textureGrad in the branches below
+        vec2 gGx = dFdx(gG), gGy = dFdy(gG);
+        vec3 gPx = dFdx(vWPos), gPy = dFdy(vWPos);
+        // the street's bearing, the ~130 m block mask gstreak and U10 share: 1 = the street runs along gG.y
+        float gAx = step(0.5, smoothstep(0.38, 0.62, vnoise(gG * 0.0075 + 41.0)));
+        GP_layer = 0.0; GP_seal = 0.0; GP_sealE = 0.0; GP_sealN = vec2(0.0); GP_off = vec2(0.0); GP_jn = vec2(0.0);
+        GP_wear = 0.0; GP_asph = vec3(0.2); GP_crack = 0.0; GP_cut = 0.0; GP_dust = 0.0;
+        GP_potD = 0.0; GP_potIn = 0.0; GP_potF = 0.0; GP_water = 0.0; GP_wDepth = 0.0; GP_rim = 0.0; GP_pomXZ = vec2(0.0);
+        GP_slopeW = vec2(0.0); GP_shadow = 1.0; GP_ravel = 0.0; GP_allig = 0.0; GP_open = 0.0; GP_bleach = 0.0; GP_trk = 0.0; GP_hp = 0.0; GP_flake = 0.0; GP_pEdge = 1.0; GP_castPat = 0.5; GP_castSlot = 0.0;
+        // the kerb frame (world/gpKerbWorker.js): kQ = metres across the street from its canonical kerb (continuous over
+        // the centreline), kDn = metres to the nearest kerb, kW = the street width (0 = no facing kerb found), kn = the
+        // canonical kerb's normal into the street. A street within 4 deg of the commissioners' grid takes the grid axis
+        // itself, so its along-street coordinate is gG and continuous across every triangle; off the grid the along
+        // coordinate is the position projected on the kerb's own bearing.
+        // a mesh the worker has not answered for yet has no gpK: the attribute then reads the generic vertex value, which
+        // another program may have left at (1,1,1,1) (ShaderMaterial's default colour). Real values are never that small.
+        bool kOk = vK.x > 100.5 && vK.w > 0.5;
+        float kQ = (vK.x - 1.0) * 0.01 - 320.0, kDn = max(vK.y - 1.0, 0.0) * 0.01, kW = max(vK.z - 1.0, 0.0) * 0.01;
+        bool kOk2 = kOk && vK.z > 100.5;
+        float kA = (vK.w - 1.0) / 65534.0 * 3.14159265 - 1.57079633;
+        vec2 kn = vec2(cos(kA), sin(kA));
+        vec2 kt = vec2(-kn.y, kn.x);                                   // along the street
+        float kqx = dot(vWPos.xz, kt);
+        if (kOk) {
+          float ca = dot(kt, MG_A), cb = dot(kt, MG_B);
+          if (abs(ca) > 0.99756) { kt = MG_A * sign(ca); kqx = gG.x * sign(ca); }
+          else if (abs(cb) > 0.99756) { kt = MG_B * sign(cb); kqx = gG.y * sign(cb); }
+          kn = vec2(kt.y, -kt.x) * sign(dot(vec2(kt.y, -kt.x), kn));
+          gAx = step(abs(dot(kt, MG_A)), abs(dot(kt, MG_B)));
+        }
+        GP_qT = kOk ? kt : (gAx > 0.5 ? MG_B : MG_A);                  // world directions of the street frame's axes
+        GP_qN = kOk ? kn : (gAx > 0.5 ? MG_A : MG_B);` : ''}
+        if (m == 0) {${GP31 ? GP31_ASPH_GLSL : `
           // ---- NYC asphalt. A street here is never one pour: it is a stack of
           // mill-and-pave lots, DEP/Con Ed utility trenches cut and backfilled
           // years apart, crack sealant, and wheel paths polished lighter with
@@ -3758,8 +4970,8 @@ export function makeGroundMaterial() {
             albedo *= 1.0 - blot * 0.30;
             GND_rough = mix(GND_rough, 0.68, blot * 0.45);
           }
-          #endif` : ''}
-        } else if (m == 1) {
+          #endif` : ''}`}
+        } else if (m == 1) {${GP31 ? GP31_WALK_GLSL : `
           // ---- NYC sidewalk: 5 ft (1.524 m) concrete flags on a 4-flag,
           // 20 ft expansion-joint panel (DOT Street Works Manual 4.4). The
           // flags are laid to the STREET grid, not to world XZ, and each is a
@@ -3905,7 +5117,7 @@ export function makeGroundMaterial() {
                 GND_rough = mix(GND_rough, 0.62, gum * 0.5);
               }
             }
-          }` : ''}
+          }` : ''}`}
         } else if (m == 2) {
           // ---- NYC curb: matId 2 is ONLY the 0.14 m vertical face of the
           // granite/bluestone kerb (the top surface belongs to the sidewalk
@@ -4025,6 +5237,21 @@ export function makeGroundMaterial() {
             barCov = mix(0.80, barCov, gMid);
             barTone = mix(1.00, barTone, gMid);
           }` : ''}
+          ${GP31 ? `// GP31: a bar's own draw. U10's bins guessed the bar axis from the block mask, and on half the crossings the
+          // 1.45 m bins ran ALONG the bars and cut each one into two tones; gpKerbWorker hands every rectangle its own
+          // random (z channel, above the half width)
+          if (vK.z > 100.5 && vK.y > 100.5 && (m == 3 || m == 4)) {
+            float kr = floor((vK.z - 1.0) / 100.0);
+            float junR = mod(kr, 25.0) / 24.0;                                    // the crossing's draw
+            // the bar's own draw; a line (half width under 10 cm) is emitted as one quad per 6-14 m and must not step in
+            // tone from quad to quad, so it takes the crossing's
+            float barR = mod(vK.z - 1.0, 100.0) < 10.0 ? junR : floor(kr / 25.0) / 23.0;
+            barCov = mix(0.80, 0.60 + 0.40 * barR, gMid);
+            barTone = mix(1.00, 0.93 + 0.14 * fract(barR * 3.71 + 0.57), gMid);
+            // the crossing's age from the 55 m cell of the bar's CENTRE: from each fragment's own cell, a cell line
+            // through a crossing split its bars into two tones
+            age = clamp(mix(fbm(vWPos.xz * 0.024 + 1.9), junR, 0.70), 0.0, 1.0);
+          }` : ''}
           vec3 fresh = m == 3 ? vec3(0.618, 0.600, 0.556) : vec3(0.408, 0.212, 0.014);
           vec3 old   = m == 3 ? vec3(0.446, 0.420, 0.336) : vec3(0.292, 0.160, 0.026);
           vec3 paintC = mix(fresh, old, smoothstep(0.34, 0.86, age)) * barTone;
@@ -4075,6 +5302,29 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           // polishes further where the tyres run
           GND_rough = mix(mix(0.62, 0.50, rubber), 0.88, wear);
           GND_spec = mix(0.50, 1.0, GND_paint);   // glass beads: the film really is glossy
+          ${GP31 ? `// GP31: the film is laid whole here and the surface pass wears it off the scan's high points (the chips
+          // tyres reach first), so a worn bar shows real aggregate through a real film instead of a lerp to grey
+          GP_wear = clamp(wear / wearCap, 0.0, 1.0); GP_asph = asph;
+          albedo = paintC; GND_paint = 1.0; GND_rough = mix(0.62, 0.50, rubber); GND_spec = 1.0;
+          {
+            // the road's cracks run on through the film (reflective cracking): a sealed run lays its black band over the
+            // bar, an open one splits the film and flakes it off a centimetre or two either side. Same lot, same street
+            // frame and the same crack line as the asphalt round it (gpCrackL), so a crack crosses a bar unbroken.
+            vec2 lotQ = gG / vec2(82.0, 76.0) + vec2(fbm(gG * 0.013 + 4.0), fbm(gG * 0.015 + 21.0)) * vec2(0.075, 0.075);
+            vec2 lotId = floor(lotQ);
+            float lotH = (hash12(lotId + 3.3) + hash12(lotId + 11.7) + hash12(lotId + 27.1) + hash12(lotId + 41.9)) * 0.25;
+            float aged = smoothstep(0.38, 0.62, lotH);
+            if (aged > 0.01) {
+              vec2 q = kOk ? vec2(kqx, kQ) : (gAx > 0.5 ? gG.yx : gG);
+              vec2 p, gq; float sd = gpCrackL(q, lotId, p, gq);
+              float h = max(gFw * 0.5, 0.0008);
+              float on = smoothstep(0.0, 0.035, vnoise(p * 0.55 + 29.0) - mix(0.74, 0.46, aged));
+              GP_seal = gpBand(sd, 0.022 + 0.013 * vnoise(p * 3.1 + 11.0), h) * on;
+              float offC = smoothstep(0.0, 0.035, mix(0.70, 0.40, aged) - vnoise(p * 0.55 + 29.0)) * smoothstep(0.45, 0.62, lotH);
+              GP_open = gpBand(sd, 0.0015 + 0.0015 * vnoise(p * 2.3 + 5.0), h) * offC;
+              GP_flake = gpBand(sd, 0.010 + 0.018 * vnoise(q * 30.0 + 7.0), h) * offC;
+            }
+          }` : ''}
         }
         else if (m == 5) {
           // lawn: broad hue drift + dry/trodden patches. Blade detail lives in
@@ -4196,7 +5446,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           albedo = mix(plate * 0.74, plate * (0.92 + 0.34 * shade), dome * gMid);
           GND_rough = m == 13 ? 0.78 : 0.62;
         }
-        else if (m == 16) {
+        else if (m == 16) {${GP31 ? GP31_PAVER_GLSL : `
           // TP28 — the Times Square plaza (Broadway 42nd-47th, rebuilt in 2017): 1 x 2 ft precast concrete pavers laid
           // with the Broadway axis in a running bond, a charcoal field with lighter pavers drawn out in runs along the
           // axis, and nickel-sized steel discs set into them that throw back the screens. GND_paint carries the discs:
@@ -4236,16 +5486,40 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           albedo = mix(albedo, vec3(0.50, 0.51, 0.52), dk);
           GND_rough = mix(GND_rough, 0.16, dk);
           GND_spec = mix(GND_spec, 2.4, dk);
-          GND_paint = dk;
+          GND_paint = dk;`}
         }
-        else if (m == 17) {
+        else if (m == 17) {${GP31 ? `
+          // GP31 — Bryant Park's walks are loose crushed stone, a warm grey (the park worker's reference check: darker than
+          // BP28's pale stone dust, which lit read as sand): the gravel scan carries the stones (5-10 mm, surface pass).
+          // Drifts where the stone lies deeper and lighter (thrown aside by feet), and damp, darker ground in the shade of
+          // the planes and under the chairs: the 1-3 m soft patches the photographs show along the allees
+          float gw = fbm(vWPos.xz * 0.45 + 29.0), gd = fbm(vWPos.xz * 0.075 + 3.0), gc = fbm(vWPos.xz * 0.21 + 41.0);
+          // ~0.7 of BP28: the Commons photograph of the north walk (the park worker's ref 3, sun) puts it close to the asphalt
+          // beside it, a mid warm grey with pale specks; the teaser films the park at golden hour, where the walk row of LB14
+          // lifts it 1.6x over the day preset
+          albedo = mix(vec3(0.165, 0.150, 0.121), vec3(0.203, 0.184, 0.149), gw * 0.6 + n1 * 0.4);
+          albedo *= 1.0 + 0.10 * (smoothstep(0.55, 0.85, gc) - 0.3);                           // loose drifts, lighter
+          float damp = smoothstep(0.58, 0.86, gd);
+          // the walk's edges (gpKerbWorker: the distance to the nearest edge line and to the one facing it): loose stone
+          // heaped in a ridge along the edge, lighter and coarser; the band where the chairs stand (0.3-2 m in), darker and
+          // damper (shade, spills, feet scuffing the fines down); the trodden middle a little lighter and compact
+          float eD = 9.0;
+          if (vK.x > 0.5 && vK.w < 0.5) { eD = (vK.x - 1.0) * 0.01; if (vK.y > 0.5) eD = min(eD, (vK.y - 1.0) * 0.01); }
+          float heap = smoothstep(0.45, 0.12, eD) * smoothstep(0.0, 0.05, eD);
+          float chairB = smoothstep(0.25, 0.6, eD) * smoothstep(2.4, 1.4, eD) * (0.6 + 0.4 * vnoise(gG * 0.8 + 3.0));
+          float midT = smoothstep(1.2, 2.6, eD);
+          damp = max(damp, chairB * 0.85);
+          albedo *= (1.0 + 0.18 * heap + 0.05 * midT) * (1.0 - 0.24 * damp);
+          albedo = mix(albedo, albedo * vec3(1.04, 1.02, 0.97), heap);                  // loose, dry, unsoiled stone
+          GND_rough = mix(0.93, 0.80, damp); GND_spec = mix(0.70, 0.85, damp);
+          GP_layer = gpGravelL; GP_ravel = damp; GP_dust = heap;                              // (the surface pass: damp holds the fines, the ridge is coarse)` : `
           // BP28 — Bryant Park's walks: pale decomposed granite over compacted gravel (the park's own grass re-kinded,
           // city/bryantPark.js). A warm light grey-beige, not the asphalt-dark park path (6): a lighter trodden line down
           // the middle of a walk, darker damp drifts, and the fine chip grain from the concrete detail set below.
           float gw = fbm(vWPos.xz * 0.45 + 29.0), gd = fbm(vWPos.xz * 0.06 + 3.0);
           albedo = mix(vec3(0.232, 0.205, 0.160), vec3(0.290, 0.258, 0.204), gw * 0.6 + n1 * 0.4);   // lit it read as snow at 0.34-0.42
           albedo *= 1.0 - smoothstep(0.62, 0.92, gd) * 0.10;
-          GND_rough = 0.95; GND_spec = 0.7;
+          GND_rough = 0.95; GND_spec = 0.7;`}
         }
         else {
           // terrain / far carpet. Inside the city this is the filler between
@@ -4401,6 +5675,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           vec3 red = mix(filmed, vec3(0.150, 0.048, 0.040), 0.18);
           float cov = 0.95 * (1.0 - GND_wheel * 0.42) * (1.0 - GND_cast);
           cov *= 1.0 - smoothstep(0.52, 0.90, fbm(vWPos.xz * 0.075 + 3.7)) * 0.24;
+          ${GP31 ? '// GP31: the film went down before the road broke: a pothole, an open crack or an alligator gap shows the black\n          cov *= (1.0 - GP_potIn) * (1.0 - 0.85 * max(GP_open, GP_allig));' : ''}
           albedo = mix(albedo, red, cov);
           GND_rough = mix(GND_rough, 0.88, cov);
           GND_spec = mix(GND_spec, 0.58, cov);
@@ -4473,6 +5748,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
             GND_rough = mix(GND_rough, 0.82, GND_rock);
           }
         }
+        ${GP31 && typeof location !== 'undefined' && new URLSearchParams(location.search).get('gpdbg') === '1' ? `albedo = kOk ? vec3(0.05, fract(kQ / 3.2) * 0.4, kOk2 ? fract(kqx / 9.0) * 0.4 : 0.0) : vec3(0.4, 0.0, 0.0);` : ''}
         #ifdef GNDDEBUG
         {
           vec3 pal[16];
@@ -4483,12 +5759,27 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           albedo = pal[mRaw > 15 ? 15 : mRaw];   // 11 gutter (slate), 12 bus lane (wine), 13 warn plate (orange), 14 iron plate (steel), 15 unknown
         }
         #endif
+        ${GP31 ? `// GP31 surface pass: the dry material first, then the weather over it
+        bool gpDone = false;
+        {
+          float fw = length(fwidth(vWPos.xz));
+${GP31_SURF_GLSL}
+        }` : ''}
         // rain response (precipitation-surfaces contract: wetness, puddles and
         // ripples share the SAME weather clock/coverage as the falling rain)
         if (wet > 0.003) {
           float wpn = vnoise(vWPos.xz * 0.13) * 0.6 + vnoise(vWPos.xz * 0.031) * 0.4;
           float damp = wet * (0.5 + 0.5 * wpn);
           float pud = smoothstep(0.66, 0.8, wpn) * wet * step(0.5, abs(float(m) - 5.0)); // pooling on pavements, not grass
+          ${GP31 ? `// GP31: water finds the height field's lows: the wheel ruts and the gutter first, the crevices of the chips
+          // before their tops; a pothole holds its own (the surface pass drew it, and rain only raises its level)
+          if (m == 0) {
+            pud = max(pud, smoothstep(0.45, 0.85, GP_trk) * smoothstep(0.30, 0.80, wet) * smoothstep(0.35, 0.65, vnoise(vWPos.xz * 0.21 + 7.0)));
+            if (mRaw == 11) pud = max(pud, smoothstep(0.15, 0.55, wet) * (0.55 + 0.45 * vnoise(vec2(gT * 0.4, 1.0))));
+            damp = min(1.0, damp * mix(1.25, 0.75, smoothstep(-0.10, 0.25, GP_hp)));
+            // a pothole holds its own pool; its broken walls stay rough when wet (their gloss drew a bright rim line)
+            pud *= 1.0 - GP_potIn; damp *= (1.0 - GP_water) * (1.0 - 0.8 * GP_potIn);
+          }` : ''}
           albedo *= 1.0 - 0.3 * damp - 0.25 * pud;
           GND_rough = mix(GND_rough, 0.32, damp * 0.65);
           GND_rough = mix(GND_rough, 0.06, pud);
@@ -4516,7 +5807,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           if (det > 0.02) {
             float mk = smoothstep(0.35, 0.65, vnoise(vWPos.xz * 0.017));
             vec3 wV = normalize(vWPos - cameraPosition);
-            if (m == 0 || m == 3 || m == 4 || m == 9) {           // asphalt (+ paint keeps its colour, gains relief)
+            ${GP31 ? 'if (gpDone) {   // GP31 drew these above' : `if (m == 0 || m == 3 || m == 4 || m == 9) {           // asphalt (+ paint keeps its colour, gains relief)
               vec2 uv = vWPos.xz * 0.16; // finer tiling: 0.09 read as blown-up macro texture
               float hgt = atex(t_asD, uv, mk).x;
               // r8 BAND-LIMIT (?aa=0 reverts to plain det). The parallax offset is
@@ -4601,7 +5892,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
               float detC = det * smoothstep(0.55, 0.2, fw);
               albedo *= gdet(tc, vec3(5.50, 6.02, 7.40), 0.40, detC);
               GND_tn = atex(t_coN, uv, mk).xyz * 2.0 - 1.0; GND_tnW = detC * 0.5;
-              GND_rough = 0.88;
+              GND_rough = 0.88;`}
             } else if (m == 5 || m == 7) {                       // grass / terrain / schist
               // on a schist cut the XZ lookup stretches the grass texels into
               // vertical smears — swap the UV to (along-face, height) BEFORE
@@ -4692,6 +5983,10 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
         albedo = mix(albedo, vec3(0.088, 0.080, 0.070), GND_manhole);
         albedo = mix(albedo, albedo * 0.5, GND_oil);
         GND_rough = mix(GND_rough, 0.48, GND_manhole);
+        ${GP31 ? `// GP31: the cast face: polished bosses and rim, grit-dark lows, slots down to the vault
+        albedo = mix(albedo, albedo * mix(0.62, 1.30, GP_castPat), GND_manhole);
+        albedo = mix(albedo, vec3(0.012, 0.011, 0.010), GP_castSlot * GND_manhole);
+        GND_rough = mix(GND_rough, mix(0.72, 0.34, GP_castPat), GND_manhole);` : ''}
         GND_rough = mix(GND_rough, 0.62, GND_oil);
         GND_spec = max(GND_spec, max(GND_manhole, GND_oil) * 0.95);
         GND_tnW *= 1.0 - GND_manhole * 0.85;
@@ -4744,7 +6039,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           if (m == 2) albedo *= mix(vec3(1.44, 1.39, 1.31), vec3(1.0), night);
           else if (m == 0) albedo *= stCal;
           else if (m == 1 || m == 16 || m == 17) albedo *= mix(lb14Walk, vec3(1.0), night);   // TP28 pavers, BP28 gravel: walk
-          else if (m == 3 || m == 4) albedo *= mix(mix(vec3(1.0), lb14Paint, GND_paint), vec3(1.0), night);
+          else if (m == 3 || m == 4) albedo *= mix(mix(vec3(1.0), lb14Paint, GND_paint${GP31 ? ' * (1.0 - 0.45 * GP_wear)' : ''}), vec3(1.0), night);${GP31 ? '   // GP31: GND_paint is the whole film; GM28 read 1 - wear' : ''}
           // the terrain filler between the compiled walk and the building line
           // has to hold the same value as the walk or every block face gets a
           // dark rim; the schist cut keeps its own calibration.
@@ -4769,6 +6064,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           // a vertical face (kerb, schist) never throws the long grazing
           // streak a road plane does, so it keeps its stone sheen
           float roadPlane = (1.0 - GND_paint) * (1.0 - GND_wall);   // (flat is a reserved GLSL keyword)
+          ${GP31 ? 'if (m == 16) roadPlane *= 0.4;   // GP31: a foot-polished paver keeps a soft sheen under the screens' : ''}
           GND_rough = mix(GND_rough, max(GND_rough, 0.97), dryN * roadPlane);
           GND_spec *= 1.0 - 0.45 * dryN * roadPlane;
         }
@@ -4784,6 +6080,7 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
         // granite, wet tar) sparkle once a pixel covers many of them, so relax
         // every roughness back to matte with the world-XZ pixel footprint.
         GND_rough = mix(0.95, GND_rough, smoothstep(0.85, 0.14, gFw));
+        ${GP31 && typeof location !== 'undefined' && new URLSearchParams(location.search).get('gpdbg') === '2' ? `albedo = vec3(GP_water, GP_potIn, clamp(length(GP_slopeW), 0.0, 1.0)) * 0.3; GND_rough = 1.0; GND_spec = 0.0;` : ''}
         diffuseColor.rgb = albedo;
       }`)
       .replace('#include <common>', `#include <common>
@@ -4798,12 +6095,20 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
       // and anything with a water film keep the full value.
       .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
         material.specularColor *= GND_spec;`)
+      // GP31: the height field's own shadow (pothole walls, crevices at a low sun) takes the direct light only
+      .replace('#include <lights_fragment_end>', GP31 ? `#include <lights_fragment_end>
+        reflectedLight.directDiffuse *= GP_shadow; reflectedLight.directSpecular *= GP_shadow;` : '#include <lights_fragment_end>')
       .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
         if (GND_tnW > 0.003) { // texture normal map, ground tangent frame (T=+x, B=+z)
           vec3 tn2 = normalize(vec3(GND_tn.xy, max(GND_tn.z, 0.3)));
           vec3 wN = normalize(vec3(tn2.x, tn2.z * ${GM28 ? '1.0' : '1.6'}, tn2.y));
           vec3 vN = normalize((viewMatrix * vec4(wN, 0.0)).xyz);
-          normal = normalize(mix(normal, vN, GND_tnW * ${GM28 ? '1.0' : '0.85'}));
+          normal = normalize(mix(normal, vN, GND_tnW * ${GM28 ? '1.0' : '0.85'}));${GP31 ? `
+          // GP31: a shading normal is kept facing the eye (N.V >= 0.08): the relief is steep enough now that a normal at a
+          // grazing view could otherwise turn away from it, and a back-facing normal takes a Fresnel of 1
+          vec3 gpV = normalize(vViewPosition);
+          float gpNV = dot(normal, gpV);
+          if (gpNV < 0.08) normal = normalize(normal + gpV * (0.08 - gpNV));` : ''}
         }
         // rain rings on standing water — same clock (windT) as the falling rain
         if (wet > 0.003) {

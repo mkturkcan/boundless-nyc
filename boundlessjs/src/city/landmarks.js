@@ -1926,10 +1926,105 @@ export const BUILDERS = {
       archOpening(trim, glass, FR + 0.35, ex, baseH + 2.2, 2.6, 2.1, { dep: 0.5, vous: 9, seg: 12 });
       trim.add(box(5.9, 1.15, D * 0.31, 0, { x: ex, y: cornY + 1.0, z: FR - D * 0.15 + 0.4 }));
     }
-    // NY28: the stack wall on the park side (local -Z faces Bryant Park). That elevation is the library's book stacks, a
-    // long run of tall narrow lights in tiers between marble piers above the terrace; the block was a blank marble wall
-    // at the end of every view down the park
-    if (NY28) {
+    // LW31 (Bryant Park, owner 2026-09-28: "look online for reference shots ... and create it in a detailed way"): the
+    // park elevation to the references (docs/notes/bryant-park.md: ref1 and ref3 from the lawn, the LPC's 2017 report on
+    // the reading room, whose 17 x 14 ft bronze windows give the scale). The stack wing between two end pavilions: under
+    // the cornice nine round-arched windows 4.3 m wide in 8.25 m bays (the Main Reading Room's west side), their sills
+    // 7.5 m below the cornice; between them at sill level eight small pedimented doorways (built for a stack extension
+    // that was never made); a carved frieze of festoons; below it the stack lights, three to a bay, 1 m wide and 13 m
+    // tall across seven stack levels, between 1.75 m marble piers ("the striping effect of the dark windows alternating
+    // with the white Vermont marble"); the end pavilions rusticated; a hip roof over the centre. NY28's five tiers of
+    // lights in 3 m bays read as an office block from the lawn. Heights are ref3's, scaled to this block's cornice.
+    // `?lw31=0` (or `?bp31=0`, the whole park) restores NY28's.
+    const LW31 = NY28 && !(typeof location !== 'undefined' && ['lw31', 'bp31'].some((k) => new URLSearchParams(location.search).get(k) === '0'));
+    const roofB = LW31 ? bin() : null;
+    if (LW31) {
+      const zf = -D * 0.5;                                               // the park face; the park lies toward -Z
+      const s = (cornY - 1.4) / 25.5, yAt = (d) => cornY - d * s;         // d: metres under the cornice in ref3
+      const bay = 8.25, nBay = 9, cHalf = (bay * nBay) / 2, pW = Math.max(3, W / 2 - cHalf);
+      // the end pavilions: 0.6 m proud of the stack wing, rusticated in 0.9 m courses up to the frieze, two small lights
+      for (const sg of [-1, 1]) {
+        const px = sg * (cHalf + pW / 2);
+        stone.add(box(pW, cornY, 0.6, 0, { x: px, z: zf - 0.3 }));
+        for (let y = 1.5; y < cornY - 1.8; y += 0.9) stone.add(box(pW + 0.12, 0.64, 0.14, 0, { x: px, y, z: zf - 0.67 }));
+        for (const d of [12.5, 5.0]) {
+          glass.add(box(1.5, 2.6 * s, 0.1, 0, { x: px, y: yAt(d) - 1.3 * s, z: zf - 0.77 }));
+          trim.add(box(2.1, 0.3, 0.34, 0, { x: px, y: yAt(d) - 1.3 * s - 0.3, z: zf - 0.9 }));
+          trim.add(box(2.3, 0.4, 0.4, 0, { x: px, y: yAt(d) + 1.3 * s, z: zf - 0.92 }));
+        }
+      }
+      // the stack lights: three to a bay (either side of the window's axis and on the line between two bays), glazed
+      // 0.05 m off the wall, seven stack levels as bronze transoms and a mullion; the piers between them 0.4 m proud,
+      // so each light reads as a 0.4 m reveal; a plain base course under them to the terrace
+      const yS0 = yAt(25.0), yS1 = yAt(11.8), lights = [];
+      for (let i = 0; i < nBay; i++) { const xc = -cHalf + bay * (i + 0.5); lights.push(xc - 1.375, xc + 1.375); if (i > 0) lights.push(xc - bay / 2); }
+      lights.sort((a, b) => a - b);
+      let xp = -cHalf;
+      for (const xl of [...lights, cHalf + 0.5]) {
+        const a = xp, b = xl - 0.5;
+        if (b - a > 0.05) stone.add(box(b - a, yS1 - yS0 + 0.1, 0.4, 0, { x: (a + b) / 2, y: yS0 - 0.05, z: zf - 0.2 }));
+        xp = xl + 0.5;
+      }
+      stone.add(box(cHalf * 2, yS0, 0.46, 0, { y: 0, z: zf - 0.23 }));
+      trim.add(box(cHalf * 2 + 0.2, 0.24, 0.56, 0, { y: yS0 - 0.24, z: zf - 0.28 }));
+      for (const xl of lights) {
+        glass.add(box(1.0, yS1 - yS0, 0.08, 0, { x: xl, y: yS0, z: zf - 0.05 }));
+        for (let k = 1; k < 7; k++) dark.add(box(1.0, 0.14, 0.1, 0, { x: xl, y: yS0 + ((yS1 - yS0) * k) / 7 - 0.07, z: zf - 0.1 }));
+        dark.add(box(0.08, yS1 - yS0, 0.1, 0, { x: xl, y: yS0, z: zf - 0.1 }));
+      }
+      // the carved frieze over the stacks: a proud band between mouldings, a rosette over each light and a festoon
+      // swung between each pair
+      const yF0 = yAt(11.8), yF1 = yAt(10.2), yFm = (yF0 + yF1) / 2;
+      trim.add(box(cHalf * 2 + 0.4, yF1 - yF0, 0.62, 0, { y: yF0, z: zf - 0.31 }));
+      trim.add(box(cHalf * 2 + 0.7, 0.22, 0.76, 0, { y: yF1 - 0.11, z: zf - 0.38 }));
+      trim.add(box(cHalf * 2 + 0.6, 0.18, 0.72, 0, { y: yF0 - 0.05, z: zf - 0.36 }));
+      for (let i = 0; i < lights.length; i++) {
+        stone.add(disc(0.26, 0.14, 0, { x: lights[i], y: yFm + 0.12, z: zf - 0.68, seg: 10 }));
+        if (i + 1 < lights.length) {
+          const sw = new THREE.Mesh(new THREE.TorusGeometry((lights[i + 1] - lights[i]) / 2 - 0.3, 0.1, 4, 10, Math.PI).rotateZ(Math.PI), mat(0, {}));
+          sw.scale.set(1, 0.42, 1); sw.position.set((lights[i] + lights[i + 1]) / 2, yFm + 0.2, zf - 0.66);
+          stone.add(sw);
+        }
+      }
+      // the reading room's windows: glazing a hair off the wall, the bronze frame (two mullions into the arch, three
+      // transoms), jambs and imposts, a ring of thirteen voussoirs with its keystone, the sill; an apron panel under each
+      const ySill = yAt(7.5), ySpr = yAt(4.3), ww = 4.3, r0 = ww / 2, hRise = ySpr - ySill;
+      for (let i = 0; i < nBay; i++) {
+        const xc = -cHalf + bay * (i + 0.5);
+        glass.add(box(ww, hRise, 0.08, 0, { x: xc, y: ySill, z: zf - 0.04 }));
+        const dk = new THREE.Mesh(new THREE.CircleGeometry(r0, 16, 0, Math.PI), mat(0, {}));
+        dk.rotation.y = Math.PI; dk.position.set(xc, ySpr, zf - 0.05);
+        glass.add(dk);
+        for (const mx of [-0.72, 0.72]) dark.add(box(0.1, hRise + Math.sqrt(r0 * r0 - mx * mx) - 0.06, 0.1, 0, { x: xc + mx, y: ySill, z: zf - 0.1 }));
+        for (let k = 1; k <= 3; k++) dark.add(box(ww, 0.1, 0.1, 0, { x: xc, y: ySill + (hRise * k) / 3.2, z: zf - 0.1 }));
+        for (const sd of [-1, 1]) {
+          trim.add(box(0.5, hRise, 0.5, 0, { x: xc + sd * (r0 + 0.25), y: ySill, z: zf - 0.25 }));
+          trim.add(box(0.8, 0.36, 0.62, 0, { x: xc + sd * (r0 + 0.3), y: ySpr - 0.36, z: zf - 0.31 }));
+        }
+        for (let k = 0; k < 13; k++) {
+          const a = (Math.PI * (k + 0.5)) / 13, rr = r0 + 0.02;
+          trim.add(box(0.56, 0.62, 0.5, 0, { x: xc + Math.cos(a) * rr, y: ySpr + Math.sin(a) * rr, z: zf - 0.25, rotZ: a - Math.PI / 2 }));
+        }
+        trim.add(box(0.8, 0.95, 0.66, 0, { x: xc, y: ySpr + r0 - 0.12, z: zf - 0.33 }));
+        trim.add(box(ww + 1.3, 0.3, 0.72, 0, { x: xc, y: ySill - 0.3, z: zf - 0.36 }));
+        trim.add(box(ww + 0.5, 1.5 * s, 0.16, 0, { x: xc, y: ySill - 0.3 - 1.5 * s - 0.25, z: zf - 0.08 }));
+        // the pedimented doorway on the pier before this bay: a bronze door, jambs, lintel, pediment, sill
+        if (i > 0) {
+          const xd = xc - bay / 2, yd0 = yAt(9.8), yd1 = yAt(7.4);
+          dark.add(box(1.1, yd1 - yd0, 0.08, 0, { x: xd, y: yd0, z: zf - 0.04 }));
+          for (const sd of [-1, 1]) trim.add(box(0.24, yd1 - yd0, 0.3, 0, { x: xd + sd * 0.67, y: yd0, z: zf - 0.15 }));
+          trim.add(box(1.8, 0.24, 0.36, 0, { x: xd, y: yd1, z: zf - 0.18 }));
+          trim.add(prism([[-1.0, 0], [1.0, 0], [0, 0.5]], 0.4, 0, { x: xd, y: yd1 + 0.24, z: zf - 0.2 }));
+          trim.add(box(1.7, 0.18, 0.4, 0, { x: xd, y: yd0 - 0.18, z: zf - 0.2 }));
+        }
+      }
+      // a string course under the cornice's frieze; the hip roof over the reading room (24 m deep, 90 m long; ref1, ref2)
+      trim.add(box(cHalf * 2, 0.34, 0.34, 0, { y: yAt(1.4) - 0.34, z: zf - 0.17 }));
+      roofB.add(prism([[-12.5, 0], [12.5, 0], [3.5, 3.6], [-3.5, 3.6]], 90, 0, { y: cornY + 4.45, z: zf + 13.5, rotY: Math.PI / 2 }));
+    } else if (NY28) {
+      // NY28: the stack wall on the park side (local -Z faces Bryant Park). That elevation is the library's book stacks, a
+      // long run of tall narrow lights in tiers between marble piers above the terrace; the block was a blank marble wall
+      // at the end of every view down the park
       const rz = -D * 0.5, bw = 3.0, nb = Math.floor((W * 0.72) / bw);
       const x0r = -((nb - 1) * bw) / 2, y0r = podium + 3.2, tiers = 5, th = (cornY - 2.8 - y0r) / tiers;
       for (let i = 0; i < nb; i++) {
@@ -1957,6 +2052,7 @@ export const BUILDERS = {
     trim.into(r, MB_L, NY28 ? { rough: 0.82, stone: { set: 'cgranite', amt: 0.35, nrm: 0.45, rgh: 0.25, scale: 0.6 } } : { rough: 0.82 });
     glass.into(r, 0x2b3138, { rough: 0.18, metal: 0.1 });
     dark.into(r, 0x3a3126, { rough: 0.5, metal: 0.25 });  // bronze doors, the lions
+    if (roofB) roofB.into(r, 0x857a6c, { rough: 0.72, metal: 0.1 });   // LW31: the hip roof, a weathered warm grey (ref2)
     // the frieze legend, incised in the centre attic
     r.add(inscription(cpW * 0.86, 1.35, ['THE NEW YORK PUBLIC LIBRARY'],
       { y: cornY + 1.35, z: cpZ + 1.82, ink: 0x4a4438 }));

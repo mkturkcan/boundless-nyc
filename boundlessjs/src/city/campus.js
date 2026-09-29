@@ -40,6 +40,27 @@ const PAVSTONE = LT(new THREE.MeshStandardMaterial({ color: 0x958c7c, roughness:
 // the fountain stone the falling water keeps wet: darker and glossier than the dry coping
 const WETGRANITE = LT(new THREE.MeshStandardMaterial({ color: 0x6c675f, roughness: 0.4, metalness: 0.02 }));
 for (const m of [GRANITE, STONE, BRONZE, ALMABRONZE, MARBLE, DARKMETAL, GREENPOST, HEDGE, PAVBRICK, PAVSTONE]) applySnowCap(m); // walls, balustrades, hedges, monuments cap over
+// AM30 (owner 2026-09-28: "Columbia University athena statue is extremely barebones as well and blocky I'd like a more
+// realistic reconstruction"): Alma Mater from M. K. Turkcan's photogrammetry scan of the monument (CC BY 4.0,
+// https://doi.org/10.5281/zenodo.10312053), cut to the bronze, its throne and the stone die, moved into her frame and
+// simplified by tools/assets/alma_mater.mjs (61k triangles, the capture's photo texture). The capture is metric (its
+// throne is 1.68 m wide against the 1.7 m published); its underside stood on uneven steps, so it is cut level and seated
+// on a granite plinth. The faceted model stays until the scan has loaded. `?am30=0` restores it.
+const AM30 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('am30') === '0');
+let _almaScan = null;   // one load for the campus
+const almaScan = () => _almaScan || (_almaScan = (async () => {
+  const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+  const g = await new GLTFLoader().loadAsync('models/landmarks/alma_mater.glb');
+  g.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    const m = o.material;
+    // the photo texture carries the patina's own colour; the bronze a dark metal, the die a honed stone
+    if (m.name === 'bronze') { m.metalness = 0.35; m.roughness = 0.52; } else { m.metalness = 0.0; m.roughness = 0.86; }
+    LT(m); applySnowCap(m);
+  });
+  return g.scene;
+})());
 // CT25 (materials.js applyStoneDetail): photographed stone surfaces on the campus kit, triplanar in the campus frame
 applyStoneDetail(GRANITE, 'cgranite', { amt: 0.8, nrm: 0.75, rgh: 0.45 });
 applyStoneDetail(STONE, 'cgranite', { amt: 0.85, nrm: 0.8, rgh: 0.4, scale: 1.3 });
@@ -970,7 +991,16 @@ export async function buildCampus(scene) {
     const mBz = bz.mesh(ALMABRONZE), mMb = mb.mesh(MARBLE), mGr = gr.mesh(GRANITE);
     for (const m of [mGr, mMb, mBz]) if (m) G.add(m);
     G.position.set(x, y, z); G.rotation.y = faceWalk;
-    addPrism(rectPts(x, z, 2.0, 1.7, faceWalk), y, y + 4.9);
+    if (AM30) {
+      almaScan().then((scan) => {
+        // AM30: the scan (cut level 0.25 m over her base) on a granite plinth a little wider than its lowest block
+        const plinth = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.26, 2.5), GRANITE);
+        plinth.position.set(0, 0.13, -0.05); plinth.castShadow = true; plinth.receiveShadow = true;
+        for (const m of [mGr, mMb, mBz]) if (m) m.visible = false;
+        G.add(plinth, scan.clone());
+      }).catch((e) => console.warn('[campus] Alma Mater scan unavailable; the faceted model stays', e));
+    }
+    addPrism(AM30 ? rectPts(x, z, 1.25, 1.35, faceWalk) : rectPts(x, z, 2.0, 1.7, faceWalk), y, y + 4.9);
     return G;
   }
   /* The Scholars' Lion (Greg Wyatt, 2004): a seated bronze lion on a low

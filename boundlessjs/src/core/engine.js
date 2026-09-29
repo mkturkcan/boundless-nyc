@@ -794,6 +794,27 @@ const HALTON8 = [
   [0.0, -0.1667], [-0.25, 0.1667], [0.25, -0.3889], [-0.375, -0.0556],
   [0.125, 0.2778], [-0.125, -0.2778], [0.375, 0.0556], [-0.4375, 0.3889],
 ];
+// AC30 (owner 2026-09-28: "Rooftop shimmering is still a problem for Columbia University in the main ad"): a recorded
+// frame was the mean of accum + 1 samples on HALTON8, a box one pixel wide, the same eight offsets on every frame; detail
+// near the pixel pitch (a sill, a mullion, a dormer's dark inset, a window a few pixels wide on a far facade) then took a
+// different share of the samples at each position and crawled as the camera moved over it (scratchpad shimmer.cjs, the
+// film's own mLowAerial and mCollegeWalk frames aligned by block flow: the residual sits on those facades and dormers,
+// not on the copper). The accumulation now draws its offsets from a Gaussian (sigma 0.5 px, Halton 2,3 through
+// Box-Muller, up to 32 distinct offsets), the reconstruction filter a film renderer uses: it passes 0.73 of the contrast
+// at a 4 px period and 0.29 at the 2 px Nyquist period that aliases. The takes are 2560 wide and cut at 1920, so the
+// softening is under a pixel of the output. `?ac30=0` restores the box.
+const AC30 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ac30') === '0');
+const GAUSS32 = (() => {
+  const hal = (i, b) => { let f = 1, r = 0; while (i > 0) { f /= b; r += f * (i % b); i = Math.floor(i / b); } return r; };
+  const out = [[0, 0]];   // the step frame's own sample stays at the centre
+  for (let i = 1; out.length < 32; i++) {
+    const u = hal(i, 2), v = hal(i, 3);
+    const r = 0.5 * Math.sqrt(-2 * Math.log(Math.max(1e-6, 1 - u)));   // sigma 0.5 px
+    const rr = Math.min(r, 1.25);   // the far tail (beyond 2.5 sigma) held in
+    out.push([rr * Math.cos(2 * Math.PI * v), rr * Math.sin(2 * Math.PI * v)]);
+  }
+  return out;
+})();
 
 const GradeShader = {
   uniforms: { tDiffuse: { value: null }, uVig: { value: 0.2 }, uSat: { value: 1.07 }, uCon: { value: 0.16 }, uWarm: { value: 0.05 }, uTintG: { value: 0.0 }, uSharp: { value: 0.4 }, uDef: { value: 0.25 }, uTexel: { value: new THREE.Vector2(1 / innerWidth, 1 / innerHeight) }, uGrain: { value: 0.05 }, uCA: { value: 0.35 }, uTimeG: { value: 0 } },
@@ -1222,7 +1243,7 @@ export class Engine {
           this.simStepped = false;
           this._accK = fresh ? 0 : (this._accK ?? 0) + 1;
           this.taa.accum = true; this.taa.accFirst = this._accK === 0;
-          const j = HALTON8[this._accK % 8];
+          const j = AC30 ? GAUSS32[this._accK % 32] : HALTON8[this._accK % 8];
           this.camera.setViewOffset(innerWidth, innerHeight, j[0], j[1], innerWidth, innerHeight);
           this._jittered = true;
         } else if (this.taa && this.taa.amount > 0.01 && still > 0.55) {

@@ -14,7 +14,7 @@ import { buildShopSigns } from '../city/shopSigns.js';
 import { namedShopZone } from '../city/namedShops.js';
 import { buildBillboards, buildTsqScreens } from '../city/billboards.js';
 import { BP28, bpDropTree, bpTrees, bpOwns, bpBuild, bpWorld, bpApply, bpSkipBuilding } from '../city/bryantPark.js';
-import { tpTileHit, tpApply, tpStepsOwner, tpBuildSteps, tpSkipBuilding } from '../city/tsqPlaza.js';
+import { tpTileHit, tpApply, tpStepsOwner, tpBuildSteps, tpSkipBuilding, tpBuildFurniture } from '../city/tsqPlaza.js';
 import { placeCurbRamps } from '../city/streetNYC.js';
 import { StaticPool } from './staticPool.js';
 import { buildTower, buildSetbacks, TOWER_H } from './towers.js';
@@ -1511,6 +1511,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
   const skirtV = []; // ground-contact AO skirt verts: x,y,z,alpha
 
   // TP28: the Times Square plaza re-kinds this tile's asphalt before anything below samples or draws the sections
+  let tpRoadsW = null;   // TF31: the same world-space roads again for the plaza's furniture, built with the meshes below
   if (tpTileHit(ox, oz)) {
     try {
       const rw = [...roadsOf(tile)].map((r) => ({
@@ -1518,6 +1519,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
         pts: Array.from({ length: r.len }, (_, i) => [tile.S.roadVerts[(r.start + i) * 3] + ox, tile.S.roadVerts[(r.start + i) * 3 + 1], tile.S.roadVerts[(r.start + i) * 3 + 2] + oz]),
         name: tile.header.names[r.nameIdx] || '',
       }));
+      tpRoadsW = rw;
       tpApply(tile, ox, oz, rw);
     } catch (e) { console.warn('tp28', e); }
   }
@@ -2796,6 +2798,8 @@ export async function assembleTile(key, arrayBuf, ctx) {
   // BP28: the park's gravel, hedges, chairs and fountain, built by the tile that holds the lawn's centre
   // TP28: the TKTS red steps in Duffy Square, standing on the plaza
   if (tpStepsOwner(ox, oz)) { try { tpBuildSteps(group, padYNear(-1157.65, 2661.15)); } catch (e) { console.warn('tp28 steps', e); } }
+  // TF31: the plaza's benches, bollards, cafe tables and planters, for the pieces of plaza in this tile
+  if (tpRoadsW) { try { tpBuildFurniture(group, tpRoadsW, (x, z) => sectionY('plaza', x, z, 0.6) ?? padYNear(x, z), ox, oz, key); } catch (e) { console.warn('tf31', e); } }
   if (BP28 && bpOwns(ox, oz)) {
     try {
       const [lx, lz] = bpWorld(77, 69);

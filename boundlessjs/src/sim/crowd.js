@@ -14,10 +14,15 @@
 //      3x4 skinning matrix (global x inverse-bind) into three RGBA32F targets (MRT).
 //   4. Draw: per (body, LOD) one opaque + one hair InstancedMesh; the vertex shader skins from the pose targets, the
 //      fragment shader samples the texture arrays with the walker's per-slot layers and recolours its garments.
+// PL31 (crowdMaterial31): skin / hair / fabric shading, `?pl31=0` restores PV2. SIT31: seven seated loops synthesized at
+// load (sim/crowdSit.js) with each walker's own arms from the bake (models/peds24/sit31_arms.json); st.pose / setPose /
+// seatOf / fitSeat / moveSlot / sitPoses are the sim's contract (docs/notes/crowd-looks.md). NF31: walkers at the lens
+// dissolve instead of being cut open by the near plane. LD31: the LOD from the 3D distance.
 import * as THREE from 'three';
 import { ENV } from '../world/materials.js';
 import { Instancer } from '../city/instancer.js';
 import { sweepOut } from '../core/shadowSweep.js';   // SV29
+import { synthSitClips, ARM_SLOTS, TABLE31 } from './crowdSit.js';   // SIT31
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const BASE = 'models/peds24/';
@@ -25,7 +30,39 @@ const MAXI = 1024;                                  // pose rows per skeleton (v
 const LODD = (QS.get('crowdlod') || '9,26').split(',').map(Number);
 const LOD0_2 = LODD[0] * LODD[0], LOD1_2 = LODD[1] * LODD[1];
 const FADE = 0.28;                                   // clip crossfade, seconds
-const INST_W = 10;                                   // instance data texels per pose row (see SKIN_VERT_PARS)
+// PL31 (owner 2026-09-28: "The people look rather low quality and undetailed"; notes docs/notes/crowd-looks.md): skin,
+// hair and fabric shading. `?pl31=0` restores the PV2 materials; `?crowdab=1` builds both looks so a harness can switch
+// them live on the same frozen walkers (window.__CROWD.setLook(0 | 1)).
+const PL31 = QS.get('pl31') !== '0';
+const CROWD_AB = QS.get('crowdab') === '1';
+// SIT31 (Bryant Park: "no sitting people on chairs"; round 2: "arms on tables", "upper arms clipping into chests"): seven
+// seated clips synthesized at load for the GEN2 skeleton from an idle frame (crowdSit.js synthSitClips), and per walker
+// its own arms as override rows (the bake). `?sit31=0` leaves them out and st.pose is ignored.
+const SIT31 = QS.get('sit31') !== '0';
+const FADE_SIT = 0.9;                                // standing <-> seated blend, seconds (the hips travel ~0.5 m)
+// ?crowdcheck=N: every N frames, the pose rows read back and every drawn walker's bone matrices checked (Crowd._checkPose)
+const CROWD_CHECK = Number(QS.get('crowdcheck') || 0);
+// NF31 (the park's 42nd St stills st42_a3 / st42_a4, 2026-09-28: "an exploded walker", eyeballs, rows of teeth, hair cards
+// and a stretched face in front of the lens). Not a skinning fault: tools/assets/crowd_skinqa.mjs --all skins every body in
+// every clip, the seated clips and their crossfades, at every LOD, and no vertex lands further than 0.43 m from its bone
+// (a long skirt between the legs in a wide stride). Those were faces 0.4-0.6 m from the lens (an eyeball there is 50 px
+// across at fov 55, 0.5 m away) and the camera's near plane, 0.4 m (core/engine.js), cut the front of the head away: what
+// showed is what a face covers. The camera stood on the walking line of the 42nd St sidewalk and walkers walked into it.
+// A walker whose surface comes within NF_W of the near plane now dissolves (a per-pixel dither) and is gone, not drawn,
+// once it reaches it; its shadow stays. The surface is a head sphere and a body box (update()) that stand ~2.5 cm proud
+// of a real face, so a face straight ahead dissolves between 0.63 and 0.55 m from the eyes and its nose tip is still
+// 2.5 cm short of the plane when it goes. A first version began 17 cm further out and a face 0.6 m away, uncut, was
+// already 97 % gone (shots/crowd31/repro_lens_70_60cm_nf31.jpg). Toward the corners of a 55 deg frame the plane cuts
+// points up to 0.58 m away, so a shoulder at the frame edge can still show a cut while it dithers. `?nf31=0` draws
+// walkers as before.
+const NF31 = QS.get('nf31') !== '0';
+const NF_W = 0.08;
+// LD31: the LOD distance was the HORIZONTAL distance from the lens, so from an aerial lens every walker and seated
+// person in a wide circle below it drew at LOD0 (the park worker measured Bryant Park's seated people at up to +14.4 M
+// triangles and +364 draws in the t2Aerial view, 46-56 m up). It is the 3D distance to the walker's middle (0.9 m over
+// its feet) now. `?ld31=0` restores the horizontal distance; window.__CROWD.lod3d switches it live.
+const LD31 = QS.get('ld31') !== '0';
+const INST_W = 11;                                   // instance data texels per pose row (see SKIN_VERT_PARS; 10 = SIT31 arm rows)
 // NYC adult heights (hair-top, shoes on): CARLA's bodies stand 1.80-1.86 m, taller than the street; scale to these
 const TARGET_H = { m: 1.77, f: 1.65, child: 1.22 };
 
@@ -59,6 +96,8 @@ export async function loadCrowd(renderer) {
   const t0 = performance.now();
   const manifest = await (await fetch(BASE + 'manifest.json')).json();
   const clipIdx = await (await fetch(BASE + 'clips.json')).json();
+  // SIT31: each GEN2 body's arms per seated pose, solved offline (tools/assets/crowd_sitqa.mjs --write)
+  const sitBakeP = SIT31 ? fetch(BASE + 'sit31_arms.json').then((r) => (r.ok ? r.json() : null)).catch(() => null) : null;
   // RB27 (tools/assets/build_rocketbox.mjs): Microsoft Rocketbox avatars (MIT) re-bound to the GEN2 skeleton, so they play
   // the same clips; they carry their own texture arrays (arraysX[set]). `?rb27=0` leaves them out.
   const extra = QS.get('rb27') === '0' ? null : await fetch(BASE + 'rb27/manifest.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
@@ -88,7 +127,7 @@ export async function loadCrowd(renderer) {
     for (const c of clips) fixLoop(data, nb, hipsBone, c);
     const clipTex = new THREE.DataTexture(data, nb * 2, rows, THREE.RGBAFormat, THREE.FloatType);
     clipTex.needsUpdate = true;
-    skel[k] = { name: k, nb, bones: S.bones, parents: S.parents, hips: S.bones.findIndex((b) => /hips/i.test(b)), clipTex, clips, bodies: [] };
+    skel[k] = { name: k, nb, bones: S.bones, parents: S.parents, hips: S.bones.findIndex((b) => /hips/i.test(b)), clipTex, clipData: data, clips, bodies: [] };
   }
   const bodies = {};
   const loadBody = async ([name, B]) => {
@@ -144,6 +183,23 @@ export async function loadCrowd(renderer) {
     // hips height per body (for the gait scale)
     for (const B of S.bodies) B.hipsH = Math.hypot(B.refT[S.hips * 3], B.refT[S.hips * 3 + 1], B.refT[S.hips * 3 + 2]);
     S.refHips = (S.bodies.find((B) => B.height > 1.5) || S.bodies[0])?.hipsH || 1;
+    if (SIT31 && S.name === 'gen2') {
+      try {
+        const bake = sitBakeP ? await sitBakeP : null;
+        const t1 = performance.now(), r = synthSitClips(S, null, bake);
+        let nb = 0;
+        if (bake && bake.bodies) for (const B of S.bodies) { const e = bake.bodies[B.name]; if (e) { B.sitBake = e; nb++; } }
+        S.sitScales = bake ? bake.scales : null;
+        if (r) {
+          S.clipData = r.data;
+          S.clipTex = new THREE.DataTexture(r.data, S.nb * 2, r.data.length / (S.nb * 8), THREE.RGBAFormat, THREE.FloatType);
+          S.clipTex.needsUpdate = true;
+          S.clips.push(...r.clips);
+          const up = r.clips[0].seat.filter(Boolean).map((v) => v[0]);
+          console.log(`[crowd] SIT31: ${r.clips.map((c) => c.name).join(', ')} from ${r.ref} in ${(performance.now() - t1).toFixed(0)} ms (seat ${Math.min(...up).toFixed(2)}-${Math.max(...up).toFixed(2)} model m), baked arms for ${nb} of ${S.bodies.length} bodies`);
+        }
+      } catch (e) { console.warn('[crowd] SIT31 synthesis failed', e?.message || e); }
+    }
   }
   const variants = [...manifest.variants, ...(extra ? extra.variants : [])].filter((v) => bodies[v.body]);
   console.log(`[crowd] ${Object.keys(bodies).length} bodies, ${variants.length} variants${extra ? ` (rb27 ${extra.variants.length})` : ''}, arrays ${Object.entries(arrays).map(([k, t]) => `${k}:${t.image?.depth ?? '?'}`).join(' ')}, clips ${clipIdx.clips.length} in ${((performance.now() - t0) / 1000).toFixed(1)} s`);
@@ -157,8 +213,9 @@ void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }
 `;
 const POSE_FS = (nb) => /* glsl */ `
 precision highp float; precision highp int; precision highp sampler2D;
-uniform sampler2D uClips, uBodies, uInst;
+uniform sampler2D uClips, uBodies, uInst, uArm;
 uniform int uParent[${nb}];
+uniform int uArmSlot[${nb}];   // SIT31: bone -> its slot in a walker's arm row (crowdSit.js ARM_SLOTS), -1 none
 uniform int uHips;
 layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
@@ -181,6 +238,8 @@ void main() {
   vec4 iA = texelFetch(uInst, ivec2(0, inst), 0);   // rowA, framesA, timeA, weightB
   vec4 iB = texelFetch(uInst, ivec2(1, inst), 0);   // rowB, framesB, timeB, body
   vec4 iC = texelFetch(uInst, ivec2(2, inst), 0);   // hips scale for clip A, clip B (body hips / clip hips)
+  vec4 iD = texelFetch(uInst, ivec2(10, inst), 0);   // SIT31: this walker's arm row + 1 (0 none) for clip A, clip B
+  int armA = int(iD.x + 0.5) - 1, armB = int(iD.y + 0.5) - 1;
   int body = int(iB.w + 0.5);
   int chain[24];
   int n = 0, k = b;
@@ -196,6 +255,11 @@ void main() {
     vec4 rT = texelFetch(uBodies, ivec2(bb * 5, body), 0);
     vec4 rR = texelFetch(uBodies, ivec2(bb * 5 + 1, body), 0);
     vec4 la = va > 0.5 ? qa : rR, lb = vb > 0.5 ? qb : rR;
+    int sl = uArmSlot[bb];
+    if (sl >= 0) {   // w = 2 marks a slot that keeps the clip's rotation
+      if (armA >= 0) { vec4 ov = texelFetch(uArm, ivec2(sl, armA), 0); if (ov.w < 1.5) la = ov; }
+      if (armB >= 0) { vec4 ov = texelFetch(uArm, ivec2(sl, armB), 0); if (ov.w < 1.5) lb = ov; }
+    }
     vec4 lq = nl(la, lb, iA.w);
     vec3 lt = rT.xyz;
     if (bb == uHips) {
@@ -222,11 +286,12 @@ const SKIN_VERT_PARS = /* glsl */ `
 uniform sampler2D uPose0, uPose1, uPose2;
 attribute float aRow;
 attribute vec3 aMeta;          // slot, class (0 skin 1 cloth 2 eye 3 hair), tint part (1 top 2 bottom 3 shoes)
-uniform sampler2D uInstData;   // per pose row: texels 0-2 clip state (pose pass), 3-6 slot layers, 7-9 tints
+uniform sampler2D uInstData;   // per pose row: texels 0-2 clip state (pose pass; 2 .w the NF31 fade), 3-6 slot layers, 7-9 tints, 10 SIT31 arms
 varying float vLayer;
 varying float vCls;
 varying vec4 vTint;
 varying vec2 vUvA;
+varying float vCrowdFade;
 vec4 crowdRow(sampler2D t, int b, int r) { return texelFetch(t, ivec2(b, r), 0); }
 mat4 crowdBone(float fb, int r) {
   int b = int(fb + 0.5);
@@ -299,6 +364,7 @@ ${PROP_HIDE}
   int p = int(aMeta.z + 0.5);
   vTint = p >= 1 && p <= 3 ? texelFetch(uInstData, ivec2(6 + p, crowdR), 0) : vec4(0.0);
   vUvA = uv;
+  vCrowdFade = texelFetch(uInstData, ivec2(2, crowdR), 0).w;
 }
 `;
 
@@ -311,6 +377,15 @@ varying float vLayer;
 varying float vCls;
 varying vec4 vTint;
 varying vec2 vUvA;
+varying float vCrowdFade;
+uniform float uCrowdFadeF, uCrowdFadeD;
+// NF31: a walker at the lens dissolves through interleaved gradient noise (a new pattern per accumulated sample in record
+// mode, so the film's accumulation resolves it to a smooth fade)
+bool crowdFaded() {
+  if (vCrowdFade <= 0.0) return false;
+  vec2 p = gl_FragCoord.xy + 5.588238 * mod(uCrowdFadeF, 64.0) * uCrowdFadeD;
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))) < vCrowdFade;
+}
 vec3 crowdUV() {
   // UDIM: u in [0, 2) -> tile = floor(u) selects the next layer
   float tile = floor(vUvA.x);
@@ -328,7 +403,8 @@ vec3 crowdPerturb(vec3 surf_pos, vec3 surf_norm, vec3 mapN, vec2 uvv) {
 }
 `;
 
-function crowdMaterial(kind, arrays, pose, instTex) {
+function crowdMaterial(kind, arrays, pose, instTex, look = PL31 ? 1 : 0, fab0 = false) {
+  if (look) return crowdMaterial31(kind, arrays, pose, instTex, fab0);
   // kind: 'opaque' | 'hair'
   const hair = kind === 'hair';
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: hair ? 0.5 : 0.6, metalness: 0, side: hair ? THREE.DoubleSide : THREE.FrontSide, alphaTest: hair ? 0.35 : 0, envMapIntensity: 0.6 });
@@ -340,6 +416,7 @@ function crowdMaterial(kind, arrays, pose, instTex) {
     sh.uniforms.uOrm = { value: arrays.orm || null };
     sh.uniforms.uHairA = { value: arrays.hair || null };
     sh.uniforms.uCrowdNight = ENV.night;
+    sh.uniforms.uCrowdFadeF = CROWD_U.frame; sh.uniforms.uCrowdFadeD = CROWD_U.dith;   // NF31
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 skinIndex;\nattribute vec4 skinWeight;\n' + SKIN_VERT_PARS)
       .replace('#include <beginnormal_vertex>', SKIN_VERT_NORMAL)
@@ -405,9 +482,244 @@ function crowdMaterial(kind, arrays, pose, instTex) {
           if (vCls > 1.5 && vCls < 2.5) { reflectedLight.indirectSpecular *= 0.18; reflectedLight.indirectDiffuse *= 0.7; }
         }`);
     }
-    sh.fragmentShader = fs;
+    sh.fragmentShader = fs.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (crowdFaded()) discard;   // NF31');
   };
   m.customProgramCacheKey = () => 'crowd|' + kind;
+  return m;
+}
+
+// ---------------------------------------------------------------- PL31 looks
+// What the film frame showed (shots/ad/clips/fStreetLife frame 60, the nearest walker at ~2.6 m): skin and hair with a
+// plastic sheen, the hair a shiny shell, a knit sweater covered in a grid of glints. Measured causes and the fixes below:
+//  - FABRIC ROUGHNESS: CARLA's cloth ORM greens run down to 0 (UV padding, but also real texels: the knit of layer 56 sits
+//    at 0.36 with a stitch pattern), and the PV2 clamp let them shade at 0.35 — satin. Tops and bottoms (tint parts 1-2;
+//    every RB27 garment, which carries no part tags) now map G to 0.62-1.0; shoes, belts, bags and hats keep G >= 0.35
+//    (leather is glossy). Woven and knit fabric also gets a Charlie sheen lobe (three's sheen, per pixel): the soft rim
+//    a fibre surface shows at grazing light, which a plain GGX lobe does not have.
+//  - TOKSVIG: the normal arrays' mips are box-filtered without renormalising (mean length of the knit layer 56: 1.000 at
+//    mip 0, 0.932 at mip 3, 0.901 at mip 5), so a minified bumpy texel returns a SHORT normal. Its missing length is the
+//    bump variance the mip averaged away; it is folded back into the roughness, so a knit, a twill or a cheek stays as
+//    rough at 20 m as at 2 m instead of going smooth and shiny as its mips flatten.
+//  - SKIN: F0 0.028 (skin's IOR 1.4) instead of three's 0.04, GGX roughness 0.50-0.68 from the skin ORM (was 0.42-0.62),
+//    the direct highlight occluded in creases by the baked AO, and the wrapped diffuse lit per channel from progressively
+//    sharper normals (red from the vertex normal blended 35 % toward the detail normal, green 80 %, blue the detail
+//    normal): light scattered under the skin blurs red detail most, which is what separates skin from painted plastic.
+//  - HAIR: the cards were lit as a GGX surface: a smooth normal field over the whole hairdo, one broad highlight and the
+//    sky mirrored at grazing angles — a shell. Now two Kajiya-Kay strand lobes (Scheuermann's shifted tangents: a white
+//    primary and a broader secondary tinted by the hair colour) along a strand direction taken from gravity (hair falls
+//    down and back over the head: the direction projected on the card), shifted and scaled per strand by the texel's
+//    coverage (and luminance) against its local mean, and faded out on the crown, where that projection is short and
+//    says nothing about how the strands part (lit as one lobe, backlit crowns read as grey hair at 4 m: crown sRGB
+//    143 against PV2's 81-101); the diffuse is a softly wrapped strand term; the sky reflection keeps 30 %. CARLA's cards run
+//    their strands along V, but RB27's hair is an atlas of pieces at every angle, so a UV tangent would be wrong for half
+//    the crowd. In record mode with accumulation (the film) the alpha-test threshold is dithered per sample, so strand
+//    tips and the silhouette resolve to partial coverage instead of a cut-out edge; live frames keep the fixed 0.35.
+//  - CONTACT: shoes and ankles take 60 % of the sky at the ground, rising to all of it by 0.32 m (the ground hides the
+//    lower sky from them); the sun's contact comes from the shadow map as before.
+const CROWD_U = { dith: { value: 0 }, frame: { value: 0 } };
+const SKIN_VERT_PARS31 = /* glsl */ `
+varying float vPart;
+varying float vFootH;
+#ifdef CROWD_HAIR
+varying vec3 vHairG;
+#endif
+`;
+const SKIN_VERT_POS31 = /* glsl */ `
+vPart = aMeta.z;
+vFootH = transformed.y;   // skinned height over the instance origin (the feet), model metres
+#ifdef CROWD_HAIR
+{
+  // hair falls down and a little toward the back of the head (the walker's heading from the instance matrix)
+  vec3 crowdFw = vec3(instanceMatrix[2].x, 0.0, instanceMatrix[2].z);
+  crowdFw = dot(crowdFw, crowdFw) > 1e-8 ? normalize(crowdFw) : vec3(0.0, 0.0, 1.0);
+  vHairG = normalize(mat3(viewMatrix) * (vec3(0.0, -1.0, 0.0) - 0.35 * crowdFw));
+}
+#endif
+`;
+const FRAG_PARS31 = /* glsl */ `
+uniform float uCrowdDith, uCrowdFrame;
+varying float vPart;
+varying float vFootH;
+#ifdef CROWD_HAIR
+varying vec3 vHairG;
+#endif
+vec3 crowdGeoN = vec3(0.0, 0.0, 1.0);   // the interpolated vertex normal (skin's red channel lights from it)
+float crowdSpecOcc = 1.0;             // skin: crease occlusion of the direct highlight
+vec3 crowdSheenC = vec3(0.0);          // fabric sheen colour (0 elsewhere)
+vec3 crowdHairT = vec3(0.0, 1.0, 0.0); // hair: strand direction, view space
+float crowdHairV = 0.0;               // hair: strand-to-strand variation, -1..1
+float crowdHairK = 1.0;               // hair: how well gravity gives the strand direction here (0 on the crown)
+float crowdIGN(vec2 p) { return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715)))); }
+`;
+let _pl31Warned = false;
+function swap31(src, a, b) {
+  if (src.includes(a)) return src.replace(a, b);
+  if (!_pl31Warned) { _pl31Warned = true; console.warn('[crowd] PL31: shader anchor not found, stock lighting kept:', a.slice(0, 80)); }
+  return src;
+}
+function crowdMaterial31(kind, arrays, pose, instTex, fab0) {
+  const hair = kind === 'hair';
+  const m = hair
+    ? new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75, metalness: 0, side: THREE.DoubleSide, alphaTest: 0.35, envMapIntensity: 0.6 })
+    : new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0, side: THREE.FrontSide, envMapIntensity: 0.6, sheen: 1, sheenRoughness: 0.55, sheenColor: 0xffffff });
+  // merged, not replaced: the constructors put STANDARD / PHYSICAL here, and three gates the IBL diffuse on STANDARD
+  Object.assign(m.defines || (m.defines = {}), hair ? { CROWD_HAIR: '' } : fab0 ? { CROWD_FAB0: '' } : {});
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uPose0 = pose[0]; sh.uniforms.uPose1 = pose[1]; sh.uniforms.uPose2 = pose[2];
+    sh.uniforms.uInstData = { value: instTex };
+    sh.uniforms.uAlbedo = { value: arrays.albedo || null };
+    sh.uniforms.uNormalA = { value: arrays.normal || null };
+    sh.uniforms.uOrm = { value: arrays.orm || null };
+    sh.uniforms.uHairA = { value: arrays.hair || null };
+    sh.uniforms.uCrowdNight = ENV.night;
+    sh.uniforms.uCrowdFadeF = CROWD_U.frame; sh.uniforms.uCrowdFadeD = CROWD_U.dith;   // NF31
+    sh.uniforms.uCrowdDith = CROWD_U.dith;
+    sh.uniforms.uCrowdFrame = CROWD_U.frame;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 skinIndex;\nattribute vec4 skinWeight;\n' + SKIN_VERT_PARS + SKIN_VERT_PARS31)
+      .replace('#include <beginnormal_vertex>', SKIN_VERT_NORMAL)
+      .replace('#include <begin_vertex>', SKIN_VERT_POS + SKIN_VERT_POS31);
+    let fs = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_PARS + FRAG_PARS31);
+    const L = THREE.ShaderChunk.lights_physical_pars_fragment;
+    const SPEC = 'reflectedLight.directSpecular += irradiance * BRDF_GGX_Multiscatter( directLight.direction, geometryViewDir, geometryNormal, material );';
+    const DIFF = 'reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );';
+    if (hair) {
+      fs = fs.replace('#include <lights_physical_pars_fragment>', swap31(swap31(L, SPEC, `{
+          // two Kajiya-Kay lobes along the strand (Scheuermann 2004): sin(T, H)^44 white primary, sin(T, H)^20 secondary
+          // tinted by the hair; the tangents are tilted toward the normal by a per-strand amount, so neighbouring strands
+          // catch the light at slightly different heights instead of one band across the whole hairdo
+          vec3 crowdHv = normalize( directLight.direction + geometryViewDir );
+          float crowdNL = dot( geometryNormal, directLight.direction );
+          float crowdSh = crowdHairV * 0.06;
+          vec3 crowdT1 = normalize( crowdHairT + geometryNormal * ( 0.06 + crowdSh ) );
+          vec3 crowdT2 = normalize( crowdHairT + geometryNormal * ( crowdSh - 0.1 ) );
+          float crowdC1 = dot( crowdT1, crowdHv ), crowdC2 = dot( crowdT2, crowdHv );
+          float crowdS1 = pow( max( 1.0 - crowdC1 * crowdC1, 0.0 ), 22.0 );
+          float crowdS2 = pow( max( 1.0 - crowdC2 * crowdC2, 0.0 ), 10.0 );
+          float crowdVis = saturate( crowdNL * 1.4 + 0.3 );
+          float crowdStr = crowdHairK * ( 0.3 + 0.7 * saturate( 0.5 + 0.5 * crowdHairV ) );   // strand centres catch it, edges less
+          // the white primary at half strength on black hair (a narrow lobe on low-res cards reads as blotchy grey streaks on
+          // black: owner review 2026-09-28), full from mid-brown up; the secondary carries the hair's own colour
+          float crowdHk = mix( 0.5, 1.0, saturate( dot( material.diffuseColor, vec3( 0.2126, 0.7152, 0.0722 ) ) / 0.12 ) );
+          reflectedLight.directSpecular += directLight.color * crowdVis * crowdStr * ( vec3( 0.03 * crowdHk ) * crowdS1 + material.diffuseColor * 0.4 * crowdS2 );
+        }`), DIFF, `{
+          // a volume of fibres: the terminator is soft, and a strand lit across its length scatters more than one lit along it
+          float crowdNL2 = dot( geometryNormal, directLight.direction );
+          float crowdTL = dot( crowdHairT, directLight.direction );
+          float crowdKd = sqrt( max( 0.0, 1.0 - crowdTL * crowdTL ) );
+          reflectedLight.directDiffuse += directLight.color * saturate( ( crowdNL2 + 0.55 ) / 1.55 ) * mix( 0.65, 1.0, crowdKd ) * BRDF_Lambert( material.diffuseContribution );
+        }`));
+      fs = fs.replace('#include <map_fragment>', `
+        vec4 crowdH = texture(uHairA, vec3(vUvA, vLayer));
+        diffuseColor.rgb *= crowdH.rgb;
+        {
+          const vec3 crowdY = vec3(0.2126, 0.7152, 0.0722);
+          // strand structure from the coverage (a strand's centre against the local mean of its mip 5) and, where the hair
+          // is not black, from its luminance too: black hair (CARLA's dreadlocks are RGB 0) has no luminance variation at all
+          vec4 crowdHm4 = textureLod(uHairA, vec3(vUvA, vLayer), 5.0);
+          float crowdHl = dot(crowdH.rgb, crowdY), crowdHm = dot(crowdHm4.rgb, crowdY);
+          float crowdAv = clamp(crowdH.a / max(crowdHm4.a, 0.05) - 1.0, -1.0, 1.0);
+          crowdHairV = clamp(0.7 * crowdAv + (crowdHm > 0.01 ? 0.5 * (crowdHl / crowdHm - 1.0) : 0.0), -1.0, 1.0);
+        }
+        // thin strands average away in the mips: scale alpha by the sampled mip level so coverage survives distance
+        vec2 crowdDx = dFdx(vUvA * 1024.0), crowdDy = dFdy(vUvA * 1024.0);
+        float crowdLod = max(0.0, 0.5 * log2(max(dot(crowdDx, crowdDx), dot(crowdDy, crowdDy))));
+        diffuseColor.a *= crowdH.a * (1.0 + crowdLod * 0.55);`)
+        .replace('#include <alphatest_fragment>', `{
+          float crowdTh = ${m.alphaTest.toFixed(2)} + (crowdIGN(gl_FragCoord.xy + 5.588238 * mod(uCrowdFrame, 64.0)) - 0.5) * 0.3 * uCrowdDith;
+          if (diffuseColor.a < crowdTh) discard;
+        }`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        {
+          vec3 crowdG = normalize(vHairG);
+          vec3 crowdTt = crowdG - normal * dot(normal, crowdG);
+          float crowdTl = length(crowdTt);
+          crowdHairT = crowdTl > 1e-3 ? crowdTt / crowdTl : vec3(0.0, 1.0, 0.0);
+          // on cards facing up (the crown) gravity says little about the strands, which part and swirl from the whorl: the
+          // projection shrinks to 0.33 there, and the strand lobes fade out instead of lighting the crown as one grey cap
+          // (the backlit look-dev row: crown luma 143 against PV2's 81-101, read as grey hair at 4 m)
+          crowdHairK = smoothstep(0.45, 0.85, crowdTl);
+        }`)
+        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+        // strands scatter the sky instead of mirroring it (the cards' IBL reflection was the shell), and the inner strands
+        // see less of it
+        reflectedLight.indirectSpecular *= 0.3;
+        reflectedLight.indirectDiffuse *= 0.85;`);
+    } else {
+      fs = fs.replace('#include <lights_physical_pars_fragment>', swap31(swap31(L, SPEC,
+        'reflectedLight.directSpecular += irradiance * BRDF_GGX_Multiscatter( directLight.direction, geometryViewDir, geometryNormal, material ) * crowdSpecOcc;'), DIFF, `{
+          // SKIN: wrapped, red-shifted direct diffuse (light bleeds past the terminator the way it scatters through skin), each
+          // channel from its own normal: red from the vertex normal blended 35 % toward the detail normal, green 80 %, blue the
+          // detail normal. Other pixels keep three's physical model.
+          vec3 crowdL = directLight.direction;
+          float crowdNr = dot( normalize( mix( crowdGeoN, geometryNormal, 0.35 ) ), crowdL );
+          float crowdNg = dot( normalize( mix( crowdGeoN, geometryNormal, 0.8 ) ), crowdL );
+          float crowdNb = dot( geometryNormal, crowdL );
+          vec3 wrapD = vec3( saturate( ( crowdNr + 0.42 ) / 1.42 ), saturate( ( crowdNg + 0.22 ) / 1.22 ), saturate( ( crowdNb + 0.16 ) / 1.16 ) );
+          vec3 irrD = mix( irradiance, wrapD * directLight.color, crowdSkinK );
+          reflectedLight.directDiffuse += irrD * BRDF_Lambert( material.diffuseContribution );
+        }`));
+      fs = fs.replace('#include <map_fragment>', `
+        vec3 crowdT = crowdUV();
+        crowdSkinK = vCls < 0.5 ? 1.0 : 0.0;
+        vec3 crowdAlb = texture(uAlbedo, crowdT).rgb;
+        if (vTint.a > 0.0) {
+          const vec3 crowdY = vec3(0.2126, 0.7152, 0.0722);
+          float lum = dot(crowdAlb, crowdY);
+          float mlum = max(dot(textureLod(uAlbedo, crowdT, 6.0).rgb, crowdY), 0.02);
+          vec3 rec = min(vTint.rgb * clamp(lum / mlum, 0.25, 2.2), vec3(0.85));
+          crowdAlb = mix(crowdAlb, rec, vTint.a);
+        }
+        diffuseColor.rgb *= crowdAlb;
+        diffuseColor.rgb *= mix(0.9, 1.0, uCrowdNight);
+        // woven / knit fabric: tops and bottoms (every garment of a set without part tags)
+        #ifdef CROWD_FAB0
+        float crowdFab = vCls > 0.5 && vCls < 1.5 && vPart < 9.5 ? 1.0 : 0.0;
+        #else
+        float crowdFab = vCls > 0.5 && vCls < 1.5 && vPart > 0.5 && vPart < 2.5 ? 1.0 : 0.0;
+        #endif
+        crowdSheenC = crowdFab * sqrt(max(diffuseColor.rgb, vec3(0.0))) * 0.3;`)
+        .replace('#include <roughnessmap_fragment>', `
+        vec3 crowdOrm = texture(uOrm, crowdT).rgb;
+        vec3 crowdNm = texture(uNormalA, crowdT).xyz * 2.0 - 1.0;
+        float roughnessFactor = vCls < 0.5 ? mix(0.5, 0.68, crowdOrm.g) : vCls > 1.5 ? 0.08 : crowdFab > 0.5 ? mix(0.62, 1.0, crowdOrm.g) : clamp(crowdOrm.g, 0.35, 1.0);
+        if (vCls < 1.5) {   // Toksvig (eyes keep their wet 0.08)
+          float crowdNl = clamp(length(crowdNm), 0.05, 1.0);
+          float crowdA2 = roughnessFactor * roughnessFactor;
+          roughnessFactor = sqrt(sqrt(crowdA2 * crowdA2 + min(2.0 * (1.0 - crowdNl) / crowdNl, 0.35)));
+        }
+        crowdSpecOcc = mix(1.0, crowdOrm.r * crowdOrm.r, 0.85 * crowdSkinK);`)
+        .replace('#include <metalnessmap_fragment>', `
+        float metalnessFactor = vCls > 0.5 && vCls < 1.5 ? crowdOrm.b * 0.8 : 0.0;`)
+        .replace('#include <normal_fragment_maps>', `
+        crowdGeoN = normal;
+        {
+          vec3 mapN = crowdNm;
+          mapN.xy *= vCls < 0.5 ? 0.9 : 1.0;
+          normal = crowdPerturb(-vViewPosition, normal, mapN, crowdT.xy);
+        }`)
+        .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+        if (crowdSkinK > 0.5) { material.specularColor = vec3(0.028); material.specularColorBlended = vec3(0.028); }
+        #ifdef USE_SHEEN
+        material.sheenColor = crowdSheenC;
+        material.sheenRoughness = 0.55;
+        #endif`)
+        .replace('#include <aomap_fragment>', `#include <aomap_fragment>
+        {
+          float crowdAo = mix(1.0, crowdOrm.r, 0.8);
+          crowdAo *= mix(0.6, 1.0, smoothstep(0.02, 0.32, vFootH));   // CONTACT: the ground hides the lower sky
+          reflectedLight.indirectDiffuse *= crowdAo;
+          reflectedLight.indirectSpecular *= crowdAo * crowdAo;
+          #ifdef USE_SHEEN
+          sheenSpecularIndirect *= crowdAo;
+          #endif
+          // EYES sit in sockets under the brow and lids: most of the sky they would mirror is occluded; the sun's glint stays
+          if (vCls > 1.5 && vCls < 2.5) { reflectedLight.indirectSpecular *= 0.18; reflectedLight.indirectDiffuse *= 0.7; }
+        }`);
+    }
+    sh.fragmentShader = fs.replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n  if (crowdFaded()) discard;   // NF31');
+  };
+  m.customProgramCacheKey = () => 'crowd31|' + kind + (fab0 ? '|fab0' : '');
   return m;
 }
 
@@ -468,6 +780,7 @@ class RenderSet {
       mesh.castShadow = shadow; mesh.receiveShadow = !shadow; mesh.visible = false;
       mesh.customDepthMaterial = mats.depth;
       mesh.userData.crowdMat = mats[kind];
+      mesh.userData.crowdLooks = mats.looks ? mats.looks.map((L) => L[kind]) : null;   // PL31 A/B (Crowd.setLook)
       mesh.userData.crowdSkin = skinU;          // segRender: skinned label materials (CROWD_SEG_*)
       mesh.userData.crowdHair = kind === 'hair';
       scene.add(mesh);
@@ -566,6 +879,27 @@ const SHOES = [[0.04, 0.04, 0.045], [0.75, 0.75, 0.74], [0.18, 0.12, 0.08], [0.3
 // showroom outerwear (linear): the sim's NYC mix — black, navy, brown, grey, red, olive, off-white, dark navy
 const SHOW_TOPS = [[0.02, 0.02, 0.025], [0.03, 0.04, 0.08], [0.12, 0.09, 0.06], [0.35, 0.35, 0.36], [0.25, 0.03, 0.03], [0.05, 0.07, 0.04], [0.6, 0.6, 0.58], [0.015, 0.02, 0.04]];
 
+// SIT2 look-dev layout (?crowdset=sit2), relative to the showroom anchor; yaw = the walker's heading (atan2(dx, dz))
+function sit2Layout() {
+  const V = [5, 24, 51, 60, 18, 29, 14, 73, 21, 42, 27, 35, 16, 55, 10, 67, 44, 30, 38];
+  let vi = 0;
+  const seats = [], tables = [], benches = [];
+  const table = (x, z, n, square, poses, r = 0.62, a0 = 0) => {
+    tables.push({ x, z, square });
+    for (let i = 0; i < n; i++) {
+      const a = a0 + (i / n) * 2 * Math.PI, px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r;
+      seats.push({ x: px, z: pz, yaw: Math.atan2(x - px, z - pz), pose: poses[i % poses.length], v: V[vi++ % V.length], seatH: 0.452, chair: true });
+    }
+  };
+  table(0, 0, 2, false, [3, 5], 0.62, Math.PI / 2);
+  table(3, 0, 4, true, [3, 4, 5, 6], 0.64, 0);
+  table(6, 0, 3, false, [3, 4, 5], 0.62, 0.3);
+  for (let i = 0; i < 6; i++) seats.push({ x: -0.5 + i * 1.2, z: -3.2, yaw: 0, pose: 1 + (i % 2), v: V[vi++ % V.length], seatH: 0.452, chair: true });
+  benches.push({ x: 10.5, z: 0, len: 2.6, yaw: 0 });
+  [[-0.95, 7], [-0.3, 7], [0.35, 6], [1.0, 7]].forEach(([dx, p]) => seats.push({ x: 10.5 + dx, z: 0.02, yaw: 0, pose: p, v: V[vi++ % V.length], seatH: 0.46, chair: false }));
+  return { seats, tables, benches, placed: false };
+}
+
 export class Crowd {
   constructor(scene, engine, assets, cap = 700) {
     this.scene = scene; this.engine = engine; this.A = assets; this.cap = cap;
@@ -578,7 +912,8 @@ export class Crowd {
     this.storeMat = this.mesh.material;
     // per-slot state
     const f = (n = 1) => new Float32Array(cap * n);
-    this.st = { phase: f(), speed: f(), amp: f(), seed: f(), gait: new Int16Array(cap).fill(-1), variant: new Int16Array(cap).fill(-1), clipA: new Int16Array(cap).fill(-1), tA: f(), clipB: new Int16Array(cap).fill(-1), tB: f(), w: f(), style: f(4), pace: f().fill(1) };
+    this.st = { phase: f(), speed: f(), amp: f(), seed: f(), gait: new Int16Array(cap).fill(-1), variant: new Int16Array(cap).fill(-1), clipA: new Int16Array(cap).fill(-1), tA: f(), clipB: new Int16Array(cap).fill(-1), tB: f(), w: f(), style: f(4), pace: f().fill(1), pose: new Int8Array(cap),
+      fit: f().fill(1), armPose: new Int8Array(cap), armPose2: new Int8Array(cap), armV: new Int16Array(cap).fill(-1), armS: f() };
     // variant weights: adults of both genders, a heavier build, children, rare police
     this.pool = [];
     for (let i = 0; i < assets.variants.length; i++) {
@@ -594,23 +929,34 @@ export class Crowd {
       const instData = new Float32Array(INST_W * MAXI * 4);
       const instTex = new THREE.DataTexture(instData, INST_W, MAXI, THREE.RGBAFormat, THREE.FloatType);
       instTex.needsUpdate = true;
+      // SIT31: two arm rows per walker slot (row 2i: its present seated pose, 2i + 1: the one it is blending out of)
+      const NSL = ARM_SLOTS.length, sitOn = S.clips.some((c) => c.kind === 'sit');
+      const armData = new Float32Array(NSL * 4 * (sitOn ? 2 * cap : 1)).fill(0);
+      for (let k = 3; k < armData.length; k += 4) armData[k] = 2;
+      const armTex = new THREE.DataTexture(armData, sitOn ? NSL : 1, sitOn ? 2 * cap : 1, THREE.RGBAFormat, THREE.FloatType);
+      armTex.needsUpdate = true;
+      const armSlot = S.bones.map((n) => (sitOn ? ARM_SLOTS.indexOf(n) : -1));
       const mat = new THREE.RawShaderMaterial({
         glslVersion: THREE.GLSL3, vertexShader: POSE_VS, fragmentShader: POSE_FS(S.nb),
-        uniforms: { uClips: { value: S.clipTex }, uBodies: { value: S.bodyTex }, uInst: { value: instTex }, uParent: { value: S.parents.map((p) => p) }, uHips: { value: S.hips } },
+        uniforms: { uClips: { value: S.clipTex }, uBodies: { value: S.bodyTex }, uInst: { value: instTex }, uParent: { value: S.parents.map((p) => p) }, uHips: { value: S.hips }, uArm: { value: armTex }, uArmSlot: { value: armSlot } },
         depthTest: false, depthWrite: false,
       });
       const quad = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3)), mat);
       quad.frustumCulled = false;
       const pose = [0, 1, 2].map((i) => ({ value: rt.textures[i] }));
-      const mats = { opaque: crowdMaterial('opaque', assets.arrays, pose, instTex), hair: crowdMaterial('hair', assets.arrays, pose, instTex), depth: crowdDepthMaterial(pose, instTex), id: crowdIdMaterial(pose, instTex) };
+      // PL31: the page's look, and with ?crowdab=1 the other one too (looks[0] PV2, looks[1] PL31) for a live A/B
+      const L0 = PL31 ? 1 : 0;
+      const lookMats = (look, arr, fab0) => ({ opaque: crowdMaterial('opaque', arr, pose, instTex, look, fab0), hair: crowdMaterial('hair', arr, pose, instTex, look, fab0) });
+      const withLooks = (m, arr, fab0) => { if (CROWD_AB) { const alt = lookMats(1 - L0, arr, fab0), own = { opaque: m.opaque, hair: m.hair }; m.looks = L0 ? [alt, own] : [own, alt]; } return m; };
+      const mats = withLooks({ ...lookMats(L0, assets.arrays, false), depth: crowdDepthMaterial(pose, instTex), id: crowdIdMaterial(pose, instTex) }, assets.arrays, false);
       const skinU = { uPose0: pose[0], uPose1: pose[1], uPose2: pose[2], uInstData: { value: instTex }, uHairA: { value: assets.arrays.hair || null } };
       // RB27: bodies of an extra set sample that set's texture arrays (same programs and pose targets, other uniforms)
       const matsX = {}, skinUX = {};
       for (const [k, arr] of Object.entries(assets.arraysX || {})) {
-        matsX[k] = { ...mats, opaque: crowdMaterial('opaque', arr, pose, instTex), hair: crowdMaterial('hair', arr, pose, instTex) };
+        matsX[k] = withLooks({ ...mats, ...lookMats(L0, arr, true), looks: null }, arr, true);
         skinUX[k] = { ...skinU, uHairA: { value: arr.hair || null } };
       }
-      this.passes[S.name] = { S, rt, instData, instTex, mat, quad, scene: new THREE.Scene().add(quad), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), rows: 0, mats, skinU, matsX, skinUX };
+      this.passes[S.name] = { S, rt, instData, instTex, mat, quad, armData, armTex, sitOn, scene: new THREE.Scene().add(quad), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), rows: 0, mats, skinU, matsX, skinUX };
     }
     // render sets per (body, LOD) main + shadow
     this.sets = new Map();
@@ -644,14 +990,41 @@ export class Crowd {
       const at = (QS.get('crowdshowat') || '396,215,180').split(',').map(Number);
       const only = QS.get('crowdonly') ? QS.get('crowdonly').split(',').map(Number) : null;
       const list = only || assets.variants.map((_, i) => i);
-      this.show = { x: at[0], z: at[1], yaw: ((at[2] ?? 180) * Math.PI) / 180, sp: Number(QS.get('crowdsp') || 1.1), list, walk: QS.get('crowdwalk'), y: null };
+      // ?crowdpose=1..7|alt seats the row (SIT31 pose ids, see sitPoses; alt: sit_a and sit_b in turn)
+      this.show = { x: at[0], z: at[1], yaw: ((at[2] ?? 180) * Math.PI) / 180, sp: Number(QS.get('crowdsp') || 1.1), list, walk: QS.get('crowdwalk'), pose: QS.get('crowdpose') || 0, y: null };
       console.log('[crowd] showroom', list.length, 'variants at', at.join(','));
+      // ?crowdset=sit2: SEATED LOOK-DEV with real furniture (city/bryantParkKit.js chairGeo31 / tableGeo31: seat 0.452 m,
+      // tops 0.7275 m): a round table for two, a square table for four, a round table for three, a row of chairs in poses
+      // 1 and 2, and a 2.6 m bench (seat 0.46 m) in poses 7 and 6. Each walker is fitted to its seat (fitSeat) and placed
+      // by seatOf; the chairs stand 0.62 m from the table centres (the park's 0.56-0.70).
+      if (QS.get('crowdset') === 'sit2') this.show.set = sit2Layout();
     }
+    this.look = PL31 ? 1 : 0;
+    this.nearFade = NF31;   // NF31 A/B: a harness may switch it on a frozen frame (window.__CROWD.nearFade)
+    this.lod3d = LD31;      // LD31 A/B, the same way (window.__CROWD.lod3d)
+    // SIT31 pose ids for the sim (sim/peds.js SW31 reads table and bench, and falls back to 1 / 2 without them)
+    const haveSit = Object.values(assets.skel).some((S) => S.clips.some((c) => c.kind === 'sit' && c.sitPose >= 3));
+    this.sitPoses = haveSit ? { upright: [1], relaxed: [2], table: [3, 4, 5], bench: [7], phone: [6] } : { upright: [1], relaxed: [2], table: [], bench: [], phone: [] };
+    if (typeof window !== 'undefined') window.__CROWD = this;   // look-dev / A/B harnesses (setLook, show, seatOf)
     this.clipsBy = {};
     for (const S of Object.values(assets.skel)) {
       const by = (kind) => S.clips.filter((c) => c.kind === kind);
-      this.clipsBy[S.name] = { walk: by('walk'), idle: by('idle'), all: S.clips };
+      this.clipsBy[S.name] = { walk: by('walk'), idle: by('idle'), sit: S.clips.filter((c) => c.kind === 'sit').sort((a, b) => a.sitPose - b.sitPose), all: S.clips };
     }
+  }
+  // PL31 A/B (?crowdab=1): 0 = the PV2 materials, 1 = PL31, on every drawn walker from the next frame
+  setLook(v) {
+    v = v ? 1 : 0;
+    let n = 0;
+    for (const s of this.sets.values()) for (const x of s.main) for (const m of x.meshes) {
+      const L = m.userData.crowdLooks;
+      if (!L) continue;
+      if (m.material === m.userData.crowdMat) m.material = L[v];
+      m.userData.crowdMat = L[v];
+      n++;
+    }
+    this.look = v;
+    return n;
   }
   // ---- the pedmesh.js rig API (peds.js)
   setAnim(idx, phase, rate, amp, skin) {
@@ -659,7 +1032,7 @@ export class Crowd {
     const s = this.st;
     s.phase[idx] = phase; s.speed[idx] = rate / 4.4; s.amp[idx] = amp; s.seed[idx] = skin; s.pace[idx] = 1;
     const v = this.pool[Math.min(this.pool.length - 1, Math.floor(skin * this.pool.length))];
-    if (s.variant[idx] !== v) { s.variant[idx] = v; s.clipA[idx] = -1; s.clipB[idx] = -1; s.w[idx] = 0; }
+    if (s.variant[idx] !== v) { s.variant[idx] = v; s.clipA[idx] = -1; s.clipB[idx] = -1; s.w[idx] = 0; s.fit[idx] = 1; s.armPose[idx] = 0; s.armPose2[idx] = 0; }
     // walk style: heavier builds walk heavyset, fast walkers hurry, the rest from the NYC mix
     const V = this.A.variants[v], hsd = hash(Math.floor(skin * 1e6), 5);
     // WS27: the heavyset walk on a fifth of heavy builds (was 40 %), the rushed walk on an eighth of fast walkers (was 30 %)
@@ -667,6 +1040,84 @@ export class Crowd {
     s.gait[idx] = V.build === 'heavy' && hsd < hvK ? STYLES.length - 1 : s.speed[idx] > 1.62 && hsd < fsK ? 5 : STYLE_BAG[Math.floor(hash(Math.floor(skin * 1e6), 9) * STYLE_BAG.length)];
   }
   setAmp(idx, amp) { if (!this.show) this.st.amp[idx] = amp; }
+  // SIT31 CONTRACT (docs/notes/crowd-looks.md): st.pose[idx] (or setPose) = 0 stand / walk (the sim's amp decides), else
+  // a seated pose id (this.sitPoses: 1 upright, 2 relaxed, 3-5 at a table, 6 phone, 7 bench). While pose > 0 the walker plays
+  // that seated loop whatever its amp, blending FADE_SIT s in and out, with its own arms (the bake, per body and scale). The
+  // instance origin stays at the FEET, on the floor; heading = the instance yaw (face the chair's front). GEN2 bodies only.
+  setPose(idx, p) { if (!this.show) this.st.pose[idx] = p | 0; }
+  // the seat point (under the pelvis) of walker idx in pose p for ITS body and scale: { up, back, feet, table? } in metres:
+  // the seat point is back m behind the origin along the heading and up m above it; feet: each toe tip [side, fwd] from the
+  // seat point (side + = the walker's left); table (poses 3-5): the top height h over the seat point, the edge and elbow
+  // distances in front of it the pose is solved for. null: no variant yet, or a body without seated clips.
+  seatOf(idx, p = this.st.pose[idx] || 1) {
+    const vi = this.st.variant[idx];
+    if (vi < 0) return null;
+    const V = this.A.variants[vi], B = this.A.bodies[V.body], C = this.clipsBy[B.skeleton];
+    const c = C && C.sit.find((x) => x.sitPose === (p | 0));
+    if (!c || !c.seat || !c.seat[B.index]) return null;
+    const k = (V.scale || 1) * this._heightScale(V, B, idx) * (this.st.fit[idx] || 1), r3 = (v) => +v.toFixed(3);
+    const out = { up: r3(c.seat[B.index][0] * k), back: r3(c.seat[B.index][1] * k), feet: c.feet ? c.feet[B.index].map(([x, z]) => [r3(x * k), r3(z * k)]) : null };
+    if (c.spec && c.spec.table) out.table = { h: TABLE31.h, edge: TABLE31.edge, elbow: TABLE31.elbow };
+    return out;
+  }
+  // FIT: scale walker idx (within +-8 % of its own height) so its seat point in pose p lands at seatH over the floor, and
+  // solve its arms for that scale (a table top stays 0.275 m over the seat in metres). Returns seatOf() as achieved, or
+  // null when 8 % cannot bring it within 1 cm; the walker is then back at its natural height (a fit left over from an
+  // earlier skin of the same variant would otherwise stay: setAnim clears the fit only when the variant changes, and
+  // peds.js _seatSpawn tries up to 12 skins on one slot, falling back to seatOf). Meant for walkers placed already
+  // seated: the height change is never seen.
+  fitSeat(idx, seatH, p = this.st.pose[idx] || 1) {
+    const vi = this.st.variant[idx];
+    if (vi < 0) return null;
+    const V = this.A.variants[vi], B = this.A.bodies[V.body], C = this.clipsBy[B.skeleton];
+    const c = C && C.sit.find((x) => x.sitPose === (p | 0));
+    if (!c || !c.seat || !c.seat[B.index]) { this.st.fit[idx] = 1; return null; }
+    const s0 = (V.scale || 1) * this._heightScale(V, B, idx), up = c.seat[B.index][0];
+    const k = Math.min(1.08, Math.max(0.92, seatH / (up * s0)));
+    if (Math.abs(up * s0 * k - seatH) > 0.01) { this.st.fit[idx] = 1; return null; }
+    this.st.fit[idx] = k;
+    return this.seatOf(idx, p);
+  }
+  // peds.js _remove moves the LAST walker into a freed slot: carry every per-walker state with it (before its setAnim /
+  // setStyle), so its clip, phase, fade, pose, fit and arms go on where they were
+  moveSlot(from, to) {
+    if (from === to) return;
+    const st = this.st;
+    for (const k of ['phase', 'speed', 'amp', 'seed', 'gait', 'variant', 'clipA', 'tA', 'clipB', 'tB', 'w', 'pace', 'pose', 'fit', 'armPose', 'armPose2', 'armV', 'armS']) st[k][to] = st[k][from];
+    st.style.copyWithin(to * 4, from * 4, from * 4 + 4);
+    for (const P of Object.values(this.passes)) {
+      if (!P.sitOn) continue;
+      const L = ARM_SLOTS.length * 4;
+      P.armData.copyWithin(2 * to * L, 2 * from * L, 2 * from * L + 2 * L);
+      P.armTex.needsUpdate = true;
+    }
+  }
+  // this walker's own arms for its seated pose, from the bake: rows 2i (the pose it sits in) and 2i + 1 (the one it blends
+  // out of); the table poses blend the bake's five scale samples by the walker's scale
+  _ensureArms(i, P, vi, B, pose, s) {
+    const st = this.st, L = ARM_SLOTS.length * 4;
+    if (st.armPose[i] === pose && st.armV[i] === vi && Math.abs(st.armS[i] - s) < 0.002) return;
+    const e = B.sitBake, list = e && e.poses[pose];
+    if (!list) return;
+    const D = P.armData, o = 2 * i * L;
+    if (st.armPose[i] && st.armPose[i] !== pose) { D.copyWithin(o + L, o, o + L); st.armPose2[i] = st.armPose[i]; }
+    let a = list[0], b = list[0], t = 0;
+    const SC = P.S.sitScales;
+    if (list.length > 1 && SC) {
+      const k = s / e.s0;
+      let j = 0; while (j < SC.length - 2 && k > SC[j + 1]) j++;
+      a = list[j]; b = list[j + 1]; t = Math.min(1, Math.max(0, (k - SC[j]) / (SC[j + 1] - SC[j])));
+    }
+    for (let q = 0; q < L; q += 4) {
+      if (a[q + 3] > 1.5) { D[o + q] = 0; D[o + q + 1] = 0; D[o + q + 2] = 0; D[o + q + 3] = 2; continue; }
+      const sg = a[q] * b[q] + a[q + 1] * b[q + 1] + a[q + 2] * b[q + 2] + a[q + 3] * b[q + 3] < 0 ? -1 : 1;
+      let x = a[q] + (sg * b[q] - a[q]) * t, y = a[q + 1] + (sg * b[q + 1] - a[q + 1]) * t, z = a[q + 2] + (sg * b[q + 2] - a[q + 2]) * t, w = a[q + 3] + (sg * b[q + 3] - a[q + 3]) * t;
+      const l = Math.hypot(x, y, z, w) || 1;
+      D[o + q] = x / l; D[o + q + 1] = y / l; D[o + q + 2] = z / l; D[o + q + 3] = w / l;
+    }
+    st.armPose[i] = pose; st.armV[i] = vi; st.armS[i] = s;
+    P.armTex.needsUpdate = true;
+  }
   // PY25 (sim/peds.js): a walker slowed behind someone plays its walk at that fraction of its rate, so the feet stay
   // planted; the walk clip itself is still the one picked for its own pace (no clip swap while easing)
   setPace(idx, f) { if (!this.show) this.st.pace[idx] = f; }
@@ -680,6 +1131,8 @@ export class Crowd {
     // a phone in the hand the phone-call clips raise to the ear (STYLES 1 = OnPhoneLeft, 2 = OnPhoneRight)
     const g = this.st.gait[i];
     let bits = g === 1 ? 1 << 6 : g === 2 ? 1 << 5 : 0;
+    // SIT31 phone pose: the fitted phone in the right hand (both hands hold it), no handbag in that fist
+    if (this.st.pose[i] === 6) return ((bits & ~(1 << 6)) | (1 << 5) | (m & 4 && g !== 5 && g !== 6 ? 1 << (h < 0.55 ? 1 : 0) : 0)) & have;
     // FILM 7 (2026-09-23): the rushed (5) and depressed (6) gaits pitch the upper spine forward past what the pack's two-bone
     // skin (chest + lower back) follows — on about half the bodies the pack floats behind the shoulders (bshot crowdBackRow
     // with crowdstyle=5 crowdprops=1). Walkers in those gaits carry no backpack until the fits are re-weighted.
@@ -703,10 +1156,11 @@ export class Crowd {
   // a clip of the body's own age class (CARLA's "Girl" clips are authored on the child proportions); for walks the one
   // whose natural speed (scaled to this body's legs) is closest to the speed the sim moves it, so the playback rate stays
   // near 1; idles by seed
-  _clipFor(skelName, variant, body, walking, seed, speed, gait, styleIdx = -1) {
+  _clipFor(skelName, variant, body, walking, seed, speed, gait, styleIdx = -1, pose = 0) {
     const C = this.clipsBy[skelName];
     const force = QS.get('crowdclip');
     if (force) { const fc = C.all.find((x) => x.name === force); if (fc) return fc; }
+    if (pose > 0 && C.sit.length) return C.sit.find((c) => c.sitPose === pose) || C.sit[0];
     const age = variant.age === 'child' || body.height * (variant.scale || 1) < 1.4 ? 'child' : 'adult';
     const pool = walking ? C.walk : C.idle;
     let list = pool.filter((c) => c.age === age);
@@ -735,10 +1189,15 @@ export class Crowd {
     const t0 = performance.now();
     dt = Math.min(0.1, Math.max(0, dt || 0));
     const A = this.A, st = this.st, cam = this.engine.camera, r = this.engine.renderer;
+    // PL31 hair: dither the alpha threshold per accumulated sample (record mode with ?accum), fixed in live frames
+    CROWD_U.frame.value = this.engine.frames || 0;
+    CROWD_U.dith.value = this.engine.recordMode && this.engine.taa && this.engine.taa.accum ? 1 : 0;
     let n = this.mesh.count, Ms = this.mesh.instanceMatrix.array, Cs = this.mesh.instanceColor.array;
     if (this.show) {
       const sh = this.show;
       if (sh.y == null) { const g = this.engine.groundAt ? this.engine.groundAt(sh.x, sh.z) : (window.__STREAMER?.surfaceAt?.(sh.x, sh.z)); if (g != null && isFinite(g)) sh.y = g; }
+      if (sh.set && sh.y != null) { this._showSet(sh); Ms = sh.M; Cs = sh.C; n = sh.list.length; }
+      else {
       if (!sh.M) { sh.M = new Float32Array(sh.list.length * 16); sh.C = new Float32Array(sh.list.length * 3); for (let k = 0; k < sh.list.length; k++) sh.C.set(SHOW_TOPS[k % SHOW_TOPS.length], k * 3); }
       n = sh.list.length;
       const rx = Math.cos(sh.yaw), rz = -Math.sin(sh.yaw);
@@ -753,8 +1212,10 @@ export class Crowd {
         this.st.speed[k] = 1.35;
         this.st.amp[k] = sh.walk === '1' ? 1 : sh.walk === '0' ? 0 : (k % 2);
         this.st.gait[k] = QS.has('crowdstyle') ? Number(QS.get('crowdstyle')) : SHOW_STYLES[k % SHOW_STYLES.length];
+        this.st.pose[k] = sh.pose === 'alt' ? 1 + (k % 2) : Number(sh.pose) || 0;
       }
       Ms = sh.M; Cs = sh.C;
+      }
       if (sh.y == null) return;
     }
     const idMode = this.mesh.material !== this.storeMat;
@@ -774,9 +1235,9 @@ export class Crowd {
     }
     for (const P of Object.values(this.passes)) P.rows = 0;
     for (const s of this.sets.values()) { for (const x of s.main) x.begin(); for (const x of s.shadow) x.begin(); }
-    const cx = cam.position.x, cz = cam.position.z;
+    const cx = cam.position.x, cy = cam.position.y, cz = cam.position.z, nearZ = cam.near || 0.4;
     const W = this._W, M = this._M, idc = [0, 0, 0];
-    this.stats.visible = this.stats.shadow = 0; this.stats.lod[0] = this.stats.lod[1] = this.stats.lod[2] = 0;
+    this.stats.visible = this.stats.shadow = this.stats.faded = 0; this.stats.lod[0] = this.stats.lod[1] = this.stats.lod[2] = 0;
     const inside = (pl, x, y, z, rad) => { for (let q = 0; q < 6; q++) { const p = pl[q]; if (p.normal.x * x + p.normal.y * y + p.normal.z * z + p.constant < -rad) return false; } return true; };
     for (let i = 0; i < n; i++) {
       const o = i * 16;
@@ -791,10 +1252,11 @@ export class Crowd {
       const P = this.passes[B.skeleton];
       if (!P || P.rows >= MAXI) continue;
       const S = P.S;
-      // ---- clip state: walk while amp > 0.5, else idle; crossfade FADE seconds
-      const walking = st.amp[i] > 0.5;
-      const vScale0 = (V.scale || 1) * this._heightScale(V, B, i);
-      const want = this._clipFor(B.skeleton, V, B, walking, st.seed[i], st.speed[i], (B.hipsH / S.refHips) * vScale0, st.gait[i]);
+      // ---- clip state: walk while amp > 0.5, else idle (SIT31: seated while st.pose > 0); crossfade FADE seconds
+      const pose = SIT31 ? st.pose[i] : 0;
+      const walking = !pose && st.amp[i] > 0.5;
+      const vScale0 = (V.scale || 1) * this._heightScale(V, B, i) * (st.fit[i] || 1);
+      const want = this._clipFor(B.skeleton, V, B, walking, st.seed[i], st.speed[i], (B.hipsH / S.refHips) * vScale0, st.gait[i], pose);
       const wantIdx = S.clips.indexOf(want);
       if (st.clipA[i] < 0) { st.clipA[i] = wantIdx; st.tA[i] = (st.phase[i] * 13.7 % 1) * want.frames; st.clipB[i] = wantIdx; st.w[i] = 0; }
       else if (st.clipA[i] !== wantIdx) {
@@ -803,7 +1265,7 @@ export class Crowd {
         st.w[i] = 1;
       }
       const cA = S.clips[st.clipA[i]], cB = S.clips[st.clipB[i]];
-      const vScale = (V.scale || 1) * this._heightScale(V, B, i);
+      const vScale = (V.scale || 1) * this._heightScale(V, B, i) * (st.fit[i] || 1);
       const gait = (B.hipsH / S.refHips) * vScale;
       // feet stay planted only while the playback rate tracks the walker's speed: clamp widened 1.9 -> 2.3 (film 7 review: a
       // quarter of the walkers were over 1.9 and skated), and peds.js walks 1.05-1.5 m/s now (was 1.15-1.8)
@@ -811,13 +1273,41 @@ export class Crowd {
       const pace = this.show ? 1 : st.pace[i] || 1;
       st.tA[i] += dt * cA.fps * rateOf(cA) * (cA.kind === 'walk' ? pace : 1);
       st.tB[i] += dt * cB.fps * rateOf(cB) * (cB.kind === 'walk' ? pace : 1);
-      st.w[i] = Math.max(0, st.w[i] - dt / FADE);
+      st.w[i] = Math.max(0, st.w[i] - dt / (cA.kind === 'sit' || cB.kind === 'sit' ? FADE_SIT : FADE));
+      // NF31: how far the walker's surface is from the lens, in the walker's own frame (across, forward, up; its scale k):
+      // the head a 0.125 m sphere (nose tip to the back of the hair) 1.62 k over the floor (seated 1.22 k and 0.3 k behind
+      // the feet), the body a box 0.48 k across and 0.30 k deep with 0.08 k round edges from the shins to the shoulders
+      // (seated 0.60 k deep, knees to back, up to 1.05 k)
+      let fade = 0;
+      if (this.nearFade) {
+        const k = vScale, fl = Math.hypot(Ms[o + 8], Ms[o + 10]) || 1, fwx = Ms[o + 8] / fl, fwz = Ms[o + 10] / fl;
+        const lx = cx - x, lz = cz - z, la = Math.abs(lx * fwz - lz * fwx), lf = lx * fwx + lz * fwz, ly = cy - y;
+        const sat = pose > 0;
+        const sdH = Math.hypot(la, lf - (sat ? -0.3 : 0.02) * k, ly - (sat ? 1.22 : 1.62) * k) - 0.125 * k;
+        const r = 0.08 * k, y0 = 0.1 * k, y1 = (sat ? 1.05 : 1.45) * k;
+        const qx = Math.max(0, la - 0.24 * k + r), qz = Math.max(0, Math.abs(lf - (sat ? -0.25 : 0) * k) - (sat ? 0.3 : 0.15) * k + r);
+        const sd = Math.min(sdH, Math.hypot(qx, qz, ly < y0 ? y0 - ly : ly > y1 ? ly - y1 : 0) - r);
+        fade = Math.min(1, Math.max(0, (nearZ + NF_W - sd) / NF_W));
+        if (fade >= 1) this.stats.faded++;
+      }
+      if (fade >= 1 && !shv) continue;
       // ---- pose row
       const row = P.rows++;
+      if (CROWD_CHECK) (P.rowInfo || (P.rowInfo = []))[row] = { i, vi, body: B.name, a: cA.name, b: cB.name, tA: +st.tA[i].toFixed(2), tB: +st.tB[i].toFixed(2), w: +st.w[i].toFixed(3), pose, vis, shv };
       const d = P.instData, q = row * INST_W * 4;
       d[q] = cA.row; d[q + 1] = cA.frames; d[q + 2] = st.tA[i] % cA.frames; d[q + 3] = st.w[i];
       d[q + 4] = cB.row; d[q + 5] = cB.frames; d[q + 6] = st.tB[i] % cB.frames; d[q + 7] = B.index;
-      d[q + 8] = B.hipsH / (cA.hipsH || B.hipsH); d[q + 9] = B.hipsH / (cB.hipsH || B.hipsH); d[q + 10] = this._propMask(i, V, B); d[q + 11] = 0;
+      // SIT31: a seated clip carries each body's own hips scale (its soles on the floor, crowdSit.js kBody)
+      d[q + 8] = cA.kBody ? cA.kBody[B.index] : B.hipsH / (cA.hipsH || B.hipsH); d[q + 9] = cB.kBody ? cB.kBody[B.index] : B.hipsH / (cB.hipsH || B.hipsH);
+      d[q + 10] = this._propMask(i, V, B); d[q + 11] = fade;
+      // SIT31: the walker's own arm rows for a seated clip A / B (the bake, per body and scale)
+      let armA = -1, armB = -1;
+      if (P.sitOn) {
+        if (pose > 0 && B.sitBake) this._ensureArms(i, P, vi, B, pose, vScale);
+        armA = cA.sitPose ? (st.armPose[i] === cA.sitPose ? 2 * i : st.armPose2[i] === cA.sitPose ? 2 * i + 1 : -1) : -1;
+        armB = cB.sitPose ? (st.armPose[i] === cB.sitPose ? 2 * i : st.armPose2[i] === cB.sitPose ? 2 * i + 1 : -1) : -1;
+      }
+      d[q + 40] = armA + 1; d[q + 41] = armB + 1; d[q + 42] = 0; d[q + 43] = 0;
       // ---- instance matrix: position + yaw from the sim, uniform scale from the body (never the mannequin's squash)
       const yaw = Math.atan2(Ms[o + 8], Ms[o + 10]);
       const c0 = Math.cos(yaw) * vScale, s0 = Math.sin(yaw) * vScale;
@@ -831,19 +1321,23 @@ export class Crowd {
       const sd = st.seed[i];
       const tintOn = V.uniform || QS.get('crowdtint') === '0' ? 0 : 1;
       // top: the sim's outerwear colour on ~half the walkers; bottoms/shoes from NYC palettes
-      const topK = tintOn * (hash(i, 7) < 0.55 ? 0.85 : 0);
+      // keyed by the walker's seed, not its slot: peds.js moves the last walker into a freed slot (swap-with-last), and a
+      // slot-keyed tint or height switched on or off mid-shot when a despawn 330 m away moved a walker near the lens
+      const wk = Math.floor(st.seed[i] * 1e6);
+      const topK = tintOn * (hash(wk, 7) < 0.55 ? 0.85 : 0);
       W.tint[0] = Cs[i * 3]; W.tint[1] = Cs[i * 3 + 1]; W.tint[2] = Cs[i * 3 + 2]; W.tint[3] = topK;
       const bt = BOTTOMS[Math.floor(sd * 7919) % BOTTOMS.length], sh = SHOES[Math.floor(sd * 104729) % SHOES.length];
-      const botK = tintOn * (hash(i, 11) < 0.6 ? 0.8 : 0);
+      const botK = tintOn * (hash(wk, 11) < 0.6 ? 0.8 : 0);
       W.tint[4] = bt[0]; W.tint[5] = bt[1]; W.tint[6] = bt[2]; W.tint[7] = botK;
-      W.tint[8] = sh[0]; W.tint[9] = sh[1]; W.tint[10] = sh[2]; W.tint[11] = tintOn * (hash(i, 13) < 0.5 ? 0.7 : 0);
+      W.tint[8] = sh[0]; W.tint[9] = sh[1]; W.tint[10] = sh[2]; W.tint[11] = tintOn * (hash(wk, 13) < 0.5 ? 0.7 : 0);
       if (idMode) { idc[0] = Cs[i * 3]; idc[1] = Cs[i * 3 + 1]; idc[2] = Cs[i * 3 + 2]; }
       const sets = this.sets.get(B.name);
-      const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
+      // LD31: the LOD from the lens to the walker's middle in 3D (the draw set and the shadow set below both take this li)
+      const dx = x - cx, dz = z - cz, dy = this.lod3d ? y + 0.9 - cy : 0, d2 = dx * dx + dy * dy + dz * dz;
       const li = d2 < LOD0_2 ? 0 : d2 < LOD1_2 ? 1 : 2;
       d.set(W.layers, q + 12);
       d.set(W.tint, q + 28);
-      if (vis) { sets.main[li].push(M, row, idMode ? idc : null, i); this.stats.visible++; this.stats.lod[li]++; }
+      if (vis && fade < 1) { sets.main[li].push(M, row, idMode ? idc : null, i); this.stats.visible++; this.stats.lod[li]++; }
       if (shv) { sets.shadow[Math.max(1, li)].push(M, row, null); this.stats.shadow++; }
     }
     for (const [bn, s] of this.sets) {
@@ -867,12 +1361,110 @@ export class Crowd {
     }
     r.autoClear = prevAuto;
     r.setRenderTarget(prevRT);
+    if (CROWD_CHECK && (this._chkN = (this._chkN || 0) + 1) % CROWD_CHECK === 0) this._checkPose();
     this.stats.ms = performance.now() - t0;
   }
-  // per-walker height: NYC adult means with a +-4 % spread, from the body's own bind height
+  // CHECK (?crowdcheck=N): read the pose rows back and test every row's bone matrices (skinning = G * inverse bind) for
+  // rigidity (the 3x3 orthonormal, det 1) and for the posed joint (the matrix applied to the bone's bind joint) lying within
+  // 2.5 m of the walker's origin; and every drawn instance's row for having been written this frame for that same walker.
+  // Failures go to window.__CROWD_BAD (the last 50) and the console, with the slot, variant, body, LOD and clips; their
+  // counts by kind to window.__CROWD_BADN ({ pose, draw }).
+  _checkPose() {
+    const r = this.engine.renderer, bad = (window.__CROWD_BAD = window.__CROWD_BAD || []);
+    const cnt = (window.__CROWD_BADN = window.__CROWD_BADN || { pose: 0, draw: 0 });
+    let checked = 0;
+    // each target attachment is copied into a single-attachment float target and read from there, so the readback does
+    // not depend on glReadBuffer over an MRT target (on D3D11 both ways read the root column as "not rigid 1.000" on every
+    // row, SwiftShader both ways rigid; see the bone loop below)
+    const C = this._chkCopy || (this._chkCopy = (() => {
+      const mat = new THREE.RawShaderMaterial({ glslVersion: THREE.GLSL3, vertexShader: POSE_VS, fragmentShader: 'precision highp float; precision highp sampler2D; uniform sampler2D uT; out vec4 o; void main() { o = texelFetch(uT, ivec2(gl_FragCoord.xy), 0); }', uniforms: { uT: { value: null } }, depthTest: false, depthWrite: false });
+      const quad = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]), 3)), mat);
+      quad.frustumCulled = false;
+      return { mat, scene: new THREE.Scene().add(quad), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), rt: new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, stencilBuffer: false, generateMipmaps: false }) };
+    })());
+    const prevRT = r.getRenderTarget();
+    for (const P of Object.values(this.passes)) {
+      const n = P.rows, nb = P.S.nb;
+      if (!n) continue;
+      const buf = [0, 1, 2].map(() => new Float32Array(nb * n * 4));
+      if (C.rt.width !== nb || C.rt.height !== n) C.rt.setSize(nb, n);
+      for (let a = 0; a < 3; a++) {
+        C.mat.uniforms.uT.value = P.rt.textures[a];
+        r.setRenderTarget(C.rt);
+        r.render(C.scene, C.cam);
+        r.readRenderTargetPixels(C.rt, 0, 0, nb, n, buf[a]);
+      }
+      for (let row = 0; row < n; row++) {
+        const info = P.rowInfo && P.rowInfo[row], B = info && this.A.bodies[info.body];
+        if (!B) continue;
+        if (!B.bindJ) { B.bindJ = []; for (let b = 0; b < nb; b++) { const m = B.ibm.slice(b * 16, b * 16 + 16), R = [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]], t = [m[12], m[13], m[14]]; B.bindJ.push([-(R[0] * t[0] + R[1] * t[1] + R[2] * t[2]), -(R[3] * t[0] + R[4] * t[1] + R[5] * t[2]), -(R[6] * t[0] + R[7] * t[1] + R[8] * t[2])]); } }
+        let why = null;
+        // from bone 1: the root's column read back as "not rigid (1.000)" on every row on D3D11 even through the copy pass
+        // (SwiftShader: rigid), and no vertex of any body is weighted to crl_root, so it says nothing about what is drawn
+        for (let b = 1; b < nb && !why; b++) {
+          const o = (row * nb + b) * 4, a0 = buf[0], a1 = buf[1], a2 = buf[2];
+          const R0 = [a0[o], a0[o + 1], a0[o + 2]], R1 = [a1[o], a1[o + 1], a1[o + 2]], R2 = [a2[o], a2[o + 1], a2[o + 2]], T = [a0[o + 3], a1[o + 3], a2[o + 3]];
+          if (![...R0, ...R1, ...R2, ...T].every(Number.isFinite)) { why = `bone ${P.S.bones[b]} not finite`; break; }
+          const dot = (u, v) => u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+          const err = Math.max(Math.abs(dot(R0, R0) - 1), Math.abs(dot(R1, R1) - 1), Math.abs(dot(R2, R2) - 1), Math.abs(dot(R0, R1)), Math.abs(dot(R0, R2)), Math.abs(dot(R1, R2)));
+          if (err > 0.03) { why = `bone ${P.S.bones[b]} not rigid (${err.toFixed(3)})`; break; }
+          const J = B.bindJ[b], p = [dot(R0, J) + T[0], dot(R1, J) + T[1], dot(R2, J) + T[2]];
+          if (Math.hypot(p[0], p[2]) > 2.5 || p[1] < -0.5 || p[1] > 3) why = `bone ${P.S.bones[b]} joint at ${p.map((v) => v.toFixed(2)).join(',')}`;
+        }
+        checked++;
+        if (why) { cnt.pose++; const e = { t: performance.now() | 0, skel: P.S.name, row, why, ...info }; bad.push(e); if (bad.length > 50) bad.shift(); console.warn('[crowd] POSE CHECK', JSON.stringify(e)); }
+      }
+    }
+    r.setRenderTarget(prevRT);
+    // the draw side: each drawn instance's row belongs to the walker drawn there
+    for (const [bn, sets] of this.sets) {
+      const P = this.passes[this.A.bodies[bn].skeleton];
+      for (const x of sets.main) for (let k = 0; k < x.k; k++) {
+        const row = x.attrs.aRow.array[k], info = P.rowInfo && P.rowInfo[row];
+        if (!(row < P.rows) || !info || info.i !== x.src[k] || info.body !== bn) {
+          const e = { t: performance.now() | 0, set: x.name, k, row, rows: P.rows, owner: info || null, src: x.src[k], why: 'instance row not this walker\'s' };
+          cnt.draw++; bad.push(e); if (bad.length > 50) bad.shift(); console.warn('[crowd] POSE CHECK', JSON.stringify(e));
+        }
+      }
+    }
+    this.stats.checked = (this.stats.checked || 0) + checked;
+  }
+  // the sit2 look-dev scene: seats fitted and placed once (the walkers' variants set first), the furniture added to the scene
+  _showSet(sh) {
+    const L = sh.set, st = this.st;
+    if (!sh.M || sh.M.length !== L.seats.length * 16) { sh.M = new Float32Array(L.seats.length * 16); sh.C = new Float32Array(L.seats.length * 3); L.seats.forEach((_, k) => sh.C.set(SHOW_TOPS[k % SHOW_TOPS.length], k * 3)); sh.list = L.seats.map((q) => q.v); }
+    L.seats.forEach((q, k) => {
+      if (st.variant[k] !== q.v) { st.variant[k] = q.v; st.clipA[k] = -1; st.fit[k] = 1; st.armPose[k] = 0; }
+      st.seed[k] = (q.v + 0.5) / this.A.variants.length; st.phase[k] = k * 0.37; st.speed[k] = 0; st.amp[k] = 0; st.gait[k] = 0; st.pose[k] = q.pose;
+    });
+    if (!L.placed) {
+      L.placed = true;
+      L.fits = [];
+      L.seats.forEach((q, k) => {
+        const fit = this.fitSeat(k, q.seatH, q.pose), so = fit || this.seatOf(k, q.pose);
+        L.fits.push({ k, v: q.v, pose: q.pose, fit: !!fit, so });
+        const d = [Math.sin(q.yaw), Math.cos(q.yaw)], back = so ? so.back : 0.5;
+        // the origin (feet) back m in front of the seat point, along the heading
+        const x = sh.x + q.x + d[0] * back, z = sh.z + q.z + d[1] * back, c = Math.cos(q.yaw), si = Math.sin(q.yaw);
+        sh.M.set([c, 0, -si, 0, 0, 1, 0, 0, si, 0, c, 0, x, sh.y + 0.001, z, 1], k * 16);
+      });
+      window.__SIT2 = L.fits;
+      import('../city/bryantParkKit.js').then(({ chairGeo31, tableGeo31 }) => {
+        const mat = new THREE.MeshStandardMaterial({ color: 0x2f4a3a, roughness: 0.55, metalness: 0.4 });   // the park's green-painted steel
+        const add = (geo, x, z, yaw, y = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(sh.x + x, sh.y + y, sh.z + z); m.rotation.y = yaw; m.castShadow = m.receiveShadow = true; this.scene.add(m); };
+        const cg = chairGeo31(), tr = tableGeo31(false), ts = tableGeo31(true);
+        for (const q of L.seats) if (q.chair) add(cg, q.x, q.z, q.yaw);
+        for (const t of L.tables) add(t.square ? ts : tr, t.x, t.z, t.yaw || 0);
+        for (const b of L.benches) { const m = new THREE.Mesh(new THREE.BoxGeometry(b.len, 0.46, 0.45).translate(0, 0.23, 0), new THREE.MeshStandardMaterial({ color: 0x8c8a86, roughness: 0.85 })); m.position.set(sh.x + b.x, sh.y, sh.z + b.z); m.rotation.y = b.yaw; m.castShadow = m.receiveShadow = true; this.scene.add(m); }
+        console.log('[crowd] sit2 furniture placed', L.seats.length, 'seats, fits', JSON.stringify(L.fits.map((x) => [x.v, x.pose, x.fit, x.so && x.so.up])));
+      }).catch((e) => console.warn('[crowd] sit2 furniture failed', e?.message || e));
+    }
+  }
+  // per-walker height: NYC adult means with a +-4 % spread, from the body's own bind height; keyed by the walker's seed
+  // (setAnim carries it), not its slot, so a walker moved to another slot keeps its height
   _heightScale(V, B, i) {
     const key = V.age === 'child' ? 'child' : V.gender;
-    const target = TARGET_H[key] * (0.96 + 0.08 * hash(i, 3));
+    const target = TARGET_H[key] * (0.96 + 0.08 * hash(Math.floor(this.st.seed[i] * 1e6), 3));
     const h = B.height * (V.scale || 1);
     return Math.max(0.7, Math.min(1.1, target / h));
   }

@@ -6,8 +6,33 @@ import { applySnowCap } from '../world/materials.js';
 import { buildPedMesh } from './pedmesh.js';
 import { spawnGuard } from './spawnGuard.js';
 import { COLLIDERS } from '../city/colliders.js';
-import { tpPromenades } from '../city/tsqPlaza.js';
-import { bpPromenades } from '../city/bryantPark.js';
+// the kit that walkers walk round and that is never a building: the campus kit (city/campus.js) and, KIT31, the plaza and
+// park furniture (city/tsqPlaza.js TF31, city/bryantPark.js), registered under 'kit31'. One array, rebuilt when either grows.
+let _kitArr = null, _kitN = -1;
+// VS31 (owner 2026-09-28: "make sure they maintain some space and follow crowd standards"): walkers passing each other
+// kept 0.62 m centre to centre, a hand's breadth between shoulders (probe, 30 s round 125th & Lenox: 1.5 % of moving
+// walkers had another within 0.5 m, 8.9 % within 0.7 m). Strangers now pass 0.78 m apart where the pavement has the
+// width (companions keep 0.62; a tight pavement still falls back to 0.5 as before). `?vs31=0` restores.
+const VS31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('vs31') === '0');
+// SW31 (owner 2026-09-28 on Bryant Park and Times Square: "no sitting people on chairs"): people seated on the plazas'
+// chairs and benches (city/tsqPlaza.js tpSeats, city/bryantPark.js bpSeats), drawn with the crowd rig's seated clips
+// (sim/crowd.js SIT31 contract: setPose, seatOf). Which seats are taken is a hash of where they are, so the same people
+// sit in the same places on every run and every pass of the camera; a table's chairs are taken together or not at all.
+// Taken seats within SEAT_R of the camera are filled nearest first, up to SEAT_MAX people, a far one given up for a
+// nearer one; a seated person leaves past SEAT_R + 30 m, and never in view of a recording. Each is placed with the feet
+// on the floor in front of the seat (seatOf().back), on a body whose seat height fits the chair within 2 cm where one
+// does; walkers go round the knees as round a fixed thing. `?sw31=0` leaves the seats empty.
+const SW31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sw31') === '0');
+const SEAT_R = 110, SEAT_MAX = 170;
+function kitColliders() {
+  const a = COLLIDERS.byTile.get('campus'), b = COLLIDERS.byTile.get('kit31');
+  const n = (a ? a.length : 0) + (b ? b.length : 0);
+  if (!n) return null;
+  if (n !== _kitN) { _kitArr = b && b.length ? (a ? a.concat(b) : b.slice()) : a; _kitN = n; }
+  return _kitArr;
+}
+import { tpPromenades, tpSeats } from '../city/tsqPlaza.js';
+import { bpPromenades, bpSeats } from '../city/bryantPark.js';
 
 const PED_NEAR = typeof location !== 'undefined' && new URLSearchParams(location.search).has('pednear');
 // PY25 (owner 2026-09-25: "pedestrians should never clip into vehicles etc."): path-aware car checks, crossers published
@@ -313,7 +338,7 @@ export class Peds {
   // surfaceAt() there walks sunk to the waist. Each flight tread and granite deck registers a collider prism flagged
   // `deck` (city/campus.js); the walker stands on the highest one under it. Fountain rims, walls, lamps: not decks.
   _campusTop(x, z, y) {
-    const reg = COLLIDERS.byTile.get('campus');
+    const reg = kitColliders();
     if (!reg || !reg.length) return y;
     const own = this._campusSet && this._campusSet.size === reg.length ? this._campusSet : (this._campusSet = new Set(reg));
     const g = COLLIDERS.grid.get(COLLIDERS._cell(x, z));
@@ -328,7 +353,7 @@ export class Peds {
   }
   // a kit obstacle standing on the walk (fountain basin, wall, monument, lamp, bench): the walkway is cut there, never walked through
   _campusBlocked(x, z, y) {
-    const reg = COLLIDERS.byTile.get('campus');
+    const reg = kitColliders();
     const g = reg && reg.length ? COLLIDERS.grid.get(COLLIDERS._cell(x, z)) : null;
     if (!g) return false;
     const own = this._campusSet && this._campusSet.size === reg.length ? this._campusSet : (this._campusSet = new Set(reg));
@@ -350,7 +375,7 @@ export class Peds {
   _inBuilding(x, z, y) {
     const g = COLLIDERS.grid.get(COLLIDERS._cell(x, z));
     if (!g) return false;
-    const reg = COLLIDERS.byTile.get('campus');
+    const reg = kitColliders();
     const own = reg && reg.length ? (this._campusSet && this._campusSet.size === reg.length ? this._campusSet : (this._campusSet = new Set(reg))) : null;
     for (const p of g) {
       if (p.deck || (own && own.has(p)) || p.y1 < y + 0.25 || p.y0 > y + 1.8) continue;
@@ -1131,7 +1156,7 @@ export class Peds {
 
     this.rig.timeRef.value += dt; // drives the shader walk cycle
     // maintain
-    if (this.peds.length - (this.apiCount || 0) < this.target && this.walkEdges.length > 20) {
+    if (this.peds.length - (this.apiCount || 0) - (this._seatedN || 0) < this.target && this.walkEdges.length > 20) {
       // sample edges NEAR the player (refreshed every 0.5 s): drawing from the whole
       // streamed world gave 2.6 % acceptance and 13 peds at t+30 s against a target
       // of 520, degrading as tiles streamed in (critic round 3)
@@ -1185,13 +1210,7 @@ export class Peds {
           if (LN25 && this._inBuilding(s.x - s.dirz * ob0 * l0, s.z + s.dirx * ob0 * l0, s.y)) continue;
         }
         // NYC outerwear palette: mostly dark neutrals, occasional color pop
-        const pr = Math.random();
-        const c = new THREE.Color();
-        if (pr < 0.4) c.setHSL(Math.random(), 0.04 + Math.random() * 0.08, 0.06 + Math.random() * 0.1);       // black/charcoal
-        else if (pr < 0.58) c.setHSL(0.6 + Math.random() * 0.08, 0.2 + Math.random() * 0.25, 0.13 + Math.random() * 0.12); // navy
-        else if (pr < 0.72) c.setHSL(0.07 + Math.random() * 0.06, 0.25 + Math.random() * 0.2, 0.2 + Math.random() * 0.15); // earth/olive
-        else if (pr < 0.86) c.setHSL(Math.random(), 0.03 + Math.random() * 0.05, 0.45 + Math.random() * 0.3);  // gray/white
-        else c.setHSL(Math.random(), 0.55 + Math.random() * 0.3, 0.3 + Math.random() * 0.25);                  // color pop
+        const c = this._outfitColor();
         // outfit bits: coat 45% / hoodie 22% (exclusive-ish), backpack 22%,
         // handbag 16%, phone-walker 15%, umbrella-carrier 35% (opens in rain)
         let mask = 0;
@@ -1231,10 +1250,12 @@ export class Peds {
         }
       }
     }
+    if (SW31 && this.rig.setPose && this.rig.seatOf) this._seatsUpdate(px, pz);   // SW31
     const crossers = [], crossV = [];
     for (let i = this.peds.length - 1; i >= 0; i--) {
       const p = this.peds[i];
       if (p.manual) continue;   // an API walker under apply_control() or a route: src/api/bridge.js places it
+      if (p.seat) { this._seatedPlace(p, dt); continue; }   // SW31: seated on a plaza's chair or bench
       // ---- mid-crossing: walk the straight crossing line (visibly ON the
       // crosswalk band) instead of teleport-hopping between sidewalk edges
       if (p.cross) {
@@ -1725,7 +1746,7 @@ export class Peds {
   // the campus kit's solids (lamps, benches, bins, low walls, plinths: collider prisms, not instancer pools) as oriented
   // boxes in the same grid: box-like prisms only (OBB area < 2.5 x the polygon's), the big irregular ones cut the walkways
   _obsAddCampus(G, L, px, pz) {
-    const reg = COLLIDERS.byTile.get('campus');
+    const reg = kitColliders();
     if (!reg) return;
     for (const pr of reg) {
       if (pr.deck || !pr.pts || pr.pts.length < 6) continue;
@@ -1784,7 +1805,10 @@ export class Peds {
           // exactly level (a companion spawned on its lead): the lower index counts as ahead, so exactly one of them waits
           const a = a0 !== 0 ? a0 : (q.idx ?? 0) < (p.idx ?? 0) ? -1e-4 : 1e-4;
           if (a < -0.35 || a > LA || b > 1.9 || b < -1.9 || Math.abs((q._y ?? y) - y) > 1.2) continue;
-          if (cur + b + 0.62 < Lmin || cur + b - 0.62 > Lmax) continue;
+          // SW31: a seated person's knees, gone round like the chair they sit on (never queued behind, never squeezed past)
+          if (q.seat) { if (!(cur + b + 0.55 < Lmin || cur + b - 0.55 > Lmax)) iv.push(cur + b - 0.55, cur + b + 0.55, Math.max(0, a - 0.3), 0, 2); continue; }
+          const sp = VS31 && q.buddy !== p && p.buddy !== q ? 0.78 : 0.62;   // VS31: a stranger's shoulder room
+          if (cur + b + sp < Lmin || cur + b - sp > Lmax) continue;
           const qa = (q._vx || 0) * fx + (q._vz || 0) * fz;          // its speed along my way
           const close = speed - qa;                                    // closing speed
           // someone ahead WALKING my way no slower than me: not in my way (unless I am on top of them). Two people standing
@@ -1797,7 +1821,7 @@ export class Peds {
           const still = Math.abs(qa) < 0.2 && (q._vx || 0) ** 2 + (q._vz || 0) ** 2 < 0.04;
           const facing = still && q.yaw !== undefined && Math.sin(q.yaw) * fx + Math.cos(q.yaw) * fz < -0.5;
           // (5: someone stopped for a while, not at a kerb: queued behind too, but given way to after 6 s)
-          iv.push(cur + b - 0.62, cur + b + 0.62, a, qa, qa < -0.25 || facing ? 1 : still ? (q.stand > 0 && !q.waiting ? 5 : 4) : 0);
+          iv.push(cur + b - sp, cur + b + sp, a, qa, qa < -0.25 || facing ? 1 : still ? (q.stand > 0 && !q.waiting ? 5 : 4) : 0);
         }
       }
     }
@@ -1876,6 +1900,13 @@ export class Peds {
     };
     tryL(want); tryL(cur); tryL(lo); tryL(hi);
     for (let k = 0; k < iv.length; k += 5) { tryL(iv[k] - 0.01); tryL(iv[k + 1] + 0.01); }
+    if (best === null && VS31) {
+      // VS31: no line with a stranger's full room: the old 0.62 m before the tight-pavement 0.5 m below (the first A/B
+      // went from 0.78 straight to 0.5 and doubled the walkers passing under 0.5 m, peds2), standing people included
+      for (let k = 0; k < iv.length; k += 5) if (iv[k + 4] <= 1 || iv[k + 4] >= 4) { const m = (iv[k] + iv[k + 1]) / 2; iv[k] = m - 0.62; iv[k + 1] = m + 0.62; }
+      tryL(want); tryL(cur); tryL(lo); tryL(hi);
+      for (let k = 0; k < iv.length; k += 5) { tryL(iv[k] - 0.01); tryL(iv[k + 1] + 0.01); }
+    }
     if (best === null) {
       // a tight pavement (tree guards facing a stoop run): people WALKING pass each other shoulder to shoulder, 0.5 m
       // apart centre to centre, rather than one of them walking into the ironwork (a standing row is queued behind)
@@ -1964,6 +1995,150 @@ export class Peds {
     } else if (p._x === undefined) { p._vx = 0; p._vz = 0; }
     p._x = x; p._y = y; p._z = z;
   }
+  // NYC outerwear palette: mostly dark neutrals, occasional color pop
+  _outfitColor() {
+    const pr = Math.random();
+    const c = new THREE.Color();
+    if (pr < 0.4) c.setHSL(Math.random(), 0.04 + Math.random() * 0.08, 0.06 + Math.random() * 0.1);       // black/charcoal
+    else if (pr < 0.58) c.setHSL(0.6 + Math.random() * 0.08, 0.2 + Math.random() * 0.25, 0.13 + Math.random() * 0.12); // navy
+    else if (pr < 0.72) c.setHSL(0.07 + Math.random() * 0.06, 0.25 + Math.random() * 0.2, 0.2 + Math.random() * 0.15); // earth/olive
+    else if (pr < 0.86) c.setHSL(Math.random(), 0.03 + Math.random() * 0.05, 0.45 + Math.random() * 0.3);  // gray/white
+    else c.setHSL(Math.random(), 0.55 + Math.random() * 0.3, 0.3 + Math.random() * 0.25);                  // color pop
+    return c;
+  }
+  // ---- SW31 seated people (see SW31 at the top). Every seat of both plazas as one list, rebuilt when either list grows:
+  // { x, y, z (the seat point on the floor plan, y the floor), yaw (the way a seated person faces), h (the seat's top
+  // above y), table (a chair at a table), kind, take (taken, by hash), h4 (a hash for the pose), key, ped }
+  _seatList() {
+    const A = tpSeats(), B = bpSeats(), n = A.length + B.length;
+    if (n === this._seatN) return this._seatL;
+    this._seatN = n;
+    const old = new Map();
+    if (this._seatL) for (const S of this._seatL) if (S.ped) old.set(S.key, S.ped);
+    const L = (this._seatL = []), G = new Map();
+    const hs = (x, z, k) => { const v = Math.sin(Math.round(x * 20) * 12.9898 + Math.round(z * 20) * 78.233 + k * 37.719) * 43758.5453; return v - Math.floor(v); };
+    // kind -> [share of the groups (or of the single seats) taken, share of a taken group's seats taken]: a bench place in
+    // three, half the cafe tables, a third of the chairs facing the lawn or the fountain
+    const RATE = { bench: [0.33, 1], chair: [0.55, 0.8], table1: [0.5, 1], table2: [0.5, 0.85], table3: [0.5, 0.8], table4: [0.5, 0.75],
+      duo: [0.45, 0.9], chess: [0.5, 1], lone: [0.4, 1], row: [0.35, 1], fountain: [0.3, 1] };
+    const put = (src, s, tp) => {
+      const kind = s.kind || 'chair', r = RATE[kind] || [0.35, 1], fx = Math.sin(s.yaw), fz = Math.cos(s.yaw);
+      // the seat point: 4 cm behind a chair's centre (people sit back on a seat); a bench place as listed (0.2 m in from its edge)
+      const back = kind === 'bench' ? 0 : 0.04;
+      const grouped = s.group !== undefined && s.group >= 0;
+      const gk = grouped ? (tp ? `t${Math.round((s.tx ?? s.x) * 10)},${Math.round((s.tz ?? s.z) * 10)}` : `b${s.group}`) : null;
+      let take;
+      if (gk) { let g = G.get(gk); if (g === undefined) G.set(gk, (g = hs(s.x, s.z, 1) < r[0])); take = g && hs(s.x, s.z, 2) < r[1]; }
+      else take = hs(s.x, s.z, 3) < r[0];
+      const key = `${src}${Math.round(s.x * 20)},${Math.round(s.z * 20)}`;
+      const S = { x: s.x - fx * back, y: s.y, z: s.z - fz * back, yaw: s.yaw, h: tp ? s.h : s.seat ?? 0.46, kind,
+        table: tp ? kind === 'chair' && grouped : /^table/.test(kind), take, h4: hs(s.x, s.z, 4), key, ped: null };
+      const pd = old.get(key);
+      if (pd && pd.seat) { S.ped = pd; pd.seat = S; }
+      L.push(S);
+    };
+    for (const s of A) put('t', s, true);
+    for (const s of B) put('b', s, false);
+    return L;
+  }
+  // the seated clip for a seat: at a table one of the rig's table poses where it publishes them (crowd.js sitPoses), else
+  // upright (1) or reclined (2) by the seat's hash
+  _seatPose(S) {
+    const P = this.rig.sitPoses, pick = (a, t) => (a && a.length ? a[Math.floor(t * a.length) % a.length] : 0);
+    if (S.table && P && P.table && P.table.length) return pick(P.table, S.h4);
+    if (P && P.bench && P.bench.length && S.kind === 'bench' && S.h4 < 0.3) return pick(P.bench, S.h4 / 0.3);
+    // one in five of the others on a phone (crowd.js SIT31 'phone': both hands, head down)
+    if (P && P.phone && P.phone.length && S.h4 > 0.8) return pick(P.phone, (S.h4 - 0.8) / 0.2);
+    return S.h4 < 0.45 ? 1 : 2;
+  }
+  _seatsUpdate(px, pz) {
+    if (((this._seatF = (this._seatF || 0) + 1) % 15) !== 1) return;
+    const L = this._seatList();
+    // who sits where (reset() and the API's setAmbient remove sitters along with the walkers)
+    let nS = 0;
+    for (const p of this.peds) if (p.seat) nS++;
+    if (L) for (const S of L) if (S.ped && (S.ped.seat !== S || this.peds[S.ped.idx] !== S.ped)) S.ped = null;
+    if (!L || !L.length) { this._seatedN = nS; return; }
+    const unseen = (S) => !(spawnGuard.on && spawnGuard.inView(S.x, S.y + 0.7, S.z, 1));
+    // leave: past SEAT_R + 30 m
+    for (let i = this.peds.length - 1; i >= 0; i--) {
+      const p = this.peds[i], S = p.seat;
+      if (S && (S.x - px) ** 2 + (S.z - pz) ** 2 > (SEAT_R + 30) ** 2 && unseen(S)) { S.ped = null; p.seat = null; this._remove(i); nS--; }
+    }
+    // take: the free taken seats in range, nearest first; at the budget, a seat 1.5x nearer than the farthest sitter (that
+    // one over 50 m out, unseen) takes its place
+    const want = [];
+    for (const S of L) if (S.take && !S.ped) { const d2 = (S.x - px) ** 2 + (S.z - pz) ** 2; if (d2 < SEAT_R * SEAT_R) want.push({ d2, S }); }
+    want.sort((a, b) => a.d2 - b.d2);
+    let n = 0;
+    for (const w of want) {
+      if (n >= 24 || this.peds.length >= this.cap) break;
+      if (!unseen(w.S)) continue;
+      if (nS >= SEAT_MAX) {
+        let fi = -1, fd = 0;
+        for (let i = 0; i < this.peds.length; i++) { const S = this.peds[i].seat; if (!S) continue; const d2 = (S.x - px) ** 2 + (S.z - pz) ** 2; if (d2 > fd && unseen(S)) { fd = d2; fi = i; } }
+        if (fi < 0 || fd < 2500 || fd < w.d2 * 2.25) break;
+        const q = this.peds[fi]; q.seat.ped = null; q.seat = null; this._remove(fi); nS--;
+      }
+      if (this._seatSpawn(w.S)) { nS++; n++; }
+    }
+    this._seatedN = nS;
+  }
+  // a seated person for seat S: a body whose seat height fits the seat (the nearest of up to 12 draws; none within 5 cm
+  // leaves the seat empty), placed with the feet on the floor in front of it and the difference split between the two
+  _seatSpawn(S) {
+    const idx = this.peds.length, pose = this._seatPose(S), phase = Math.random() * 10;
+    let best = null, skin = 0;
+    for (let t = 0; t < 12; t++) {
+      const sk = Math.random();
+      this.rig.setAnim(idx, phase, 0, 0, sk);
+      this.rig.setPose(idx, pose);
+      const so = (this.rig.fitSeat && this.rig.fitSeat(idx, S.h, pose)) || this.rig.seatOf(idx, pose);   // fitted where the rig can
+      if (!so) continue;
+      if (!best || Math.abs(so.up - S.h) < Math.abs(best.up - S.h)) { best = so; skin = sk; }
+      if (Math.abs(so.up - S.h) < 0.02) break;
+    }
+    if (!best || Math.abs(best.up - S.h) > 0.05) { this.rig.setPose(idx, 0); return false; }
+    this.rig.setAnim(idx, phase, 0, 0, skin);
+    this.rig.setPose(idx, pose);
+    const so = (this.rig.fitSeat && this.rig.fitSeat(idx, S.h, pose)) || this.rig.seatOf(idx, pose) || best, fx = Math.sin(S.yaw), fz = Math.cos(S.yaw);
+    // a coat or a hoodie; no bag, pack, phone or umbrella on a seated person (the fitted props are posed for walking)
+    const o = Math.random(), mask = o < 0.45 ? 1 : o < 0.67 ? 2 : 0;
+    const c = this._outfitColor();
+    const ped = {
+      e: null, d: 0, dir: 1, v: 0, lat: 0, late: false, phase, idx, skin, build: 1, amp: 0,
+      mask, bagTone: Math.random(), umbTone: Math.random(),
+      stand: undefined, standFace: undefined, buddy: undefined,
+      latS: undefined, yaw: S.yaw, waiting: undefined, cross: undefined, pick: undefined, vf: undefined,
+      _x: undefined, _y: undefined, _z: undefined, _vx: undefined, _vz: undefined, _latA: undefined, _latV: undefined,
+      _vT: undefined, _vTh: undefined, _vBy: undefined, _sq: undefined, _avT: undefined, _bkT: undefined, _kerb: false,
+      _obsGen: undefined, _pgT: undefined, blockT: undefined, carHold: undefined, carHoldT: undefined, carT: undefined,
+      goT: undefined, pkT: undefined, redWait: undefined, waitT: undefined, color: undefined, _pwA: undefined, _pwS: undefined, _prK: undefined,
+      seat: S, pose,
+      fx: S.x + fx * so.back, fy: S.y + (S.h - so.up) * 0.5, fz: S.z + fz * so.back,   // the feet, on the floor in front of the seat
+      kx: S.x + fx * 0.3, kz: S.z + fz * 0.3,                                           // the knees (what walkers go round)
+    };
+    this.peds.push(ped);
+    S.ped = ped;
+    this.mesh.setColorAt(idx, c);
+    ped.color = c.clone();
+    this.mesh.instanceColor.needsUpdate = true;
+    this.rig.setStyle(idx, mask, ped.bagTone, ped.umbTone);
+    this.mesh.count = this.peds.length;
+    this._seatedPlace(ped, 0);
+    return true;
+  }
+  _seatedPlace(p, dt) {
+    this.rig.setAmp(p.idx, 0);
+    this.rig.setPose(p.idx, p.pose);
+    this._v.set(p.fx, p.fy, p.fz);
+    this._e.set(0, p.seat.yaw, 0);
+    this._q.setFromEuler(this._e);
+    this._s.set(1, 1, 1);
+    this._m.compose(this._v, this._q, this._s);
+    this.mesh.setMatrixAt(p.idx, this._m);
+    if (PY25) this._track(p, p.kx, p.fy, p.kz, dt);
+  }
   // Every walker gone; the next updates repopulate around the camera from the walk graph as it is NOW. The recorder
   // and the perception exporter call it (window.__PEDS_RESET) once the world has settled, before their warm-up.
   reset() {
@@ -1979,11 +2154,18 @@ export class Peds {
       const lp = this.peds[last];
       lp.idx = p.idx;
       this.peds[i] = lp;
+      // SB31: the moved walker's pose goes with it. Its new slot held the removed walker's matrix, and the per-walker loop
+      // (backwards) had already placed it this update, so it was drawn one frame where the removed one stood, 330 m out:
+      // a walker near the lens blinked out for a frame at every despawn. The rig's per-slot state follows it too (moveSlot).
+      this.mesh.instanceMatrix.array.copyWithin(lp.idx * 16, last * 16, last * 16 + 16);
+      this.rig.moveSlot?.(last, lp.idx);
       this.mesh.setColorAt(lp.idx, lp.color);
       this.mesh.instanceColor.needsUpdate = true;
       this.rig.setAnim(lp.idx, lp.phase, lp.v * 4.4, lp.amp || 1, lp.skin);
       this.rig.setStyle(lp.idx, lp.mask || 0, lp.bagTone || 0, lp.umbTone || 0);
+      this.rig.setPose?.(lp.idx, lp.seat ? lp.pose : 0);   // SW31
     }
+    this.rig.setPose?.(last, 0);   // SW31: the freed slot stands (the next walker spawned into it walks)
     this.peds.pop();
     this.mesh.count = this.peds.length;
     const m = new THREE.Matrix4().makeScale(0, 0, 0);

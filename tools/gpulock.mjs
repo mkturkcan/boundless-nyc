@@ -10,7 +10,7 @@ const LOCK = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace
 // (an old one simply ignores the queue and may still jump it).
 const QDIR = path.join(path.dirname(LOCK), 'gpu.queue');
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch (e) { return e.code !== 'ESRCH'; } };
-export async function acquireGpu(label = 'render', maxWaitMs = 40 * 60 * 1000) {
+export async function acquireGpu(label = 'render', maxWaitMs = Number(process.env.GPU_WAIT_MS) || 40 * 60 * 1000) {   // GPU_WAIT_MS: a longer wait for a queued job behind a long queue
   const t0 = Date.now();
   let ticket = null;
   const enqueue = () => { try { fs.mkdirSync(QDIR, { recursive: true }); ticket = path.join(QDIR, `${String(Date.now()).padStart(14, '0')}-${process.pid}`); fs.writeFileSync(ticket, label); } catch { ticket = null; } };

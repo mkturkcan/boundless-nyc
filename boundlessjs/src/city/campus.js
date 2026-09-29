@@ -46,6 +46,10 @@ for (const m of [GRANITE, STONE, BRONZE, ALMABRONZE, MARBLE, DARKMETAL, GREENPOS
 // simplified by tools/assets/alma_mater.mjs (61k triangles, the capture's photo texture). The capture is metric (its
 // throne is 1.68 m wide against the 1.7 m published); its underside stood on uneven steps, so it is cut level and seated
 // on a granite plinth. The faceted model stays until the scan has loaded. `?am30=0` restores it.
+// AL31 (owner 2026-09-29: "slightly tilted towards back and has an unnecessary square raise around it"): the capture's
+// up was 5.6 deg off the vertical (tools/assets/alma_tilt.mjs, from her base's treads and risers), which is also what
+// made its underside look uneven; the scan is now levelled and cut where its base meets the landing, and stands on the
+// landing on its own stepped pedestal, without the plinth or the faceted model's apron slab.
 const AM30 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('am30') === '0');
 let _almaScan = null;   // one load for the campus
 const almaScan = () => _almaScan || (_almaScan = (async () => {
@@ -993,11 +997,11 @@ export async function buildCampus(scene) {
     G.position.set(x, y, z); G.rotation.y = faceWalk;
     if (AM30) {
       almaScan().then((scan) => {
-        // AM30: the scan (cut level 0.25 m over her base) on a granite plinth a little wider than its lowest block
-        const plinth = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.26, 2.5), GRANITE);
-        plinth.position.set(0, 0.13, -0.05); plinth.castShadow = true; plinth.receiveShadow = true;
+        // AM30: the scan's own stepped base straight on the landing (AL31: levelled, cut where it meets the landing; the
+        // group stands on the faceted model's 0.16 m apron, which the scan does not have)
         for (const m of [mGr, mMb, mBz]) if (m) m.visible = false;
-        G.add(plinth, scan.clone());
+        const s = scan.clone(); s.position.y = -0.16;
+        G.add(s);
       }).catch((e) => console.warn('[campus] Alma Mater scan unavailable; the faceted model stays', e));
     }
     addPrism(AM30 ? rectPts(x, z, 1.25, 1.35, faceWalk) : rectPts(x, z, 2.0, 1.7, faceWalk), y, y + 4.9);
@@ -1135,7 +1139,8 @@ export async function buildCampus(scene) {
       // packing crate under her)
       const p = relPt(0.35, 0);
       const ly = yApron + 2 * (yTop - yApron) / 3;
-      granite.add(p[0], ly + 0.08, p[1], 4.7, 0.16, 4.1, yawAxis);
+      // (AM30: the scan's own pedestal stands on the landing; the apron is the faceted model's alone)
+      if (!AM30) granite.add(p[0], ly + 0.08, p[1], 4.7, 0.16, 4.1, yawAxis);
       uniq.add(almaMater(p[0], ly + 0.16, p[1]));
     }
     else if (m.name === "Scholars' Lion") uniq.add(lion(x, y, z, faceWalk + Math.PI / 2));

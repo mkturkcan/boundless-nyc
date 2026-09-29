@@ -22,7 +22,8 @@ import * as THREE from 'three';
 import { ENV } from '../world/materials.js';
 import { Instancer } from '../city/instancer.js';
 import { sweepOut } from '../core/shadowSweep.js';   // SV29
-import { synthSitClips, ARM_SLOTS, TABLE31 } from './crowdSit.js';   // SIT31
+import { synthSitClips, ARM_SLOTS, TABLE31, sitKeyW } from './crowdSit.js';   // SIT31, SIT32
+import { makeCrowdProps } from './crowdProps.js';   // SIT32
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const BASE = 'models/peds24/';
@@ -39,6 +40,12 @@ const CROWD_AB = QS.get('crowdab') === '1';
 // seated clips synthesized at load for the GEN2 skeleton from an idle frame (crowdSit.js synthSitClips), and per walker
 // its own arms as override rows (the bake). `?sit31=0` leaves them out and st.pose is ignored.
 const SIT31 = QS.get('sit31') !== '0';
+// SIT32 (owner 2026-09-29, after teaser 3 and film 14: "fix the seated people poses more for people with tables in front of
+// them etc. need more details"): six more table loops with motion (talking, eating, reading, a laptop, leaning back with
+// an arm over the chair, legs crossed) and a sip for the cup pose, each body's second arm pose blended in on the loop's
+// schedule (crowdSit.js sitKeyW); props in the hands and on the top (crowdProps.js); gaze toward a point or another
+// walker (setGaze / setLookAt), shared over the upper spine, neck and head. `?sit32=0` restores SIT31's seven poses.
+const SIT32 = SIT31 && QS.get('sit32') !== '0';
 const FADE_SIT = 0.9;                                // standing <-> seated blend, seconds (the hips travel ~0.5 m)
 // ?crowdcheck=N: every N frames, the pose rows read back and every drawn walker's bone matrices checked (Crowd._checkPose)
 const CROWD_CHECK = Number(QS.get('crowdcheck') || 0);
@@ -56,13 +63,14 @@ const CROWD_CHECK = Number(QS.get('crowdcheck') || 0);
 // points up to 0.58 m away, so a shoulder at the frame edge can still show a cut while it dithers. `?nf31=0` draws
 // walkers as before.
 const NF31 = QS.get('nf31') !== '0';
+const NF32 = NF31 && QS.get('nf32') !== '0';   // NF32: carried backpacks and bags in the near-fade volume (`?nf32=0`: the NF31 volume)
 const NF_W = 0.08;
 // LD31: the LOD distance was the HORIZONTAL distance from the lens, so from an aerial lens every walker and seated
 // person in a wide circle below it drew at LOD0 (the park worker measured Bryant Park's seated people at up to +14.4 M
 // triangles and +364 draws in the t2Aerial view, 46-56 m up). It is the 3D distance to the walker's middle (0.9 m over
 // its feet) now. `?ld31=0` restores the horizontal distance; window.__CROWD.lod3d switches it live.
 const LD31 = QS.get('ld31') !== '0';
-const INST_W = 11;                                   // instance data texels per pose row (see SKIN_VERT_PARS; 10 = SIT31 arm rows)
+const INST_W = 12;                                   // instance data texels per pose row (see SKIN_VERT_PARS; 10 = SIT31 arm rows and SIT32 key weights, 11 = SIT32 gaze)
 // NYC adult heights (hair-top, shoes on): CARLA's bodies stand 1.80-1.86 m, taller than the street; scale to these
 const TARGET_H = { m: 1.77, f: 1.65, child: 1.22 };
 
@@ -186,7 +194,7 @@ export async function loadCrowd(renderer) {
     if (SIT31 && S.name === 'gen2') {
       try {
         const bake = sitBakeP ? await sitBakeP : null;
-        const t1 = performance.now(), r = synthSitClips(S, null, bake);
+        const t1 = performance.now(), r = synthSitClips(S, null, bake, { sit32: SIT32 });
         let nb = 0;
         if (bake && bake.bodies) for (const B of S.bodies) { const e = bake.bodies[B.name]; if (e) { B.sitBake = e; nb++; } }
         S.sitScales = bake ? bake.scales : null;
@@ -238,7 +246,8 @@ void main() {
   vec4 iA = texelFetch(uInst, ivec2(0, inst), 0);   // rowA, framesA, timeA, weightB
   vec4 iB = texelFetch(uInst, ivec2(1, inst), 0);   // rowB, framesB, timeB, body
   vec4 iC = texelFetch(uInst, ivec2(2, inst), 0);   // hips scale for clip A, clip B (body hips / clip hips)
-  vec4 iD = texelFetch(uInst, ivec2(10, inst), 0);   // SIT31: this walker's arm row + 1 (0 none) for clip A, clip B
+  vec4 iD = texelFetch(uInst, ivec2(10, inst), 0);   // SIT31: this walker's arm row + 1 (0 none) for clip A, clip B; SIT32: their key-1 weights (< 0: none)
+  vec4 iE = texelFetch(uInst, ivec2(11, inst), 0);   // SIT32: gaze yaw, pitch (walker frame, radians)
   int armA = int(iD.x + 0.5) - 1, armB = int(iD.y + 0.5) - 1;
   int body = int(iB.w + 0.5);
   int chain[24];
@@ -257,10 +266,19 @@ void main() {
     vec4 la = va > 0.5 ? qa : rR, lb = vb > 0.5 ? qb : rR;
     int sl = uArmSlot[bb];
     if (sl >= 0) {   // w = 2 marks a slot that keeps the clip's rotation
-      if (armA >= 0) { vec4 ov = texelFetch(uArm, ivec2(sl, armA), 0); if (ov.w < 1.5) la = ov; }
-      if (armB >= 0) { vec4 ov = texelFetch(uArm, ivec2(sl, armB), 0); if (ov.w < 1.5) lb = ov; }
+      // SIT32: a row with a key 1 (the next row) blends the two by the loop's weight; a w = 2 slot stands for the clip's
+      if (armA >= 0) { vec4 ov = texelFetch(uArm, ivec2(sl, armA), 0); if (iD.z >= 0.0) { vec4 ov1 = texelFetch(uArm, ivec2(sl, armA + 1), 0); la = nl(ov.w < 1.5 ? ov : la, ov1.w < 1.5 ? ov1 : la, iD.z); } else if (ov.w < 1.5) la = ov; }
+      if (armB >= 0) { vec4 ov = texelFetch(uArm, ivec2(sl, armB), 0); if (iD.w >= 0.0) { vec4 ov1 = texelFetch(uArm, ivec2(sl, armB + 1), 0); lb = nl(ov.w < 1.5 ? ov : lb, ov1.w < 1.5 ? ov1 : lb, iD.w); } else if (ov.w < 1.5) lb = ov; }
     }
     vec4 lq = nl(la, lb, iA.w);
+    // SIT32 GAZE: a turn about the walker's vertical and a nod about its lateral axis, in its model frame, shared out as
+    // upper spine 20 / neck 35 / head 45 % of the yaw and neck 40 / head 60 % of the pitch (sl 8-10: ARM_SLOTS spine01,
+    // neck, head); each bone's share is put on top of its parent's global rotation, so the head ends up turned by all of it
+    if (sl >= 8 && (iE.x != 0.0 || iE.y != 0.0)) {
+      float gy = iE.x * (sl == 8 ? 0.2 : sl == 9 ? 0.35 : 0.45), gp = iE.y * (sl == 8 ? 0.0 : sl == 9 ? 0.4 : 0.6);
+      vec4 R = qmul(vec4(0.0, sin(0.5 * gy), 0.0, cos(0.5 * gy)), vec4(sin(-0.5 * gp), 0.0, 0.0, cos(-0.5 * gp)));
+      lq = normalize(qmul(qmul(vec4(-gq.xyz, gq.w), R), qmul(gq, lq)));
+    }
     vec3 lt = rT.xyz;
     if (bb == uHips) {
       vec3 ha = va > 0.5 ? ta * iC.x : rT.xyz, hb = vb > 0.5 ? tb * iC.y : ha;
@@ -879,24 +897,47 @@ const SHOES = [[0.04, 0.04, 0.045], [0.75, 0.75, 0.74], [0.18, 0.12, 0.08], [0.3
 // showroom outerwear (linear): the sim's NYC mix — black, navy, brown, grey, red, olive, off-white, dark navy
 const SHOW_TOPS = [[0.02, 0.02, 0.025], [0.03, 0.04, 0.08], [0.12, 0.09, 0.06], [0.35, 0.35, 0.36], [0.25, 0.03, 0.03], [0.05, 0.07, 0.04], [0.6, 0.6, 0.58], [0.015, 0.02, 0.04]];
 
+// column-major 4x4 helpers (SIT32 props): the inverse of a rigid matrix, a product, an nlerp of two quaternions into dst
+function invRigid4(m) {
+  const r = [m[0], m[1], m[2], m[4], m[5], m[6], m[8], m[9], m[10]], t = [m[12], m[13], m[14]];
+  return [r[0], r[3], r[6], 0, r[1], r[4], r[7], 0, r[2], r[5], r[8], 0, -(r[0] * t[0] + r[1] * t[1] + r[2] * t[2]), -(r[3] * t[0] + r[4] * t[1] + r[5] * t[2]), -(r[6] * t[0] + r[7] * t[1] + r[8] * t[2]), 1];
+}
+function mul4(a, b, o) { for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) o[c * 4 + r] = a[r] * b[c * 4] + a[4 + r] * b[c * 4 + 1] + a[8 + r] * b[c * 4 + 2] + a[12 + r] * b[c * 4 + 3]; return o; }
+function nlerpInto(D, o, A, ia, B, ib, t) {
+  const sg = A[ia] * B[ib] + A[ia + 1] * B[ib + 1] + A[ia + 2] * B[ib + 2] + A[ia + 3] * B[ib + 3] < 0 ? -1 : 1;
+  const x = A[ia] + (sg * B[ib] - A[ia]) * t, y = A[ia + 1] + (sg * B[ib + 1] - A[ia + 1]) * t, z = A[ia + 2] + (sg * B[ib + 2] - A[ia + 2]) * t, w = A[ia + 3] + (sg * B[ib + 3] - A[ia + 3]) * t;
+  const l = Math.hypot(x, y, z, w) || 1;
+  D[o] = x / l; D[o + 1] = y / l; D[o + 2] = z / l; D[o + 3] = w / l;
+}
+
 // SIT2 look-dev layout (?crowdset=sit2), relative to the showroom anchor; yaw = the walker's heading (atan2(dx, dz))
 function sit2Layout() {
-  const V = [5, 24, 51, 60, 18, 29, 14, 73, 21, 42, 27, 35, 16, 55, 10, 67, 44, 30, 38];
+  const V = [5, 24, 51, 60, 18, 29, 14, 73, 21, 42, 27, 35, 16, 55, 10, 67, 44, 30, 38, 20, 33, 47, 61, 8];
   let vi = 0;
   const seats = [], tables = [], benches = [];
   const table = (x, z, n, square, poses, r = 0.62, a0 = 0) => {
+    const t = tables.length;
     tables.push({ x, z, square });
     for (let i = 0; i < n; i++) {
       const a = a0 + (i / n) * 2 * Math.PI, px = x + Math.sin(a) * r, pz = z + Math.cos(a) * r;
-      seats.push({ x: px, z: pz, yaw: Math.atan2(x - px, z - pz), pose: poses[i % poses.length], v: V[vi++ % V.length], seatH: 0.452, chair: true });
+      seats.push({ x: px, z: pz, yaw: Math.atan2(x - px, z - pz), pose: poses[i % poses.length], v: V[vi++ % V.length], seatH: 0.452, chair: true, table: t });
     }
   };
-  table(0, 0, 2, false, [3, 5], 0.62, Math.PI / 2);
-  table(3, 0, 4, true, [3, 4, 5, 6], 0.64, 0);
-  table(6, 0, 3, false, [3, 4, 5], 0.62, 0.3);
+  let bx = 10.5;
+  if (SIT32) {
+    table(0, 0, 2, false, [8, 8], 0.62, Math.PI / 2);        // two people talking
+    table(3, 0, 4, true, [9, 10, 5, 11], 0.64, 0);           // eating, reading, a sip, a laptop
+    table(6, 0, 3, false, [12, 13, 8], 0.62, 0.3);           // leaning back, legs crossed, talking
+    table(9, 0, 2, false, [3, 4], 0.62, Math.PI / 2);
+    bx = 12.5;
+  } else {
+    table(0, 0, 2, false, [3, 5], 0.62, Math.PI / 2);
+    table(3, 0, 4, true, [3, 4, 5, 6], 0.64, 0);
+    table(6, 0, 3, false, [3, 4, 5], 0.62, 0.3);
+  }
   for (let i = 0; i < 6; i++) seats.push({ x: -0.5 + i * 1.2, z: -3.2, yaw: 0, pose: 1 + (i % 2), v: V[vi++ % V.length], seatH: 0.452, chair: true });
-  benches.push({ x: 10.5, z: 0, len: 2.6, yaw: 0 });
-  [[-0.95, 7], [-0.3, 7], [0.35, 6], [1.0, 7]].forEach(([dx, p]) => seats.push({ x: 10.5 + dx, z: 0.02, yaw: 0, pose: p, v: V[vi++ % V.length], seatH: 0.46, chair: false }));
+  benches.push({ x: bx, z: 0, len: 2.6, yaw: 0 });
+  [[-0.95, 7], [-0.3, 7], [0.35, 6], [1.0, 7]].forEach(([dx, p]) => seats.push({ x: bx + dx, z: 0.02, yaw: 0, pose: p, v: V[vi++ % V.length], seatH: 0.46, chair: false }));
   return { seats, tables, benches, placed: false };
 }
 
@@ -913,7 +954,8 @@ export class Crowd {
     // per-slot state
     const f = (n = 1) => new Float32Array(cap * n);
     this.st = { phase: f(), speed: f(), amp: f(), seed: f(), gait: new Int16Array(cap).fill(-1), variant: new Int16Array(cap).fill(-1), clipA: new Int16Array(cap).fill(-1), tA: f(), clipB: new Int16Array(cap).fill(-1), tB: f(), w: f(), style: f(4), pace: f().fill(1), pose: new Int8Array(cap),
-      fit: f().fill(1), armPose: new Int8Array(cap), armPose2: new Int8Array(cap), armV: new Int16Array(cap).fill(-1), armS: f() };
+      fit: f().fill(1), armPose: new Int8Array(cap), armPose2: new Int8Array(cap), armV: new Int16Array(cap).fill(-1), armS: f(), armKW: f(),
+      gzMode: new Int8Array(cap), gzT: f(3), gzJ: new Int16Array(cap).fill(-1), gzY: f(), gzP: f(), gzTau: f().fill(0.5), gzSeed: f(), gzC: new Int16Array(cap * 3).fill(-1), gzCS: f(3), gzAt: f().fill(-1) };
     // variant weights: adults of both genders, a heavier build, children, rare police
     this.pool = [];
     for (let i = 0; i < assets.variants.length; i++) {
@@ -929,11 +971,12 @@ export class Crowd {
       const instData = new Float32Array(INST_W * MAXI * 4);
       const instTex = new THREE.DataTexture(instData, INST_W, MAXI, THREE.RGBAFormat, THREE.FloatType);
       instTex.needsUpdate = true;
-      // SIT31: two arm rows per walker slot (row 2i: its present seated pose, 2i + 1: the one it is blending out of)
+      // SIT31 / SIT32: three arm rows per walker slot (3i: its present seated pose, 3i + 1: that pose's key 1, 3i + 2: the
+      // one it is blending out of, frozen as it was shown)
       const NSL = ARM_SLOTS.length, sitOn = S.clips.some((c) => c.kind === 'sit');
-      const armData = new Float32Array(NSL * 4 * (sitOn ? 2 * cap : 1)).fill(0);
+      const armData = new Float32Array(NSL * 4 * (sitOn ? 3 * cap : 1)).fill(0);
       for (let k = 3; k < armData.length; k += 4) armData[k] = 2;
-      const armTex = new THREE.DataTexture(armData, sitOn ? NSL : 1, sitOn ? 2 * cap : 1, THREE.RGBAFormat, THREE.FloatType);
+      const armTex = new THREE.DataTexture(armData, sitOn ? NSL : 1, sitOn ? 3 * cap : 1, THREE.RGBAFormat, THREE.FloatType);
       armTex.needsUpdate = true;
       const armSlot = S.bones.map((n) => (sitOn ? ARM_SLOTS.indexOf(n) : -1));
       const mat = new THREE.RawShaderMaterial({
@@ -956,7 +999,7 @@ export class Crowd {
         matsX[k] = withLooks({ ...mats, ...lookMats(L0, arr, true), looks: null }, arr, true);
         skinUX[k] = { ...skinU, uHairA: { value: arr.hair || null } };
       }
-      this.passes[S.name] = { S, rt, instData, instTex, mat, quad, armData, armTex, sitOn, scene: new THREE.Scene().add(quad), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), rows: 0, mats, skinU, matsX, skinUX };
+      this.passes[S.name] = { S, rt, instData, instTex, mat, quad, armData, armTex, sitOn, pose, scene: new THREE.Scene().add(quad), cam: new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1), rows: 0, mats, skinU, matsX, skinUX };
     }
     // render sets per (body, LOD) main + shadow
     this.sets = new Map();
@@ -1002,9 +1045,15 @@ export class Crowd {
     this.look = PL31 ? 1 : 0;
     this.nearFade = NF31;   // NF31 A/B: a harness may switch it on a frozen frame (window.__CROWD.nearFade)
     this.lod3d = LD31;      // LD31 A/B, the same way (window.__CROWD.lod3d)
+    this.sit32 = SIT32;     // SIT32 A/B on a frozen frame (window.__CROWD.sit32 = false: no props, key-1 blend or gaze)
     // SIT31 pose ids for the sim (sim/peds.js SW31 reads table and bench, and falls back to 1 / 2 without them)
     const haveSit = Object.values(assets.skel).some((S) => S.clips.some((c) => c.kind === 'sit' && c.sitPose >= 3));
-    this.sitPoses = haveSit ? { upright: [1], relaxed: [2], table: [3, 4, 5], bench: [7], phone: [6] } : { upright: [1], relaxed: [2], table: [], bench: [], phone: [] };
+    const ids = new Set(Object.values(assets.skel).flatMap((S) => S.clips.filter((c) => c.kind === 'sit').map((c) => c.sitPose)));
+    const only = (a) => a.filter((p) => ids.has(p));
+    // SIT32 adds six table loops (talk 8, eat 9, read 10, laptop 11, lean 12, cross 13) to table, and each by name
+    this.sitPoses = haveSit ? { upright: [1], relaxed: [2], table: only([3, 4, 5, 8, 9, 10, 11, 12, 13]), bench: [7], phone: [6], talk: only([8]), eat: only([9]), read: only([10]), laptop: only([11]), lean: only([12]), cross: only([13]) } : { upright: [1], relaxed: [2], table: [], bench: [], phone: [] };
+    // SIT32 props: one instanced mesh per kind, carried by the GEN2 pass's pose rows
+    this.props = SIT32 && this.passes.gen2 ? makeCrowdProps(scene, this.passes.gen2.pose) : null;
     if (typeof window !== 'undefined') window.__CROWD = this;   // look-dev / A/B harnesses (setLook, show, seatOf)
     this.clipsBy = {};
     for (const S of Object.values(assets.skel)) {
@@ -1030,9 +1079,11 @@ export class Crowd {
   setAnim(idx, phase, rate, amp, skin) {
     if (this.show) return;
     const s = this.st;
+    // SIT32: a new walker in this slot (another seed) starts with no gaze, whatever its variant
+    if (s.seed[idx] !== Math.fround(skin)) { s.gzMode[idx] = 0; s.gzY[idx] = 0; s.gzP[idx] = 0; }
     s.phase[idx] = phase; s.speed[idx] = rate / 4.4; s.amp[idx] = amp; s.seed[idx] = skin; s.pace[idx] = 1;
     const v = this.pool[Math.min(this.pool.length - 1, Math.floor(skin * this.pool.length))];
-    if (s.variant[idx] !== v) { s.variant[idx] = v; s.clipA[idx] = -1; s.clipB[idx] = -1; s.w[idx] = 0; s.fit[idx] = 1; s.armPose[idx] = 0; s.armPose2[idx] = 0; }
+    if (s.variant[idx] !== v) { s.variant[idx] = v; s.clipA[idx] = -1; s.clipB[idx] = -1; s.w[idx] = 0; s.fit[idx] = 1; s.armPose[idx] = 0; s.armPose2[idx] = 0; s.gzMode[idx] = 0; s.gzY[idx] = 0; s.gzP[idx] = 0; }
     // walk style: heavier builds walk heavyset, fast walkers hurry, the rest from the NYC mix
     const V = this.A.variants[v], hsd = hash(Math.floor(skin * 1e6), 5);
     // WS27: the heavyset walk on a fifth of heavy builds (was 40 %), the rushed walk on an eighth of fast walkers (was 30 %)
@@ -1055,9 +1106,56 @@ export class Crowd {
     const V = this.A.variants[vi], B = this.A.bodies[V.body], C = this.clipsBy[B.skeleton];
     const c = C && C.sit.find((x) => x.sitPose === (p | 0));
     if (!c || !c.seat || !c.seat[B.index]) return null;
+    // SIT32: legs crossed only where the body's thighs allow it: the bake measures the upper thigh in the lower one (crowd_sitqa
+    // legs metric: median 3.8 cm over the 66 adults, 11.6 on the heaviest); past 5 cm (10 of them) no seat for that pose, and
+    // sim/peds.js _seatSpawn draws another body
+    if (c.spec && c.spec.cross && B.sitBake && B.sitBake.legs && B.sitBake.legs[p | 0] > 0.05) return null;
     const k = (V.scale || 1) * this._heightScale(V, B, idx) * (this.st.fit[idx] || 1), r3 = (v) => +v.toFixed(3);
     const out = { up: r3(c.seat[B.index][0] * k), back: r3(c.seat[B.index][1] * k), feet: c.feet ? c.feet[B.index].map(([x, z]) => [r3(x * k), r3(z * k)]) : null };
     if (c.spec && c.spec.table) out.table = { h: TABLE31.h, edge: TABLE31.edge, elbow: TABLE31.elbow };
+    // SIT32: the crossed knee's top (h over the floor; fwd in front of the seat point and side, + the walker's left: the
+    // legs turn 40 deg aside so it clears the park's tables), the props the walker holds, and the items it puts on the top
+    // (side / fwd from the seat point, h over it like table.h)
+    if (c.knee && c.knee[B.index]) out.knee = { h: r3(c.knee[B.index][0] * k), fwd: r3(c.knee[B.index][1] * k), side: r3((c.knee[B.index][2] || 0) * k) };
+    const pr = SIT32 && B.sitBake && B.sitBake.props && B.sitBake.props[p | 0];
+    if (pr) {
+      const e = pr[Math.min(pr.length - 1, pr.length >> 1)];
+      out.props = e.filter((x) => x.b).map((x) => x.k);
+      out.items = e.filter((x) => !x.b).map((x) => ({ k: x.k, side: r3(x.m[12] * k), fwd: r3((x.m[14] + c.seat[B.index][1]) * k), h: r3(x.m[13] * k - out.up) }));
+    }
+    return out;
+  }
+  // SIT32 GAZE (sim/peds.js SW31 for table companions): walker idx turns its head and shoulders toward a world point, or
+  // toward walker j's head (followed as j moves), easing over tau s; clearGaze eases back to the clip's own head. The turn
+  // is limited to 72 deg either side and 20 deg up / 34 deg down of where the clip itself looks (crowdSit.js look0: a
+  // reader looks 38 deg down at its book, a talker 5 deg), shared over the upper spine, neck and head (the pose pass).
+  // setLookAt keeps to that walker (by its seed): moveSlot carries the gaze along when the walker changes slot, and once it
+  // is gone (despawned, its slot reused) the gaze eases back.
+  setGaze(idx, x, y, z, tau = 0.5) { const st = this.st; st.gzMode[idx] = 1; st.gzT[idx * 3] = x; st.gzT[idx * 3 + 1] = y; st.gzT[idx * 3 + 2] = z; st.gzTau[idx] = tau; }
+  setLookAt(idx, j, tau = 0.5) { const st = this.st; if (j === idx || !(j >= 0)) return this.clearGaze(idx); st.gzMode[idx] = 2; st.gzJ[idx] = j; st.gzSeed[idx] = st.seed[j]; st.gzTau[idx] = tau; }
+  clearGaze(idx, tau = 0.5) { this.st.gzMode[idx] = 0; this.st.gzTau[idx] = tau; }
+  // SIT32 TABLE GAZE: walkers ids share a table whose top's middle is (x, y, z), world metres. Each looks by turns at one of
+  // up to three companions, at the top, or where its own loop looks, holding each for 2.5-6 s (by its seed, so a replayed
+  // frame is the same) and turning over ~0.6 s: a talker mostly at a companion (80 %), a reader or a laptop user mostly at
+  // its own page or screen (70 %), the others 60 / 20 / 20. One call when the table fills (again when someone joins);
+  // clearGaze takes one walker out, and a companion that is gone drops out of the turns.
+  setTableGaze(ids, x, y, z) {
+    const st = this.st;
+    for (const i of ids) {
+      st.gzMode[i] = 3; st.gzTau[i] = 0.2;
+      st.gzT[i * 3] = x; st.gzT[i * 3 + 1] = y; st.gzT[i * 3 + 2] = z;
+      let m = 0;
+      for (const j of ids) if (j !== i && m < 3) { st.gzC[i * 3 + m] = j; st.gzCS[i * 3 + m] = st.seed[j]; m++; }
+      for (; m < 3; m++) st.gzC[i * 3 + m] = -1;
+    }
+  }
+  // the eye point of walker i in world metres (seated: 1.2 of its scale up and 0.3 behind its feet; standing: 1.6 up)
+  _eyeOf(i, Ms, out) {
+    const o = i * 16, st = this.st, vi = st.variant[i];
+    if (vi < 0) return null;
+    const V = this.A.variants[vi], B = this.A.bodies[V.body], k = (V.scale || 1) * this._heightScale(V, B, i) * (st.fit[i] || 1);
+    const fl = Math.hypot(Ms[o + 8], Ms[o + 10]) || 1, fx = Ms[o + 8] / fl, fz = Ms[o + 10] / fl, sat = st.pose[i] > 0;
+    out[0] = Ms[o + 12] + fx * (sat ? -0.3 * k : 0); out[1] = Ms[o + 13] + (sat ? 1.2 : 1.6) * k; out[2] = Ms[o + 14] + fz * (sat ? -0.3 * k : 0);
     return out;
   }
   // FIT: scale walker idx (within +-8 % of its own height) so its seat point in pose p lands at seatH over the floor, and
@@ -1076,45 +1174,61 @@ export class Crowd {
     const k = Math.min(1.08, Math.max(0.92, seatH / (up * s0)));
     if (Math.abs(up * s0 * k - seatH) > 0.01) { this.st.fit[idx] = 1; return null; }
     this.st.fit[idx] = k;
-    return this.seatOf(idx, p);
+    const so = this.seatOf(idx, p);   // null for a pose this body is not given (SIT32 legs crossed)
+    if (!so) this.st.fit[idx] = 1;
+    return so;
   }
   // peds.js _remove moves the LAST walker into a freed slot: carry every per-walker state with it (before its setAnim /
   // setStyle), so its clip, phase, fade, pose, fit and arms go on where they were
   moveSlot(from, to) {
     if (from === to) return;
     const st = this.st;
-    for (const k of ['phase', 'speed', 'amp', 'seed', 'gait', 'variant', 'clipA', 'tA', 'clipB', 'tB', 'w', 'pace', 'pose', 'fit', 'armPose', 'armPose2', 'armV', 'armS']) st[k][to] = st[k][from];
+    for (const k of ['phase', 'speed', 'amp', 'seed', 'gait', 'variant', 'clipA', 'tA', 'clipB', 'tB', 'w', 'pace', 'pose', 'fit', 'armPose', 'armPose2', 'armV', 'armS', 'armKW', 'gzMode', 'gzJ', 'gzY', 'gzP', 'gzTau', 'gzSeed', 'gzAt']) st[k][to] = st[k][from];
     st.style.copyWithin(to * 4, from * 4, from * 4 + 4);
+    st.gzT.copyWithin(to * 3, from * 3, from * 3 + 3);
+    // SIT32: a gaze on the walker moved follows it to its new slot (one on the walker removed from 'to' lets go by its seed)
+    for (let k = 0; k < this.cap; k++) if (st.gzMode[k] === 2 && st.gzJ[k] === from) st.gzJ[k] = to;
+    st.gzC.copyWithin(to * 3, from * 3, from * 3 + 3); st.gzCS.copyWithin(to * 3, from * 3, from * 3 + 3);
+    for (let k = 0; k < st.gzC.length; k++) if (st.gzC[k] === from) st.gzC[k] = to;
     for (const P of Object.values(this.passes)) {
       if (!P.sitOn) continue;
       const L = ARM_SLOTS.length * 4;
-      P.armData.copyWithin(2 * to * L, 2 * from * L, 2 * from * L + 2 * L);
+      P.armData.copyWithin(3 * to * L, 3 * from * L, 3 * from * L + 3 * L);
       P.armTex.needsUpdate = true;
     }
   }
-  // this walker's own arms for its seated pose, from the bake: rows 2i (the pose it sits in) and 2i + 1 (the one it blends
-  // out of); the table poses blend the bake's five scale samples by the walker's scale
+  // this walker's own arms for its seated pose, from the bake: row 3i (the pose it sits in), 3i + 1 (that pose's key 1,
+  // or key 0 again) and 3i + 2 (the pose it blends out of, as it was shown: its two keys at their last weight); the table
+  // poses blend the bake's five scale samples by the walker's scale
   _ensureArms(i, P, vi, B, pose, s) {
     const st = this.st, L = ARM_SLOTS.length * 4;
     if (st.armPose[i] === pose && st.armV[i] === vi && Math.abs(st.armS[i] - s) < 0.002) return;
     const e = B.sitBake, list = e && e.poses[pose];
     if (!list) return;
-    const D = P.armData, o = 2 * i * L;
-    if (st.armPose[i] && st.armPose[i] !== pose) { D.copyWithin(o + L, o, o + L); st.armPose2[i] = st.armPose[i]; }
-    let a = list[0], b = list[0], t = 0;
-    const SC = P.S.sitScales;
-    if (list.length > 1 && SC) {
-      const k = s / e.s0;
-      let j = 0; while (j < SC.length - 2 && k > SC[j + 1]) j++;
-      a = list[j]; b = list[j + 1]; t = Math.min(1, Math.max(0, (k - SC[j]) / (SC[j + 1] - SC[j])));
+    const D = P.armData, o = 3 * i * L;
+    if (st.armPose[i] && st.armPose[i] !== pose) {
+      for (let q = 0; q < L; q += 4) {
+        const a0 = o + q, a1 = o + L + q, dst = o + 2 * L + q;
+        if (D[a0 + 3] > 1.5 && D[a1 + 3] > 1.5) { D[dst] = D[dst + 1] = D[dst + 2] = 0; D[dst + 3] = 2; continue; }
+        const qa = D[a0 + 3] > 1.5 ? a1 : a0, qb = D[a1 + 3] > 1.5 ? a0 : a1;
+        nlerpInto(D, dst, D, qa, D, qb, st.armKW[i]);
+      }
+      st.armPose2[i] = st.armPose[i];
     }
-    for (let q = 0; q < L; q += 4) {
-      if (a[q + 3] > 1.5) { D[o + q] = 0; D[o + q + 1] = 0; D[o + q + 2] = 0; D[o + q + 3] = 2; continue; }
-      const sg = a[q] * b[q] + a[q + 1] * b[q + 1] + a[q + 2] * b[q + 2] + a[q + 3] * b[q + 3] < 0 ? -1 : 1;
-      let x = a[q] + (sg * b[q] - a[q]) * t, y = a[q + 1] + (sg * b[q + 1] - a[q + 1]) * t, z = a[q + 2] + (sg * b[q + 2] - a[q + 2]) * t, w = a[q + 3] + (sg * b[q + 3] - a[q + 3]) * t;
-      const l = Math.hypot(x, y, z, w) || 1;
-      D[o + q] = x / l; D[o + q + 1] = y / l; D[o + q + 2] = z / l; D[o + q + 3] = w / l;
-    }
+    const SC = P.S.sitScales, k = s / e.s0;
+    const put = (lst, dst) => {
+      let a = lst[0], b = lst[0], t = 0;
+      if (lst.length > 1 && SC) {
+        let j = 0; while (j < SC.length - 2 && k > SC[j + 1]) j++;
+        a = lst[j]; b = lst[j + 1]; t = Math.min(1, Math.max(0, (k - SC[j]) / (SC[j + 1] - SC[j])));
+      }
+      for (let q = 0; q < L; q += 4) {
+        if (a[q + 3] > 1.5) { D[dst + q] = 0; D[dst + q + 1] = 0; D[dst + q + 2] = 0; D[dst + q + 3] = 2; continue; }
+        nlerpInto(D, dst + q, a, q, b, q, t);
+      }
+    };
+    put(list, o);
+    put((e.keys1 && e.keys1[pose]) || list, o + L);
     st.armPose[i] = pose; st.armV[i] = vi; st.armS[i] = s;
     P.armTex.needsUpdate = true;
   }
@@ -1188,6 +1302,7 @@ export class Crowd {
   update(dt) {
     const t0 = performance.now();
     dt = Math.min(0.1, Math.max(0, dt || 0));
+    this._clock = (this._clock || 0) + dt;   // SIT32 table gaze turns
     const A = this.A, st = this.st, cam = this.engine.camera, r = this.engine.renderer;
     // PL31 hair: dither the alpha threshold per accumulated sample (record mode with ?accum), fixed in live frames
     CROWD_U.frame.value = this.engine.frames || 0;
@@ -1235,6 +1350,8 @@ export class Crowd {
     }
     for (const P of Object.values(this.passes)) P.rows = 0;
     for (const s of this.sets.values()) { for (const x of s.main) x.begin(); for (const x of s.shadow) x.begin(); }
+    if (this.props) this.props.begin();
+    const eye = this._eyeA || (this._eyeA = [0, 0, 0]), tgt = this._tgtA || (this._tgtA = [0, 0, 0]);
     const cx = cam.position.x, cy = cam.position.y, cz = cam.position.z, nearZ = cam.near || 0.4;
     const W = this._W, M = this._M, idc = [0, 0, 0];
     this.stats.visible = this.stats.shadow = this.stats.faded = 0; this.stats.lod[0] = this.stats.lod[1] = this.stats.lod[2] = 0;
@@ -1277,15 +1394,19 @@ export class Crowd {
       // NF31: how far the walker's surface is from the lens, in the walker's own frame (across, forward, up; its scale k):
       // the head a 0.125 m sphere (nose tip to the back of the hair) 1.62 k over the floor (seated 1.22 k and 0.3 k behind
       // the feet), the body a box 0.48 k across and 0.30 k deep with 0.08 k round edges from the shins to the shoulders
-      // (seated 0.60 k deep, knees to back, up to 1.05 k)
+      // (seated 0.60 k deep, knees to back, up to 1.05 k). NF32 (film 15's fStreetLife, frames 69-72: a backpack floating in
+      // front of the lens after its wearer had walked past it): what the walker carries counts too, a backpack deepening
+      // the box 0.35 k behind the back and a bag widening it 0.12 k at the side, so the pack fades with the body
       let fade = 0;
       if (this.nearFade) {
         const k = vScale, fl = Math.hypot(Ms[o + 8], Ms[o + 10]) || 1, fwx = Ms[o + 8] / fl, fwz = Ms[o + 10] / fl;
         const lx = cx - x, lz = cz - z, la = Math.abs(lx * fwz - lz * fwx), lf = lx * fwx + lz * fwz, ly = cy - y;
         const sat = pose > 0;
+        const pm = NF32 ? this._propMask(i, V, B) : 0, pack = (pm & 3) !== 0 && !sat, bag = (pm & 28) !== 0;
         const sdH = Math.hypot(la, lf - (sat ? -0.3 : 0.02) * k, ly - (sat ? 1.22 : 1.62) * k) - 0.125 * k;
         const r = 0.08 * k, y0 = 0.1 * k, y1 = (sat ? 1.05 : 1.45) * k;
-        const qx = Math.max(0, la - 0.24 * k + r), qz = Math.max(0, Math.abs(lf - (sat ? -0.25 : 0) * k) - (sat ? 0.3 : 0.15) * k + r);
+        const bc = sat ? -0.25 : pack ? -0.175 : 0, bh = sat ? 0.3 : pack ? 0.325 : 0.15;   // the box's forward centre and half depth
+        const qx = Math.max(0, la - (bag ? 0.36 : 0.24) * k + r), qz = Math.max(0, Math.abs(lf - bc * k) - bh * k + r);
         const sd = Math.min(sdH, Math.hypot(qx, qz, ly < y0 ? y0 - ly : ly > y1 ? ly - y1 : 0) - r);
         fade = Math.min(1, Math.max(0, (nearZ + NF_W - sd) / NF_W));
         if (fade >= 1) this.stats.faded++;
@@ -1304,10 +1425,51 @@ export class Crowd {
       let armA = -1, armB = -1;
       if (P.sitOn) {
         if (pose > 0 && B.sitBake) this._ensureArms(i, P, vi, B, pose, vScale);
-        armA = cA.sitPose ? (st.armPose[i] === cA.sitPose ? 2 * i : st.armPose2[i] === cA.sitPose ? 2 * i + 1 : -1) : -1;
-        armB = cB.sitPose ? (st.armPose[i] === cB.sitPose ? 2 * i : st.armPose2[i] === cB.sitPose ? 2 * i + 1 : -1) : -1;
+        armA = cA.sitPose ? (st.armPose[i] === cA.sitPose ? 3 * i : st.armPose2[i] === cA.sitPose ? 3 * i + 2 : -1) : -1;
+        armB = cB.sitPose ? (st.armPose[i] === cB.sitPose ? 3 * i : st.armPose2[i] === cB.sitPose ? 3 * i + 2 : -1) : -1;
       }
-      d[q + 40] = armA + 1; d[q + 41] = armB + 1; d[q + 42] = 0; d[q + 43] = 0;
+      // SIT32: the key-1 weight on the present pose's rows, from the clip's own loop time (so the shared clip's head beats
+      // and each walker's arms move together); -1 = rows without keys
+      const kwA = this.sit32 && armA === 3 * i && cA.spec && cA.spec.keys === 2 ? sitKeyW(cA.spec, (st.tA[i] % cA.frames) / cA.fps) : -1;
+      const kwB = this.sit32 && armB === 3 * i && cB.spec && cB.spec.keys === 2 ? sitKeyW(cB.spec, (st.tB[i] % cB.frames) / cB.fps) : -1;
+      if (kwA >= 0) st.armKW[i] = kwA;
+      d[q + 40] = armA + 1; d[q + 41] = armB + 1; d[q + 42] = kwA; d[q + 43] = kwB;
+      // SIT32 gaze: the target in the walker's frame, limited, eased. A walker out of view is not updated (its clip waits
+      // too): back in view, or after a cut, it starts at its present target instead of turning to it on camera
+      let gy = 0, gp = 0;
+      const gzGap = this._clock - st.gzAt[i];
+      st.gzAt[i] = this._clock;
+      if (this.sit32 && (st.gzMode[i] || st.gzY[i] || st.gzP[i])) {
+        let ty = 0, tp = 0;
+        let j = st.gzJ[i], mode = st.gzMode[i];
+        if (mode === 2 && !(j < n && st.seed[j] === st.gzSeed[i] && Ms[j * 16 + 5] !== 0)) st.gzMode[i] = mode = 0;   // its walker is gone
+        if (mode === 3 && !pose) st.gzMode[i] = mode = 0;   // up from the table: its turns end
+        if (mode === 3) {
+          // a table: this turn's target, from the walker's seed and the turn's number
+          const sd = Math.floor(st.seed[i] * 1e6), h0 = hash(sd, 43), len = 2.5 + 3.5 * h0, turn = Math.floor((this._clock + 13 * h0) / len), c = hash(sd + turn * 7919, 47);
+          const cand = this._gzCand || (this._gzCand = [0, 0, 0]);
+          let nc = 0;
+          for (let m = 0; m < 3; m++) { const jj = st.gzC[i * 3 + m]; if (jj >= 0 && jj < n && st.seed[jj] === st.gzCS[i * 3 + m] && Ms[jj * 16 + 5] !== 0) cand[nc++] = jj; }
+          const down = (cA.look0 || 0) < -0.35, pc = !nc ? 0 : cA.spec && cA.spec.arms === 'talk' ? 0.8 : down ? 0.3 : 0.6, pt = down ? 0 : 0.2;
+          if (c < pc) { mode = 2; j = cand[Math.min(nc - 1, Math.floor((c / pc) * nc))]; } else mode = c < pc + pt ? 1 : 0;
+        }
+        const t3 = mode === 1 ? [st.gzT[i * 3], st.gzT[i * 3 + 1], st.gzT[i * 3 + 2]] : mode === 2 ? this._eyeOf(j, Ms, tgt) : null;
+        if (t3 && this._eyeOf(i, Ms, eye)) {
+          const fl = Math.hypot(Ms[o + 8], Ms[o + 10]) || 1, fx = Ms[o + 8] / fl, fz = Ms[o + 10] / fl;
+          const dx = t3[0] - eye[0], dy = t3[1] - eye[1], dz = t3[2] - eye[2], lx = dx * fz - dz * fx, lz = dx * fx + dz * fz;
+          // the pitch against the clip's own (crowdSit.js look0: a reader already looks down at its book), through a crossfade
+          const p0 = (cA.look0 || 0) * (1 - st.w[i]) + (cB.look0 || 0) * st.w[i];
+          ty = Math.max(-1.25, Math.min(1.25, Math.atan2(lx, lz))); tp = Math.max(-0.6, Math.min(0.35, Math.atan2(dy, Math.hypot(lx, lz)) - p0));
+        }
+        const a = gzGap > 0.3 ? 1 : 1 - Math.exp(-dt / Math.max(0.05, st.gzTau[i]));
+        st.gzY[i] += (ty - st.gzY[i]) * a; st.gzP[i] += (tp - st.gzP[i]) * a;
+        if (!st.gzMode[i] && Math.abs(st.gzY[i]) < 1e-3 && Math.abs(st.gzP[i]) < 1e-3) st.gzY[i] = st.gzP[i] = 0;
+        // none on the chin-on-hand pose (the head rests on the hand); a bite or a sip takes the head to the hand, so the gaze
+        // gives way over the key's envelope
+        const gw = cA.spec && cA.spec.headSolve ? 0 : cA.spec && (cA.spec.arms === 'eat' || cA.spec.arms === 'cup') && kwA > 0 ? 1 - kwA : 1;
+        gy = st.gzY[i] * gw; gp = st.gzP[i] * gw;
+      }
+      d[q + 44] = gy; d[q + 45] = gp; d[q + 46] = 0; d[q + 47] = 0;
       // ---- instance matrix: position + yaw from the sim, uniform scale from the body (never the mannequin's squash)
       const yaw = Math.atan2(Ms[o + 8], Ms[o + 10]);
       const c0 = Math.cos(yaw) * vScale, s0 = Math.sin(yaw) * vScale;
@@ -1338,8 +1500,11 @@ export class Crowd {
       d.set(W.layers, q + 12);
       d.set(W.tint, q + 28);
       if (vis && fade < 1) { sets.main[li].push(M, row, idMode ? idc : null, i); this.stats.visible++; this.stats.lod[li]++; }
+      // SIT32 props: a seated walker's cup, wrap, book or paper, laptop, within 45 m of the lens
+      if (this.props && this.sit32 && pose > 0 && vis && fade < 1 && d2 < 2025 && !idMode && B.sitBake && B.sitBake.props && B.sitBake.props[pose]) this._pushProps(i, B, pose, vScale, M, row);
       if (shv) { sets.shadow[Math.max(1, li)].push(M, row, null); this.stats.shadow++; }
     }
+    if (this.props) { this.props.finish(); this.stats.props = this.props.count(); }
     for (const [bn, s] of this.sets) {
       const P = this.passes[this.A.bodies[bn].skeleton];
       const id = idMode ? P.mats.id : null;
@@ -1449,15 +1614,38 @@ export class Crowd {
         sh.M.set([c, 0, -si, 0, 0, 1, 0, 0, si, 0, c, 0, x, sh.y + 0.001, z, 1], k * 16);
       });
       window.__SIT2 = L.fits;
+      // SIT32 gaze: each table's sitters look by turns at each other, the top, or their own page (setTableGaze)
+      if (SIT32) L.tables.forEach((t, ti) => { const ids = []; L.seats.forEach((q, k) => { if (q.table === ti) ids.push(k); }); if (ids.length > 1) this.setTableGaze(ids, sh.x + t.x, sh.y + 0.73, sh.z + t.z); });
       import('../city/bryantParkKit.js').then(({ chairGeo31, tableGeo31 }) => {
         const mat = new THREE.MeshStandardMaterial({ color: 0x2f4a3a, roughness: 0.55, metalness: 0.4 });   // the park's green-painted steel
         const add = (geo, x, z, yaw, y = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(sh.x + x, sh.y + y, sh.z + z); m.rotation.y = yaw; m.castShadow = m.receiveShadow = true; this.scene.add(m); };
         const cg = chairGeo31(), tr = tableGeo31(false), ts = tableGeo31(true);
-        for (const q of L.seats) if (q.chair) add(cg, q.x, q.z, q.yaw);
+        // the chair's centre 4 cm in front of its seat point, as sim/peds.js seats people (and SIT32's lean pose assumes)
+        for (const q of L.seats) if (q.chair) add(cg, q.x + Math.sin(q.yaw) * 0.04, q.z + Math.cos(q.yaw) * 0.04, q.yaw);
         for (const t of L.tables) add(t.square ? ts : tr, t.x, t.z, t.yaw || 0);
         for (const b of L.benches) { const m = new THREE.Mesh(new THREE.BoxGeometry(b.len, 0.46, 0.45).translate(0, 0.23, 0), new THREE.MeshStandardMaterial({ color: 0x8c8a86, roughness: 0.85 })); m.position.set(sh.x + b.x, sh.y, sh.z + b.z); m.rotation.y = b.yaw; m.castShadow = m.receiveShadow = true; this.scene.add(m); }
         console.log('[crowd] sit2 furniture placed', L.seats.length, 'seats, fits', JSON.stringify(L.fits.map((x) => [x.v, x.pose, x.fit, x.so && x.so.up])));
       }).catch((e) => console.warn('[crowd] sit2 furniture failed', e?.message || e));
+    }
+  }
+  // SIT32: walker i's props for pose p from the bake's nearest scale sample: a hand prop rides its bone (its bind frame x
+  // the grip, so the pose row's skinning matrix carries it), a table item the walker's model frame; a book is one of three
+  // covers or a folded newspaper, by the walker's seed
+  _pushProps(i, B, p, vScale, M, row) {
+    const e = B.sitBake, list = e.props[p], SC = this.passes.gen2.S.sitScales;
+    let j = 0;
+    if (list.length > 1 && SC) { const k = vScale / e.s0; let bd = 1e9; SC.forEach((v, n) => { if (Math.abs(v - k) < bd) { bd = Math.abs(v - k); j = n; } }); }
+    const bones = this.passes.gen2.S.bones, h = hash(Math.floor(this.st.seed[i] * 1e6), 31);
+    for (const x of list[Math.min(j, list.length - 1)]) {
+      let kind = x.k, L = x.m, b = -1;
+      if (x.b) {
+        b = bones.indexOf(x.b);
+        const Bm = (B._bindM || (B._bindM = {}))[b] || (B._bindM[b] = invRigid4(B.ibm.slice(b * 16, b * 16 + 16)));
+        L = mul4(Bm, x.m, this._propL || (this._propL = new Array(16)));
+      }
+      if (kind === 'book') kind = h < 0.3 ? 'paper' : 'book' + Math.floor(h * 10) % 3;
+      this.props.push(kind, M, row, b, L);
+      if (kind === 'laptop') this.props.push('screen', M, row, b, L);
     }
   }
   // per-walker height: NYC adult means with a +-4 % spread, from the body's own bind height; keyed by the walker's seed

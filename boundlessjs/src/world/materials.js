@@ -679,6 +679,20 @@ export const RS30 = !(typeof location !== 'undefined' && new URLSearchParams(loc
 // on its brightest channel, its hue kept (inside 180 m of 45th St, easing out by 320 m; the rest of the city as before).
 // `?sg31=0` restores.
 export const SG31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sg31') === '0');
+// SF32 (coordinator 2026-09-29: "the storefront band under the screens is still blown white at night"). Measured on
+// bshot tsqPlaza at night (docs/notes/tsq-graphics.md SF32): the band IS the shop-glass emission below (SG31's line).
+// With it switched off in the page the band under the Lantern screen went from sRGB luma 162 / chroma 20 to 71 / 64,
+// the shop signs and the glass albedo changed it by 3; SG31's 0.85 cap cannot help because the emission is a near-grey
+// room (grey walls, cool fluorescent light) at 0.6-0.85 in all three channels over every lit bay, which the night
+// exposure lifts to a flat near-white. In the Square each glazed 4 m bay now shows what a Times Square window shows:
+// one of a backlit graphic wall in a strong colour, a screen behind the glass, figures against a lit display wall, or
+// an open view into a room whose goods take the bay's colour; the room behind at 35 %, a lit ceiling strip under the
+// transom, and the frame (mullions at the bay ends, a transom bar) dark. The features are glass-plane shapes of 0.1 m
+// and up, edged by their own footprint and converged to the bay's mean colour from ~0.12 m a pixel, so none of them can
+// shimmer. By day the same displays show at the day level; at night the glass albedo keeps 30 % of the room (the room's
+// own light is the emission, lighting it again as a diffuse surface counted it twice). Same zone as SG31 (180 m of
+// 45th St, easing out by 320 m). `?sf32=0` restores.
+export const SF32 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sf32') === '0');
 const STONE_SETS = {
   cgranite:   { mean: [0.3769, 0.2992, 0.1664], size: 2.17 },   // stone_wall_03: speckled, jointless (steps, walls, rims)
   climestone: { mean: [0.3772, 0.2890, 0.1764], size: 3.00 },   // sandstone_blocks_08: ashlar coursing (Low Library)
@@ -1815,9 +1829,70 @@ export function makeFacadeMaterial({ hideTex = null } = {}) {
                   shopMean *= prof * (0.72 + 0.56 * hash12(vec2(bayS * 5.1 + 3.0, cvar * 13.0)));
                 }` : ''}
                 room = mix(shopMean, room, detVisS);
+                ${SF32 ? `
+                // SF32: the Square's shop windows (the note at SF32's flag)
+                float sfA = 1.0;
+                {
+                  float sfT = 1.0 - smoothstep(180.0, 320.0, length(vWP.xz - vec2(-1215.0, 2820.0)));
+                  if (sfT > 0.0) {
+                    float sfU = u - bayS * 4.0, sfH = max(band - 0.55, 0.5);
+                    float sfY = clamp((v - 0.45) / sfH, 0.0, 1.0);            // 0 at the sill, 1 just under the fascia
+                    float sfW = max(fwidth(u), fwidth(v)) + 1e-4, sfEu = sfW * 1.2, sfEv = sfEu / sfH;
+                    float sfNear = smoothstep(0.45, 0.12, sfW);
+                    float sfK = hash12(vec2(bayS * 5.3 + 1.0, cvar * 17.0));
+                    float sfC = hash12(vec2(bayS * 2.9 + 7.0, cvar * 41.0)), sfC2 = fract(sfC + 0.37 + sfK * 0.25);
+                    vec3 sfHue = sfC < 0.125 ? vec3(0.95, 0.10, 0.08) : sfC < 0.25 ? vec3(0.90, 0.08, 0.50) : sfC < 0.375 ? vec3(1.0, 0.42, 0.04)
+                               : sfC < 0.5 ? vec3(1.0, 0.78, 0.08) : sfC < 0.625 ? vec3(0.08, 0.72, 0.28) : sfC < 0.75 ? vec3(0.04, 0.60, 0.92)
+                               : sfC < 0.875 ? vec3(0.12, 0.22, 0.95) : vec3(0.55, 0.14, 0.92);
+                    vec3 sfHue2 = sfC2 < 0.25 ? vec3(0.98, 0.30, 0.55) : sfC2 < 0.5 ? vec3(0.10, 0.85, 0.80) : sfC2 < 0.75 ? vec3(1.0, 0.62, 0.10) : vec3(0.35, 0.30, 1.0);
+                    #define SFB(x0, x1, y0, y1) (smoothstep((x0) - sfEu, (x0) + sfEu, sfU) * (1.0 - smoothstep((x1) - sfEu, (x1) + sfEu, sfU)) * smoothstep((y0) - sfEv, (y0) + sfEv, sfY) * (1.0 - smoothstep((y1) - sfEv, (y1) + sfEv, sfY)))
+                    // (levels: this is the ROOM term, which the shop-glass emission below takes at about 1.36x after dark and
+                    // SG31 holds at 0.85; the first pass put its colour fields at 0.8 with white stripes, blooms and a pale
+                    // display wall, and ACES took them to pastels (tf32/r2: a cyan field read sRGB 183 / 217 / 221))
+                    vec3 sfBase = room * 0.35;
+                    vec3 sfD = sfBase;
+                    float sfKind = floor(sfK * 4.0);
+                    if (sfKind < 1.0) {
+                      // a backlit graphic wall: the colour field, a band of the second colour across it, a pale wordmark bar
+                      float sfG = smoothstep(0.1, 0.0, abs(fract(sfU * 0.22 + sfY * 0.9 + sfK * 7.0) - 0.5) - 0.2);
+                      vec3 sfCol = mix(sfHue * 0.42, sfHue2 * 0.42, sfG * 0.55);
+                      sfCol = mix(sfCol, vec3(0.5, 0.48, 0.45), SFB(1.1, 2.9, 0.62, 0.7));
+                      sfD = mix(sfD, sfCol, SFB(0.35, 3.65, 0.16, 0.84));
+                    } else if (sfKind < 2.0) {
+                      // a screen behind the glass: two colours across it and a soft highlight
+                      vec2 sfQ = vec2((sfU - 0.3) / 3.4, (sfY - 0.22) / 0.64);
+                      vec3 sfCol = mix(sfHue, sfHue2, smoothstep(0.1, 0.9, sfQ.x * 0.7 + sfQ.y * 0.3)) * 0.45;
+                      sfCol += (sfHue2 * 0.3 + 0.08) * smoothstep(0.35, 0.0, length((sfQ - vec2(0.62, 0.55)) * vec2(1.6, 1.0)));
+                      sfD = mix(sfD, sfCol, SFB(0.3, 3.7, 0.22, 0.86));
+                    } else if (sfKind < 3.0) {
+                      // mannequins (legs, torso, head: 1.7 m on a 0.3 m platform) against a backlit wall of the second
+                      // colour, a band of the bay's colour over them
+                      float sfF = 0.0;
+                      for (int i = 0; i < 3; i++) {
+                        float cx = 0.8 + float(i) * 1.2 + (hash12(vec2(bayS * 3.0 + float(i), cvar * 9.0)) - 0.5) * 0.3;
+                        sfF = max(sfF, max(SFB(cx - 0.15, cx - 0.03, 0.08, 0.31), SFB(cx + 0.03, cx + 0.15, 0.08, 0.31)));
+                        sfF = max(sfF, SFB(cx - 0.19, cx + 0.19, 0.29, 0.5));
+                        sfF = max(sfF, smoothstep(0.1 + sfEu, 0.1 - sfEu, length(vec2(sfU - cx, (sfY - 0.555) * sfH))));
+                      }
+                      vec3 sfCol = mix(sfHue2 * 0.38, vec3(0.02), sfF * sfNear);
+                      sfCol = mix(sfCol, sfHue * 0.42, SFB(0.2, 3.8, 0.8, 0.88));
+                      sfD = mix(sfD, sfCol, SFB(0.2, 3.8, 0.05, 0.88));
+                    } else {
+                      // an open view into the room, its goods in the bay's colour
+                      sfD = mix(sfBase, sfBase * sfHue * 2.5, 0.6);
+                    }
+                    sfD = mix(sfD, vec3(0.5, 0.48, 0.43), SFB(-1.0, 5.0, 0.93, 0.97) * 0.8);    // the lit ceiling under the transom
+                    float sfFr = max(1.0 - SFB(0.07, 3.93, -1.0, 2.0), SFB(-1.0, 5.0, 0.895, 0.92));
+                    sfD = mix(sfD, vec3(0.012), sfFr);                                          // mullions and transom bar
+                    #undef SFB
+                    sfD = mix(mix(sfBase, sfHue * 0.35, 0.45), sfD, sfNear);                     // far: the bay's mean
+                    room = mix(room, sfD, sfT);
+                    sfA = mix(1.0, 0.3, sfT * night);
+                  }
+                }` : ''}
                 float filmS = 0.12 + dust0 * 0.2;
                 vec3 shopGlass = vec3(0.8, 0.83, 0.81);
-                albedo = mix(room * shopGlass, vec3(0.08, 0.09, 0.095), max(filmS, (1.0 - grazeS) * 0.75));
+                albedo = mix(room * shopGlass${SF32 ? ' * sfA' : ''}, vec3(0.08, 0.09, 0.095), max(filmS, (1.0 - grazeS) * 0.75));
                 ${SG31 ? `{
                   vec3 seS = room * shopGlass * glowS * 2.0 * (1.0 - filmS) * grazeS;
                   float tsqS = 1.0 - smoothstep(180.0, 320.0, length(vWP.xz - vec2(-1215.0, 2820.0)));   // SG31

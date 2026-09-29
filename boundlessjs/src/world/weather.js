@@ -10,6 +10,21 @@
 import * as THREE from 'three';
 import { ENV, FOG_SKY } from './materials.js';
 import { N11 } from './night11.js';   // N11 — night ambient (docs/notes/night-r11.md)
+const SR31W = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sr31') === '0');   // SR31: the night mirror floor
+// TD32 (owner 2026-09-29: "add daytime shots using proper references"): Times Square's plaza in shade read a dark navy,
+// sRGB (19, 48, 75) in the teaser's daytime takes, against the Commons photos' (138, 134, 137) in sun and (89, 105, 109)
+// in the dawn shade. The day rig (sky.js LB14) was calibrated on a six-storey Harlem canyon, where the open-sky IBL
+// (the scene environment, the shaded floor's main light: at envScale 0.3 the floor fell to (9, 24, 42)) and the warm
+// urban bounce split the fill as they do there. From the Square's floor most of the view is not sky but screens that run
+// as bright as the sky itself and sunlit glass and stone towers. So near 45th St by day the bounce carries 4x, the
+// environment 0.75x, and the exposure lifts 1.25x, fading out 250-450 m away and after dark; the rest of the city as
+// before. `?td32=0` restores.
+const TD32 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('td32') === '0');
+const tsqDayK = (engine, night) => {
+  if (!TD32 || !engine.camera) return 0;
+  const c = engine.camera.position, d = Math.hypot(c.x + 1215, c.z - 2820), t = Math.max(0, Math.min(1, (d - 250) / 200));
+  return (1 - t * t * (3 - 2 * t)) * (1 - Math.max(0, Math.min(1, night / 0.15)));
+};
 
 export const GFX = {
   // weather (a few scattered clouds by default — an empty gradient sky reads fake)
@@ -299,7 +314,8 @@ export function createWeather(scene, camera, engine) {
       const bncDim = Math.max(0.08, dim) * (1 - nB) + (1 + 0.22 * cl) * nB;
       // CL24: with real street lamps near the camera, the night street bounce keeps only the share they do not light
       // (world/cityLamps.js sets engine.lampBounceK from camera altitude; 1 when CL24 is off)
-      if (engine.bounce) engine.bounce.intensity = (engine.bounceBase ?? 0) * GFX.bounce * bncDim * (1 - 0.35 * pOn) * (1 + ((engine.lampBounceK ?? 1) - 1) * nB);
+      const td = tsqDayK(engine, ENV.night.value);   // TD32: Times Square by day (see TD32)
+      if (engine.bounce) engine.bounce.intensity = (engine.bounceBase ?? 0) * GFX.bounce * bncDim * (1 - 0.35 * pOn) * (1 + ((engine.lampBounceK ?? 1) - 1) * nB) * (1 + 3 * td);
       // CLEAN capture: PBR Neutral by DAY only (it matched the NYC street photos: deep sky, dark asphalt, true hue); golden,
       // dusk and night keep AgX, whose log curve lifts the shade those presets were exposed for — under Neutral the
       // golden College Walk plate fell to a third of its luma (film 7 probes, 2026-09-23). ENV.night: day 0, golden 0.05.
@@ -308,7 +324,7 @@ export function createWeather(scene, camera, engine) {
       if (engine.renderer.toneMapping !== tm[0]) engine.renderer.toneMapping = tm[0];
       engine.expoTarget = (GFX.autoExpoTarget ?? 0.20) * (engine.expoTargetK ?? 1);   // LB13: day-only
       const autoE = 1 + ((engine.autoExpo ?? 1) - 1) * GFX.autoExposure;
-      engine.renderer.toneMappingExposure = (engine.expoBase ?? 0.74) * (GFX.exposure / 0.74) * tm[1] * autoE;
+      engine.renderer.toneMappingExposure = (engine.expoBase ?? 0.74) * (GFX.exposure / 0.74) * tm[1] * autoE * (1 + 0.25 * td);
       engine.bloom.strength = (0.05 + ENV.night.value * 0.25) * GFX.bloomMul * (engine.bloomDayK ?? 1) + flash * 0.9;   // BL26 (engine.setBloom)
       ENV.fogDensity.value = baseFog * (GFX.fogDensity / 0.00011) * (1 + w * 2.2 + s * 3.0 + cl * 1.2);
       engine.grade.uniforms.uVig.value = G.vignette;
@@ -361,7 +377,11 @@ export function createWeather(scene, camera, engine) {
       // night floor.
       if (engine.ssr) {
         const nt = ENV.night.value;
-        const wetEff = Math.max(w, nt * 0.40);
+        // SR31 (owner 2026-09-29: "nighttime SSR needs to be weakened for these shots they look weird"): a dry night street
+        // mirrored the scene at 0.40 of a wet one, and under Times Square's screens its stone plaza read as a pond. The
+        // floor is 0.24 now, and within 250-450 m of 45th St a third of that (dry pavers, no oil film). Rain as before.
+        const tsqK = (() => { if (!SR31W) return 1; const c = engine.camera.position, d = Math.hypot(c.x + 1215, c.z - 2820); const t = Math.max(0, Math.min(1, (d - 250) / 200)); return 0.33 + 0.67 * t * t * (3 - 2 * t); })();
+        const wetEff = Math.max(w, nt * (SR31W ? 0.24 * tsqK : 0.40));
         const U = engine.ssr.uniforms;
         U.uStrength.value = GFX.ssr * wetEff;
         engine.ssr.enabled = U.uStrength.value > 0.004;   // PF25: a dry day road reflects nothing; skip the pass
@@ -384,7 +404,7 @@ export function createWeather(scene, camera, engine) {
         engine.ssgi.compUniforms.uStrength.value = GFX.gi * (engine.giK ?? 1);
         engine.ssgi.uniforms.uRad.value = GFX.giRad;
       }
-      if (engine.envBase != null) engine.scene.environmentIntensity = engine.envBase * GFX.envScale;
+      if (engine.envBase != null) engine.scene.environmentIntensity = engine.envBase * GFX.envScale * (1 - 0.25 * tsqDayK(engine, ENV.night.value));   // TD32
       engine.sun.shadow.radius = GFX.shadowSoft;
       engine.sun.shadow.intensity = GFX.shadowStrength ?? 1;
       engine.sun2.shadow.intensity = GFX.shadowStrength ?? 1;

@@ -59,6 +59,14 @@ class ScenePrePass extends Pass {
 // march in view space against the scene depth attached to the composer RTs.
 // Normals come from depth derivatives — exact for the planar ground that this
 // pass targets; walls/glass keep their env-probe reflections.
+// SR31 (owner 2026-09-29: "a lot of bugs in Times Square shots with SSR and SSR suddenly disappearing"): a reflection
+// ended in a step wherever its hit did. A screen's image on the plaza went out whole the frame its reflected ray left
+// the picture (a 6-8 % border fade), a hit found at the march's last steps (growing 1.14x) came and went as the camera
+// moved, a ray heading back toward the lens found nothing to hit, and the hit point snapped to the march's coarse
+// steps, so the image swam. Now the hit is refined by bisection, and its weight hands over to the miss fallback (the
+// sky) over the march's last five steps, the top quarter and the side eighths of the frame, and as the ray turns toward
+// the lens. `?sr31=0` restores.
+const SR31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sr31') === '0');
 class GroundSSRPass extends Pass {
   constructor(camera, depthTexture) {
     super();
@@ -127,10 +135,25 @@ class GroundSSRPass extends Pass {
             if (uv2.x < 0.0 || uv2.x > 1.0 || uv2.y < 0.0 || uv2.y > 1.0 || cp.w < 0.0) break;
             float sd = viewPos(uv2).z;
             if (sd >= q.z && sd - q.z < stepL * 2.4 + 0.9) {
-              float edge = smoothstep(0.0, 0.08, uv2.x) * smoothstep(1.0, 0.92, uv2.x)
-                         * smoothstep(0.0, 0.06, uv2.y) * smoothstep(1.0, 0.94, uv2.y);
-              refl = texture2D(tDiffuse, uv2).rgb;
-              hitW = edge;
+              ${SR31 ? `// SR31: bisect between the last miss and this hit; fade by the frame border, the march's end, the lens
+              vec3 qa = q - r * (stepL / 1.14), qb = q;
+              for (int j = 0; j < 5; j++) {
+                vec3 qm = 0.5 * (qa + qb);
+                vec4 cm = uProj * vec4(qm, 1.0);
+                vec2 um = cm.xy / cm.w * 0.5 + 0.5;
+                if (viewPos(um).z >= qm.z) qb = qm; else qa = qm;
+              }
+              vec4 cb = uProj * vec4(qb, 1.0);
+              uv2 = clamp(cb.xy / cb.w * 0.5 + 0.5, 0.0, 1.0);
+              float edge = smoothstep(0.0, 0.125, uv2.x) * smoothstep(1.0, 0.875, uv2.x)
+                         * smoothstep(0.0, 0.06, uv2.y) * smoothstep(1.0, 0.75, uv2.y);
+              edge *= 1.0 - smoothstep(20.0, 25.5, float(i));
+              edge *= 1.0 - smoothstep(-0.1, 0.35, r.z);` : `float edge = smoothstep(0.0, 0.08, uv2.x) * smoothstep(1.0, 0.92, uv2.x)
+                         * smoothstep(0.0, 0.06, uv2.y) * smoothstep(1.0, 0.94, uv2.y);`}
+              ${SR31 ? `// (a faded hit hands over to the miss fallback, the sky, not to a dry pixel)
+              refl = mix(refl, texture2D(tDiffuse, uv2).rgb, edge);
+              hitW = mix(hitW, 1.0, edge);` : `refl = texture2D(tDiffuse, uv2).rgb;
+              hitW = edge;`}
               break;
             }
           }
@@ -726,6 +749,35 @@ class TAAPass extends Pass {
 // the avenue either side at 4096 -> 7.3 cm/texel, which is what a 100 mm sill
 // needs in order to throw anything at all.
 const SHADOW_S = 150;
+// SC31 (owner 2026-09-29: "There is building/shadow pop in in the Bryant park shots in the background"): outside the
+// near cascade's box a point was shadowed only for the far map's share of the key (1 - shadowMix: 12 % at street level),
+// so a building's shadow on a facade 200 m out was all but absent, and wherever the box edge crossed a facade the shadow
+// stopped at a hard line. The box grows with the camera's height in 5 % steps (nearExtent), so a rising lens (t3Crane:
+// 1.8 -> 30 m over the lawn) moved that line across the background towers three times, a strip of shadow appearing at
+// each step (frames 33, 58, 84). The key sun now takes its shadow from the far map over the last 9 % of the near box and
+// beyond it: distant shadows at full strength, softer with the far map's texels, and no edge to pop. `?sc31=0` restores.
+const SC31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('sc31') === '0');
+if (SC31) {
+  const lf = THREE.ShaderChunk.lights_fragment_begin;
+  const line = 'directLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;';
+  if (lf.includes(line)) {
+    THREE.ShaderChunk.lights_fragment_begin = lf.replace(line, `#if ( UNROLLED_LOOP_INDEX == 0 ) && ( NUM_DIR_LIGHT_SHADOWS > 1 )
+		{
+			// SC31 (core/engine.js): light 0 is the key sun (near map), light 1 its far-cascade companion
+			float sc31N = getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowIntensity, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ i ] );
+			vec3 sc31C = vDirectionalShadowCoord[ i ].xyz / vDirectionalShadowCoord[ i ].w;
+			float sc31F = 1.0 - smoothstep( 0.0, 0.09, min( min( sc31C.x, 1.0 - sc31C.x ), min( sc31C.y, 1.0 - sc31C.y ) ) );
+			if ( sc31F > 0.0 ) {
+				DirectionalLightShadow sc31S = directionalLightShadows[ 1 ];
+				sc31N = mix( sc31N, getShadow( directionalShadowMap[ 1 ], sc31S.shadowMapSize, sc31S.shadowIntensity, sc31S.shadowBias, sc31S.shadowRadius, vDirectionalShadowCoord[ 1 ] ), sc31F );
+			}
+			directLight.color *= ( directLight.visible && receiveShadow ) ? sc31N : 1.0;
+		}
+		#else
+		${line}
+		#endif`);
+  } else console.warn('[sc31] three changed lights_fragment_begin; the cascades are not blended');
+}
 // PS29 (owner 2026-09-27: "Improve game performance without sacrificing visual quality"): the light probe rendered its six
 // cube faces in ONE frame, the whole scene six times (~3,500 draw calls at 125th & Lenox, ~90 ms of submission), every
 // 150 frames: a hitch every 2.5-5 s of play. One face a frame now, each at the capture's position; the SH lands five

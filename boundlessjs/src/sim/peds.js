@@ -2032,14 +2032,37 @@ export class Peds {
       else take = hs(s.x, s.z, 3) < r[0];
       const key = `${src}${Math.round(s.x * 20)},${Math.round(s.z * 20)}`;
       const S = { x: s.x - fx * back, y: s.y, z: s.z - fz * back, yaw: s.yaw, h: tp ? s.h : s.seat ?? 0.46, kind,
-        table: tp ? kind === 'chair' && grouped : /^table/.test(kind), take, h4: hs(s.x, s.z, 4), key, ped: null };
+        table: tp ? kind === 'chair' && grouped : /^table/.test(kind), take, h4: hs(s.x, s.z, 4), key, ped: null, gk,
+        tc: tp && s.tx !== undefined ? [s.tx, s.tz] : null };
       const pd = old.get(key);
       if (pd && pd.seat) { S.ped = pd; pd.seat = S; }
       L.push(S);
     };
     for (const s of A) put('t', s, true);
     for (const s of B) put('b', s, false);
+    // SIT32 gaze: every table group's centre (the top's middle is 0.73 m over the floor for both cafe sets)
+    const TG = (this._tableG = new Map());
+    for (const S of L) {
+      if (!S.table || !S.gk) continue;
+      let g = TG.get(S.gk);
+      if (!g) TG.set(S.gk, (g = { x: 0, z: 0, n: 0, y: S.y, tc: S.tc, sig: '' }));
+      g.x += S.x; g.z += S.z; g.n++;
+    }
+    for (const g of TG.values()) { if (g.tc) { g.x = g.tc[0]; g.z = g.tc[1]; } else { g.x /= g.n; g.z /= g.n; } }
     return L;
+  }
+  // SIT32 (sim/crowd.js setTableGaze): the people at one table look by turns at each other and at the top, re-told
+  // whenever who sits there changes (a slot moved by a despawn counts as a change)
+  _tableGaze(L) {
+    if (!this.rig.setTableGaze || !this._tableG) return;
+    const by = new Map();
+    for (const S of L) if (S.ped && S.table && S.gk) { let a = by.get(S.gk); if (!a) by.set(S.gk, (a = [])); a.push(S.ped.idx); }
+    for (const [gk, g] of this._tableG) {
+      const ids = by.get(gk), sig = ids && ids.length > 1 ? ids.slice().sort((p, q) => p - q).join(',') : '';
+      if (sig === g.sig) continue;
+      g.sig = sig;
+      if (sig) this.rig.setTableGaze(ids, g.x, g.y + 0.73, g.z);
+    }
   }
   // the seated clip for a seat: at a table one of the rig's table poses where it publishes them (crowd.js sitPoses), else
   // upright (1) or reclined (2) by the seat's hash
@@ -2083,6 +2106,7 @@ export class Peds {
       if (this._seatSpawn(w.S)) { nS++; n++; }
     }
     this._seatedN = nS;
+    this._tableGaze(L);
   }
   // a seated person for seat S: a body whose seat height fits the seat (the nearest of up to 12 draws; none within 5 cm
   // leaves the seat empty), placed with the feet on the floor in front of it and the difference split between the two

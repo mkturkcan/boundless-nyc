@@ -726,6 +726,17 @@ export function spillTick(scene, camera) {
   });
 }
 let _frameMat = null;
+// TF32 (owner 2026-09-29: "not enough details"; docs/notes/tsq-graphics.md TF32, references r12 and r15): 4 Times
+// Square's seven-storey cylindrical screen, the one Times Square shape every photograph of 43rd St has and ours did not
+// (its glass corner stood bare). The tower's rounded corner is tile -3_5 building 95's edges e9-e12, an arc of 8.3 m
+// radius round (-1243.5, 2976.5) turning 104 degrees from the Broadway face (e8, which carries a stack) to the 43rd St
+// face (e13). The screen follows it 0.9 m off the glass and runs on 6 m along 43rd St: a ticker band 9.2-13.0 m over
+// the pavement (the real one's foot band), the screen 13.5-46.0 m, each ONE TA31 quad strip whose u runs on round the
+// curve, so one ad wraps it. The stacks also get their maintenance catwalks: seven slats from the wall to 1.3 m out
+// under the lowest screen, a bracket and a rail post every 2.4 m, a top and a middle rail (r09, r13: the decks and
+// rails under the screens are what the frontages show from the pavement). `?tf32=0` leaves both out.
+const TF32 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tf32') === '0');
+const CYL32 = { c: [-1243.5, 2976.5], p: [-1251.5, 2974.6], r: 8.3, a0: -166.6 * Math.PI / 180, a1: -62.5 * Math.PI / 180, run: 6.0, y: [9.2, 13.0, 13.5, 46.0] };
 // TA31: the Square's screen stacks AND the district boards, built here into the tile's own group. The district boards
 // used to go through assemble.js poolStatic, whose pool keeps only position/normal/uv, and the TA31 quads carry their
 // class, playlist and size in two more attributes; one mesh per tile also frustum-culls, which the pool never did.
@@ -768,6 +779,49 @@ function buildTA(recs) {
     bar(fcx, yb + fw / 2, fcz, ux, uz, nx, nz, w + 2 * fw, fw, fd);
     for (const s of [-1, 1]) bar(fcx + ux * s * (hw + fw / 2), (ya + yb) / 2, fcz + uz * s * (hw + fw / 2), ux, uz, nx, nz, fw, yb - ya, fd);
   };
+  // TF32: a catwalk w long on the wall at (mx, mz), its deck at y
+  const catwalk = (mx, mz, nx, nz, ux, uz, w, y) => {
+    const D = 1.3, at = (a, o) => [mx + ux * a + nx * o, mz + uz * a + nz * o];
+    for (let k = 0; k < 7; k++) { const [x, z] = at(0, 0.1 + k * 0.19); bar(x, y, z, ux, uz, nx, nz, w, 0.05, 0.05); }
+    for (let a = -w / 2; a <= w / 2 + 1e-6; a += w / Math.max(1, Math.round(w / 2.4))) {
+      let [x, z] = at(a, D / 2); bar(x, y - 0.2, z, ux, uz, nx, nz, 0.05, 0.35, D);
+      [x, z] = at(a, D - 0.03); bar(x, y + 0.5, z, ux, uz, nx, nz, 0.045, 1.0, 0.045);
+    }
+    const [x, z] = at(0, D - 0.03);
+    bar(x, y + 1.0, z, ux, uz, nx, nz, w, 0.05, 0.05);
+    bar(x, y + 0.5, z, ux, uz, nx, nz, w, 0.03, 0.03);
+  };
+  // TF32: the cylindrical screen round building r's corner (CYL32)
+  const cylScreen = (r) => {
+    const [cx, cz] = CYL32.c, R = CYL32.r + 0.9, nA = 16, pts = [];
+    const pa = (a) => [cx + Math.cos(a) * R, cz + Math.sin(a) * R, Math.cos(a), Math.sin(a)];
+    // left to right as seen from the street: the 43rd St run's end, then round the arc to the Broadway face
+    const e1 = pa(CYL32.a1), tx = -Math.sin(CYL32.a1), tz = Math.cos(CYL32.a1);
+    pts.push([e1[0] + tx * CYL32.run, e1[1] + tz * CYL32.run, e1[2], e1[3]]);
+    for (let k = 0; k <= nA; k++) pts.push(pa(CYL32.a1 + ((CYL32.a0 - CYL32.a1) * k) / nA));
+    const sAt = [0];
+    for (let k = 1; k < pts.length; k++) sAt.push(sAt[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+    const W = sAt[sAt.length - 1], fw = 0.35, fd = 0.9 + 0.12, back = 0.9 - fd / 2;   // rims from the glass to the face
+    for (const [ya, yb, kind] of [[r.baseY + CYL32.y[0], r.baseY + CYL32.y[1], 'ticker'], [r.baseY + CYL32.y[2], r.baseY + CYL32.y[3], 'led']]) {
+      const q = taQuadData(W, yb - ya, kind, r.colorVar * 53 + (kind === 'ticker' ? 7 : 3)), [u0, v0, u1, v1] = q.uv;
+      for (let k = 0; k < pts.length - 1; k++) {
+        const A = pts[k], B = pts[k + 1], ua = u0 + ((u1 - u0) * sAt[k]) / W, ub = u0 + ((u1 - u0) * sAt[k + 1]) / W;
+        for (const p of [[A[0], ya, A[1]], [B[0], ya, B[1]], [B[0], yb, B[1]], [A[0], ya, A[1]], [B[0], yb, B[1]], [A[0], yb, A[1]]]) G.pos.push(...p);
+        G.uv.push(ua, v0, ub, v0, ub, v1, ua, v0, ub, v1, ua, v1);
+        for (let j = 0; j < 6; j++) { G.ad.push(...q.ad); G.sz.push(...q.sz); }
+        let nx = A[2] + B[2], nz = A[3] + B[3];
+        const nl = Math.hypot(nx, nz), sl = Math.hypot(B[0] - A[0], B[1] - A[1]);
+        nx /= nl; nz /= nl;
+        const bxm = (A[0] + B[0]) / 2 - nx * back, bzm = (A[1] + B[1]) / 2 - nz * back, bw = sl * (k ? (R - back) / R : 1) + 0.06;
+        bar(bxm, ya - fw / 2, bzm, nz, -nx, nx, nz, bw, fw, fd);
+        bar(bxm, yb + fw / 2, bzm, nz, -nx, nx, nz, bw, fw, fd);
+      }
+      for (const E of [pts[0], pts[pts.length - 1]]) bar(E[0] - E[2] * back, (ya + yb) / 2, E[1] - E[3] * back, E[3], -E[2], E[2], E[3], fw, yb - ya, fd);
+      const m = pts[Math.round(pts.length / 2)];
+      lights.push({ x: m[0], y: (ya + yb) / 2, z: m[1], nx: m[2], nz: m[3], w: W, h: yb - ya, gy: curGY, ad: q.ad, kind: kind === 'ticker' ? 'ticker' : 'screen', print: false });
+      if (kind === 'ticker') nTick++; else nScreens++;
+    }
+  };
   // ---- the bowtie's screen stacks (TS28 placement), each split to a shape a real screen has
   for (const r of recs) {
     if (r.height < 12) continue;
@@ -789,6 +843,7 @@ function buildTA(recs) {
       let pk = 0;                                     // this frontage's screens, in order: one player, consecutive cells
       const h = Math.abs(Math.sin((r.colorVar * 977 + i * 31.7) * 12.9898) * 43758.5453) % 1;
       const inset = 0.45, w = len - 2 * inset, ux = nz, uz = -nx;
+      if (TF32) catwalk(mx, mz, nx, nz, ux, uz, w + 0.3, y0 - 0.33);   // under the lowest frame (0.2-0.28 m deep)
       // a news / market ticker along the foot of a wide stack (the Square's zippers), then the screens above it
       if (w >= 18 && ((h * 13.7) % 1) < 0.5) {
         panel(mx, mz, nx, nz, ux, uz, w, y0, y0 + 2.1, 0.75, 'ticker', r.colorVar * 31 + i, 0.2);
@@ -812,6 +867,11 @@ function buildTA(recs) {
         }
       }
     }
+  }
+  if (TF32) for (const r of recs) {
+    if (r.height < 150 || !r.ring.some(([x, z]) => Math.hypot(x - CYL32.p[0], z - CYL32.p[1]) < 1.0)) continue;
+    curGY = r.baseY;
+    cylScreen(r);
   }
   // ---- the district boards (buildBillboards' placement, unchanged) on every wall the stacks did not take
   for (const r of recs) {

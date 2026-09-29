@@ -96,13 +96,51 @@ export const SIT_SPECS = [
   // (b) the right elbow on the table, chin on that hand; the left forearm flat on the table
   { id: 4, name: 'table_b', arms: 'chin', back: 0.34, pelvis: 0.08, spine: 0.17, chest: 0.12, neck: 0.1, head: 0.12, feet: [[0.07, 0.04], [0.07, -0.05]], breath: 0.5, look: 0, lookPh: 0, curl: [0.2, 1.1], table: true, headSolve: true },
   // (c) both hands round a cup, the forearms on the edge
-  { id: 5, name: 'table_c', arms: 'cup', back: 0.34, pelvis: 0.05, spine: 0.12, chest: 0.06, neck: -0.02, head: 0.08, feet: [[0.06, -0.04], [0.07, 0.03]], breath: 0.6, look: 0.04, lookPh: 0.7, curl: [0.85, 0.85], table: true },
+  { id: 5, name: 'table_c', arms: 'cup', back: 0.34, pelvis: 0.05, spine: 0.12, chest: 0.06, neck: -0.02, head: 0.08, feet: [[0.06, -0.04], [0.07, 0.03]], breath: 0.6, look: 0.04, lookPh: 0.7, curl: [0.85, 0.85], table: true, s32: { keys: 2, sched: [[3.0, 3.8, 4.7, 5.5]], beat: { head: -0.12 }, props: ['cup'] } },
   // (d) a phone in both hands at chest height, head down (the right hand carries the fitted phone prop)
   { id: 6, name: 'phone', arms: 'phone', back: 0.5, pelvis: -0.03, spine: 0.1, chest: 0.12, neck: 0.3, head: 0.22, feet: [[0.02, 0.05], [0.02, 0.01]], breath: 0.8, look: 0, lookPh: 0, curl: [0.35, 0.55] },
   // (e) bench: leaning forward, elbows on the knees, hands clasped
   { id: 7, name: 'bench', arms: 'knees', back: 0.52, pelvis: 0.24, spine: 0.34, chest: 0.24, neck: -0.42, head: -0.24, feet: [[0.07, 0.0], [0.07, 0.0]], breath: 0.7, look: 0.1, lookPh: 2.6, curl: [0.75, 0.75] },
+  // SIT32 (owner 2026-09-29: "fix the seated people poses more for people with tables in front of them etc. need more
+  // details"): six more table loops, each with motion in its 10 s loop. keys 2: a second arm pose every body is solved
+  // for (sit31_arms.json keys1), blended in over sched, each [in from, full at, full until, out by] in loop seconds;
+  // beat: head / neck pitch added over the same envelope (the head meets a bite, tips back for a sip); s32: what an older
+  // spec gains with SIT32 (?sit32=0 drops the v32 specs and every s32)
+  // (f) talking: forearms on the top, hands apart; twice a loop the right hand comes up open, the elbow staying down
+  { id: 8, name: 'talk', v32: true, arms: 'talk', back: 0.34, pelvis: 0.05, spine: 0.1, chest: 0.05, neck: -0.08, head: -0.03, feet: [[0.07, 0.03], [0.06, -0.05]], breath: 0.9, look: 0.07, lookPh: 0.9, curl: [0.3, 0.15], table: true, keys: 2, sched: [[1.2, 1.9, 3.3, 4.0], [6.3, 7.0, 7.8, 8.5]], beat: { head: -0.05, neck: -0.03 } },
+  // (g) eating: a wrap in the right hand, taken to the mouth for a bite twice a loop; the left forearm on the top
+  { id: 9, name: 'eat', v32: true, arms: 'eat', back: 0.34, pelvis: 0.06, spine: 0.12, chest: 0.06, neck: -0.06, head: 0.04, feet: [[0.07, 0.04], [0.07, -0.05]], breath: 0.7, look: 0.05, lookPh: 2.2, curl: [0.3, 0.9], table: true, keys: 2, sched: [[1.0, 1.7, 2.3, 3.0], [5.8, 6.5, 7.1, 7.8]], beat: { head: 0.1, neck: 0.04 }, props: ['wrap'] },
+  // (h) reading: both hands on an open book (or a folded paper) on the top, the head down, following the lines; the right
+  // hand turns a page once a loop
+  { id: 10, name: 'read', v32: true, arms: 'read', back: 0.34, pelvis: 0.07, spine: 0.14, chest: 0.08, neck: 0.12, head: 0.26, feet: [[0.07, 0.03], [0.06, -0.05]], breath: 0.6, look: 0, lookPh: 0, scan: 0.07, curl: [0.25, 0.25], table: true, keys: 2, sched: [[6.2, 6.8, 7.3, 7.9]], props: ['book'] },
+  // (i) a laptop on the top: typing (every finger on its own rhythm, in the shared clip) with both hands moving across
+  // the keys now and then
+  { id: 11, name: 'laptop', v32: true, arms: 'laptop', back: 0.34, pelvis: 0.06, spine: 0.12, chest: 0.06, neck: 0.06, head: 0.16, feet: [[0.07, 0.04], [0.06, -0.04]], breath: 0.6, look: 0.03, lookPh: 1.1, type: true, curl: [0.35, 0.35], table: true, keys: 2, sched: [[2.4, 2.9, 4.4, 4.9], [7.4, 7.9, 8.7, 9.2]], props: ['laptop'] },
+  // (j) leaning back, the right arm over the chair's back (the park's folding chair; Times Square's red chairs are the
+  // same model), the left forearm on the top
+  { id: 12, name: 'lean', v32: true, arms: 'lean', back: 0.4, pelvis: -0.05, spine: -0.05, chest: -0.02, neck: 0.1, head: 0.06, feet: [[0.06, 0.08], [0.05, 0.14]], breath: 1, look: 0.12, lookPh: 1.7, curl: [0.25, 0.45], table: true, noLeanIn: true },
+  // (k) legs crossed, the right knee over the left, pelvis and legs turned 40 deg to the walker's left so the crossed knee
+  // comes out beside the top (seatOf().knee), the chest turned back to the table; the left forearm on the top, the right
+  // hand on the crossed thigh
+  { id: 13, name: 'cross', v32: true, arms: 'cross', back: 0.38, pelvis: 0.02, spine: 0.06, chest: 0.03, neck: -0.05, head: 0.02, feet: [[0.05, 0.02], [0, 0]], cross: true, legYaw: 0.7, breath: 0.8, look: 0.1, lookPh: 2.9, curl: [0.25, 0.3], table: true },
 ];
 const FRAMES = 100, FPS = 10;
+export const SIT_LOOP = FRAMES / FPS;   // seconds
+const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+// SIT32: the key-1 weight of a seated clip's spec at loop time t (seconds): its sched envelopes, smoothstep in and out
+export function sitKeyW(sp, t) {
+  if (!sp || !sp.sched) return 0;
+  let w = 0;
+  for (const [a, b, c, d] of sp.sched) {
+    const v = t < a || t > d ? 0 : t < b ? ss((t - a) / (b - a)) : t <= c ? 1 : 1 - ss((t - c) / (d - c));
+    if (v > w) w = v;
+  }
+  return w;
+}
+// the specs a crowd builds: with SIT32 the v32 poses and every s32 addition, without it the SIT31 set as it was
+export function sitSpecs(sit32 = true) {
+  return SIT_SPECS.filter((sp) => sit32 || !sp.v32).map((sp) => (sit32 && sp.s32 ? { ...sp, ...sp.s32 } : sp));
+}
 // per-walker override slots (the pose pass: uArmSlot bone -> slot); a slot whose w is 2 keeps the clip's rotation
 export const ARM_SLOTS = ['crl_shoulder__L', 'crl_arm__L', 'crl_foreArm__L', 'crl_hand__L', 'crl_shoulder__R', 'crl_arm__R', 'crl_foreArm__R', 'crl_hand__R', 'crl_spine01__C', 'crl_neck__C', 'crl_Head__C'];
 
@@ -330,7 +368,7 @@ function skinMats(S, B, G, P) { const out = new Array(S.nb); for (let b = 0; b <
 // ---------------------------------------------------------------- shared clips
 // S: the crowd's skeleton record after loading (nb, bones, parents, hips, clips, clipData, bodies with refT / refR / hipsH /
 // index / ibm). Returns { data, clips, ref } — the clip data with the seated rows appended and their clip entries — or null.
-export function synthSitClips(S, outlines = null, armsBake = null) {
+export function synthSitClips(S, outlines = null, armsBake = null, opts = {}) {
   const nb = S.nb, W = nb * 8, D0 = S.clipData, R = rig(S);
   const RB = S.bodies.filter((B) => B.height > 1.5 && !B.set).sort((a, b) => (a.name < b.name ? -1 : 1))[0] || S.bodies[0];
   const base = S.clips.find((c) => c.name === 's_neutral_idle') || S.clips.find((c) => c.kind === 'idle' && c.age === 'adult');
@@ -342,7 +380,7 @@ export function synthSitClips(S, outlines = null, armsBake = null) {
   const ankZ = (ankStd[0][2] + ankStd[1][2]) / 2, hipX = (std.P[SD[0].th][0] + std.P[SD[1].th][0]) / 2;
   const hinge = hingeAxes(S, D0, RB, R);
   const clips = [], frames = [];
-  for (const sp of SIT_SPECS) {
+  for (const sp of sitSpecs(opts.sit32 !== false)) {
     const rows = [];
     // the reference arms are solved ONCE per pose (frame 0) and carried by every frame: a walker's own arms replace them
     // (the baked sit31_arms.json, per body), so they only show until those land. Solving them per frame had cost 13.6 s
@@ -361,26 +399,43 @@ export function synthSitClips(S, outlines = null, armsBake = null) {
         // fingers are the clip's (the bake overrides clavicles, arms, forearms, hands, upper spine, neck, head)
       }
       for (const [b, q] of armQ) if (b !== J.neck || sp.headSolve) pose.lq[b] = q.slice();
+      if (sp.type) typeFingers(S, R, pose, f);
       rows.push({ lq: pose.lq, hipT: pose.lt[J.hips].slice() });
     }
-    const kBody = new Float32Array(S.bodies.length), seat = new Array(S.bodies.length), feet = new Array(S.bodies.length);
+    // SIT32 gaze: the face's pitch in this loop (+ up), the mean over the frames with no beat on, from the reference body's
+    // head against its standing idle's. crowd.js aims a gaze relative to it: a reader (38 deg down) told to look at the
+    // table keeps its eyes on the book instead of tipping its head a further 34 deg
+    let look0 = 0, nl = 0;
+    for (let f = 0; f < FRAMES; f += 5) {
+      if (sp.sched && sitKeyW(sp, f / FPS) > 0) continue;
+      const d = Q.rot(Q.mul(fkOf(S, rows[f].lq, st0.lt).G[J.head], Q.inv(std.G[J.head])), [0, 0, 1]);
+      look0 += Math.atan2(d[1], Math.hypot(d[0], d[2])); nl++;
+    }
+    look0 = nl ? +(look0 / nl).toFixed(4) : 0;
+    const kBody = new Float32Array(S.bodies.length), seat = new Array(S.bodies.length), feet = new Array(S.bodies.length), knee = sp.cross ? new Array(S.bodies.length) : null;
     const toes = [S.bones.indexOf('crl_toeEnd__L'), S.bones.indexOf('crl_toeEnd__R')];
     for (const B of S.bodies) {
       const s0 = frameOf(S, D0, base, 0, B), P0 = fkOf(S, s0.lq, s0.lt);
-      const yStd = (P0.P[SD[0].an][1] + P0.P[SD[1].an][1]) / 2;
+      // the soles on the floor: both ankles at their standing height on average; legs crossed, the left one alone (the
+      // raised right ankle in the mean had set every crossed sitter 8-10 cm low, the left foot through the floor)
+      const an = sp.cross ? [SD[0].an] : [SD[0].an, SD[1].an], ay = (Q0) => an.reduce((a, b) => a + Q0.P[b][1], 0) / an.length;
+      const yStd = ay(P0);
       const lt = S.bones.map((_, b) => refT(B, b));
       const probe = (k) => { lt[S.hips] = V.mul(rows[0].hipT, k); return fkOf(S, rows[0].lq, lt); };
       const ya = probe(0), yb = probe(1);
-      const y0 = (ya.P[SD[0].an][1] + ya.P[SD[1].an][1]) / 2, y1 = (yb.P[SD[0].an][1] + yb.P[SD[1].an][1]) / 2;
+      const y0 = ay(ya), y1 = ay(yb);
       const k = Math.abs(y1 - y0) > 1e-4 ? (yStd - y0) / (y1 - y0) : B.hipsH / RB.hipsH;
       const Pk = probe(k), hm = V.mul(V.add(Pk.P[SD[0].th], Pk.P[SD[1].th]), 0.5);
       kBody[B.index] = k;
       seat[B.index] = [hm[1] - SEAT_DROP, -hm[2]];
       // each toe tip [x, z] relative to the seat point (model metres, +x the walker's left, +z forward)
       feet[B.index] = toes.map((t) => (t >= 0 ? [Pk.P[t][0] - hm[0], Pk.P[t][2] - hm[2]] : [0, 0]));
+      // the crossed knee's top (5 cm over its joint) over the floor, its distance in front of the seat point and to the side
+      // (+ the walker's left)
+      if (knee) { const K = Pk.P[SD[1].kn]; knee[B.index] = [K[1] + 0.05, K[2] - hm[2], K[0] - hm[0]]; }
     }
     frames.push(rows);
-    clips.push({ name: sp.name, skeleton: S.name, kind: 'sit', sitPose: sp.id, spec: sp, age: 'adult', hipsH: RB.hipsH, frames: FRAMES, fps: FPS, loop: true, speed: 0, synth: true, kBody, seat, feet });
+    clips.push({ name: sp.name, skeleton: S.name, kind: 'sit', sitPose: sp.id, spec: sp, age: 'adult', hipsH: RB.hipsH, frames: FRAMES, fps: FPS, loop: true, speed: 0, synth: true, kBody, seat, feet, knee, look0 });
   }
   const R0 = D0.length / W, data = new Float32Array(D0.length + clips.length * FRAMES * W);
   data.set(D0);
@@ -417,6 +472,25 @@ function mirroredClavicle(S, R, pose) {
   return Q.norm(Q.mul(Q.inv(P.G[S.parents[oL.clav]]), best.q));
 }
 
+// SIT32 typing: every finger of both hands flexes on its own rhythm (11 / 13 / 9 / 7 taps a loop), about the hand's own
+// curl axis, on top of the pose's fingers
+function typeFingers(S, R, pose, f) {
+  let P = fkOf(S, pose.lq, pose.lt);
+  R.SD.forEach((o, side) => {
+    const f0 = V.norm(V.sub(P.P[o.mid], P.P[o.wr]));
+    const n0 = V.perp(V.mul(V.norm(V.cross(f0, V.norm(V.sub(P.P[o.idx], P.P[o.pky])))), o.sgn), f0);
+    const axis = V.norm(V.cross(f0, n0));
+    o.fingers.forEach((fing, fi) => {
+      const d = 0.28 * Math.max(0, Math.sin(2 * Math.PI * ((f / FRAMES) * [11, 13, 9, 7][fi] + fi * 0.37 + side * 0.21))) ** 2;
+      for (let k = 0; k < 3; k++) {
+        const b = fing[k];
+        pose.lq[b] = Q.norm(Q.mul(Q.inv(P.G[S.parents[b]]), Q.norm(Q.mul(Q.axis(axis, d * (k === 0 ? 1 : 0.6)), P.G[b]))));
+        P = fkOf(S, pose.lq, pose.lt);
+      }
+    });
+  });
+}
+
 // the elbow's hinge axis in the upper-arm and forearm frames, from the walk's frames with the most bend (the relaxed
 // idle arm is nearly straight, so its cross product is noise)
 function hingeAxes(S, D, B, R) {
@@ -443,23 +517,48 @@ function torsoPose(S, R, st0, std, sp, th, ankStd, ankZ, hipX, B) {
   let P = fkOf(S, lq, lt);
   const setG = (b, Gn) => { lq[b] = Q.norm(Q.mul(Q.inv(P.G[S.parents[b]]), Gn)); P = fkOf(S, lq, lt); };
   const rx = (a) => Q.axis([1, 0, 0], a);
-  const Gp = Q.norm(Q.mul(rx(sp.pelvis), P.G[J.hips]));
+  // SIT32 legYaw (legs crossed): the pelvis and both legs turned toward the walker's left about the hips' middle, the lower
+  // and upper spine turning the chest back to the table half each. Facing the table square on, the crossed knee came 1-10 cm
+  // past the park tables' apron line (city/bryantParkKit.js tableGeo31: its bottom 0.645-0.655 m over the floor, 0.31-0.33 m
+  // in front of the seat point) with the thigh's top 2-9 cm into it; turned 30 deg it cleared the round table but not the
+  // square one on 39 of the 66 adults, turned 40 deg both (crowd_sitqa.mjs 'crossed knee'), and the crossed leg shows
+  // beside the top instead of under it
+  const ly = sp.legYaw || 0, Ry = Q.axis([0, 1, 0], ly), Ru = Q.axis([0, 1, 0], -0.5 * ly);
+  const Gp = Q.norm(Q.mul(Ry, Q.mul(rx(sp.pelvis), P.G[J.hips])));
   setG(J.hips, Gp);
   const mid = V.mul(V.add(refT(B, SD[0].th), refT(B, SD[1].th)), 0.5);
   const Pp = V.sub([hipX, HIP_Y, ankZ - sp.back], Q.rot(Gp, mid));
   lt[J.hips] = Q.rot(Q.inv(P.G[0]), V.sub(Pp, P.P[0]));
   P = fkOf(S, lq, lt);
   SD.forEach((o, s) => {
-    const H = P.P[o.th], A = V.add(ankStd[s], [o.sgn * sp.feet[s][0], 0, sp.feet[s][1]]);
-    const K = ik2(H, V.len(refT(B, o.kn)), V.len(refT(B, o.an)), A, [0, 0.35, 1]);
+    const H = P.P[o.th];
+    let A = V.add(ankStd[s], [o.sgn * sp.feet[s][0], 0, sp.feet[s][1]]);
+    if (ly) { const d = Q.rot(Ry, [A[0] - hipX, 0, A[2] - (ankZ - sp.back)]); A = [hipX + d[0], A[1], ankZ - sp.back + d[2]]; }
+    const K = ik2(H, V.len(refT(B, o.kn)), V.len(refT(B, o.an)), A, ly ? Q.rot(Ry, [0, 0.35, 1]) : [0, 0.35, 1]);
     setG(o.th, Q.norm(Q.mul(Q.from(V.norm(V.sub(P.P[o.kn], H)), V.norm(V.sub(K, H))), P.G[o.th])));
     setG(o.kn, Q.norm(Q.mul(Q.from(V.norm(V.sub(P.P[o.an], P.P[o.kn])), V.norm(V.sub(A, P.P[o.kn]))), P.G[o.kn])));
-    setG(o.an, std.G[o.an]);
+    setG(o.an, ly ? Q.norm(Q.mul(Ry, std.G[o.an])) : std.G[o.an]);
   });
-  if (sp.spine) setG(J.sp, Q.norm(Q.mul(rx(sp.spine), P.G[J.sp])));
-  setG(J.sp1, Q.norm(Q.mul(rx(sp.chest + 0.012 * sp.breath * Math.sin(3 * th)), P.G[J.sp1])));
-  if (sp.neck) setG(J.neck, Q.norm(Q.mul(rx(sp.neck), P.G[J.neck])));
-  setG(J.head, Q.norm(Q.mul(Q.mul(Q.axis([0, 1, 0], sp.look * Math.sin(th + sp.lookPh)), rx(sp.head + 0.03 * Math.min(1, sp.look * 10) * Math.sin(2 * th))), P.G[J.head])));
+  if (sp.cross) {
+    // SIT32: the right knee over the left, resting on the left thigh just behind its knee, the shin hanging down and
+    // forward outside the left shin, the foot relaxed, toes down. The thighs stacked 13.5 cm: at 11.5 the upper thigh sank
+    // 6.3 cm into the lower one on the heavy builds (crowd_sitqa crossed-thigh check); a thin build's knee then rests a
+    // little above its other thigh
+    const oR = SD[1], oL = SD[0], H = P.P[oR.th], KL = P.P[oL.kn];
+    const Kt = V.add(KL, Q.rot(Ry, [-0.03, 0.135, -0.06])), A = V.add(Kt, Q.rot(Ry, [0.06, -0.37, 0.12]));
+    const K = ik2(H, V.len(refT(B, oR.kn)), V.len(refT(B, oR.an)), A, V.sub(Kt, V.mul(V.add(H, A), 0.5)));
+    setG(oR.th, Q.norm(Q.mul(Q.from(V.norm(V.sub(P.P[oR.kn], H)), V.norm(V.sub(K, H))), P.G[oR.th])));
+    setG(oR.kn, Q.norm(Q.mul(Q.from(V.norm(V.sub(P.P[oR.an], P.P[oR.kn])), V.norm(V.sub(A, P.P[oR.kn]))), P.G[oR.kn])));
+    setG(oR.an, Q.norm(Q.mul(Ry, Q.mul(rx(0.45), std.G[oR.an]))));
+  }
+  // SIT32: the head's beat over the key envelope (a bite, a sip) and a reader's eyes following the lines
+  const tSec = (th / (2 * Math.PI)) * SIT_LOOP, beat = sp.beat ? sitKeyW(sp, tSec) : 0;
+  const bh = sp.beat ? (sp.beat.head || 0) * beat : 0, bn = sp.beat ? (sp.beat.neck || 0) * beat : 0;
+  const scan = sp.scan ? sp.scan * Math.sin((2 * Math.PI * 4 * tSec) / SIT_LOOP) : 0;
+  if (sp.spine || ly) setG(J.sp, Q.norm(Q.mul(Ru, Q.mul(rx(sp.spine || 0), P.G[J.sp]))));
+  setG(J.sp1, Q.norm(Q.mul(Ru, Q.mul(rx(sp.chest + 0.012 * sp.breath * Math.sin(3 * th)), P.G[J.sp1]))));
+  if (sp.neck || bn) setG(J.neck, Q.norm(Q.mul(rx((sp.neck || 0) + bn), P.G[J.neck])));
+  setG(J.head, Q.norm(Q.mul(Q.mul(Q.axis([0, 1, 0], sp.look * Math.sin(th + sp.lookPh) + scan), rx(sp.head + bh + 0.03 * Math.min(1, sp.look * 10) * Math.sin(2 * th))), P.G[J.head])));
   return { lq, lt, P, setG: null };
 }
 
@@ -467,7 +566,7 @@ function torsoPose(S, R, st0, std, sp, th, ankStd, ankZ, hipX, B) {
 // Places both arms of a seated pose for body B (outline O, or a nominal one from bone lengths when O is null) at world
 // scale s. pose: { lq, lt, P } from torsoPose (a clip frame); table: { h, elbow } in world metres (defaults TABLE31).
 // Returns { lq (the full local rotations), used: the override slots it set, info }.
-function armsFor(S, R, B, O, pose, sp, s, hinge, table, full = true) {
+function armsFor(S, R, B, O, pose, sp, s, hinge, table, full = true, key = 0) {
   const { J, SD } = R;
   const lq = pose.lq.map((q) => q.slice()), lt = pose.lt;
   let P = fkOf(S, lq, lt);
@@ -657,6 +756,19 @@ function armsFor(S, R, B, O, pose, sp, s, hinge, table, full = true) {
   };
   const rFaE = (side) => rOf(side, 'fa', 0, 0.042), rFaW = (side) => rOf(side, 'fa', 1, 0.03);
   const used = new Set([0, 1, 2, 3, 4, 5, 6, 7]);
+  // the chin (the body's lowest face point in front of the head joint, from its outline; a nominal one without) and the
+  // mouth 3 cm over it
+  const chinOf = () => {
+    const cl = O && O.chinLocal;
+    if (!cl) return V.add(P.P[J.head], Q.rot(P.G[J.head], [0, -0.1, 0.08]));
+    const Mh = M4.mul(M4.of(P.G[J.head], P.P[J.head]), B.ibm.slice(J.head * 16, J.head * 16 + 16));
+    const Hb = M4.invRigid(B.ibm.slice(J.head * 16, J.head * 16 + 16));
+    const pb = M4.pt(Hb, cl[0], cl[1], cl[2]);
+    return M4.pt(Mh, pb[0], pb[1], pb[2]);
+  };
+  const mouthOf = () => V.add(chinOf(), Q.rot(P.G[J.head], [0, 0.03, 0.01]));
+  const elbowAt = (side, dz = 0) => [SD[side].sgn * Math.max(Math.abs(P.P[SD[side].arm][0]) * 0.92, 0.12), yTop + rFaE(side), zElbow + dz / s];
+  const flatL = (dz = 0.25, x = 0.02) => { const E0 = elbowAt(0), W0 = [x, yTop + rFaW(0) + 0.004, zElbow + dz / s]; tableArm(0, E0, W0, V.norm(V.add(V.norm(V.sub(W0, E0)), [-0.3, 0, 0])), [0, -1, 0]); };
   if (sp.arms === 'thigh') {
     SD.forEach((o, side) => onThigh(side, sp.hands[side][0], sp.hands[side][1]));
   } else if (sp.arms === 'table') {
@@ -672,6 +784,7 @@ function armsFor(S, R, B, O, pose, sp, s, hinge, table, full = true) {
     // line, 0.565 m out, most builds could not reach it with a forearm on the top)
     const zc = seatP[2] + (T.edge + 0.17) / s;
     SD.forEach((o, side) => {
+      if (key === 1) return;   // the sip, below
       const Wc = [o.sgn * 0.048, yTop + 0.045, zc - 0.03];
       // the elbow on the table plane lb from the wrist, back and out toward its natural place
       const yE = yTop + rFaE(side), { lb } = lens[side];
@@ -681,18 +794,18 @@ function armsFor(S, R, B, O, pose, sp, s, hinge, table, full = true) {
       const E0 = [Wc[0] + dh[0] * rho, yE, Wc[2] + dh[2] * rho];
       tableArmFixed(side, yE, Wc, E0, V.norm([-o.sgn * 0.35, 0.25, 1]), [-o.sgn, 0.15, 0]);
     });
+    if (key === 1) {
+      // SIT32, a sip: the right hand brings the cup to the lips (the wrist 9 cm below and 7 cm in front of the mouth, the
+      // hand tipped 20 deg toward the face, the cup with it); the left hand on the top where the cup stood
+      const o = SD[1], M = mouthOf(), Ws = V.add(M, [o.sgn * 0.01, -0.09, 0.07]);
+      const b = swivel(1, Ws), tip = Q.axis([1, 0, 0], -0.35);
+      chain(1, b.E, b.W, Q.rot(tip, V.norm([-o.sgn * 0.35, 0.25, 1])), Q.rot(tip, [-o.sgn, 0.15, 0]));
+      info.pen = Math.max(info.pen, b.pen);
+      flatL(0.2, 0.03);
+    }
   } else if (sp.arms === 'chin') {
     // the right hand under the chin: a head a little lower when the forearm cannot reach up from the table
     const o = SD[1], { lb } = lens[1];
-    const chinOf = () => {
-      const cl = O && O.chinLocal;
-      if (!cl) return V.add(P.P[J.head], Q.rot(P.G[J.head], [0, -0.1, 0.08]));
-      const Mh = M4.mul(M4.of(P.G[J.head], P.P[J.head]), B.ibm.slice(J.head * 16, J.head * 16 + 16));
-      // chinLocal is in the head bone's bind frame: bind point -> skinned point is Mh applied to the bind point
-      const Hb = M4.invRigid(B.ibm.slice(J.head * 16, J.head * 16 + 16));
-      const pb = M4.pt(Hb, cl[0], cl[1], cl[2]);
-      return M4.pt(Mh, pb[0], pb[1], pb[2]);
-    };
     const yE = yTop + rFaE(1);
     let Wc = null;
     for (let it = 0; it < 14; it++) {
@@ -730,6 +843,70 @@ function armsFor(S, R, B, O, pose, sp, s, hinge, table, full = true) {
     chain(1, pick.bR.E, pick.bR.W, V.perp([0.25, 0.3, 1], nR), nR);
     chain(0, pick.bL.E, pick.bL.W, V.perp([-0.35, 0.2, 1], nR), nR);
     info.pen = Math.max(info.pen, pick.worst);
+  } else if (sp.arms === 'talk') {
+    // SIT32: forearms on the top, hands apart; key 1: the right elbow stays down and the hand comes up open, palm up and
+    // turned in, 20 cm over the top: a gesture
+    SD.forEach((o, side) => {
+      if (key === 1 && side === 1) return;
+      const E0 = elbowAt(side), W0 = [o.sgn * 0.12, yTop + rFaW(side) + 0.004, zElbow + 0.27 / s];
+      tableArm(side, E0, W0, V.norm(V.add(V.norm(V.sub(W0, E0)), [-o.sgn * 0.25, 0, 0])), [0, -1, 0]);
+    });
+    if (key === 1) {
+      const o = SD[1], E0 = elbowAt(1, -0.03), Wg = [o.sgn * 0.17, yTop + 0.2 / s, zElbow + 0.12 / s];
+      tableArmFixed(1, E0[1], Wg, E0, V.norm([-o.sgn * 0.25, 0.55, 0.8]), V.norm([-o.sgn * 0.35, 0.93, 0.1]));
+    }
+  } else if (sp.arms === 'eat') {
+    // SIT32: the left forearm on the top; the right hand holds a wrap upright 10 cm over the top (key 0) or at the mouth,
+    // the wrist 11 cm below and in front of it (key 1: a bite)
+    flatL(0.25, 0.02);
+    const o = SD[1];
+    if (key === 0) {
+      const E0 = elbowAt(1, -0.02), Wr = [o.sgn * 0.09, yTop + 0.1 / s, zElbow + 0.15 / s];
+      tableArmFixed(1, E0[1], Wr, E0, V.norm([-o.sgn * 0.35, 0.3, 0.85]), V.norm([-o.sgn, 0.1, -0.2]));
+    } else {
+      const M = mouthOf(), Wm = V.add(M, [o.sgn * 0.02, -0.075, 0.075]), b = swivel(1, Wm);
+      chain(1, b.E, b.W, V.norm(V.sub(M, Wm)), V.norm([-o.sgn, 0.05, -0.35]));
+      info.pen = Math.max(info.pen, b.pen);
+    }
+  } else if (sp.arms === 'read') {
+    // SIT32: an open book 30 x 21 cm on the top, its near edge 9 cm past the elbow line, the hands on its outer edges;
+    // key 1: the right hand lifted over the left page's corner, turning it
+    const zB = zElbow + 0.09 / s;
+    SD.forEach((o, side) => {
+      if (key === 1 && side === 1) return;
+      const E0 = elbowAt(side), Wb = [o.sgn * 0.14, yTop + 0.02 / s + rFaW(side) * 0.6, zB + 0.06 / s];
+      tableArmFixed(side, E0[1], Wb, E0, V.norm([-o.sgn * 0.45, -0.05, 0.9]), [0, -1, 0]);
+    });
+    if (key === 1) {
+      const E0 = elbowAt(1), Wp = [0.03, yTop + 0.07 / s, zB + 0.1 / s];
+      tableArmFixed(1, E0[1], Wp, E0, V.norm([0.85, -0.1, 0.5]), [0, -1, 0]);
+    }
+  } else if (sp.arms === 'laptop') {
+    // SIT32: a laptop on the top, its front edge 5 cm past the elbow line: the wrists 4 cm over the top just short of the
+    // keys, palms down; key 1: both hands 1.5 cm toward the right
+    const zK = zElbow + 0.09 / s, dx = key === 1 ? -0.015 / s : 0;
+    SD.forEach((o, side) => {
+      const E0 = elbowAt(side, -0.02), Wk = [o.sgn * 0.075 + dx, yTop + 0.042 / s, zK];
+      tableArmFixed(side, E0[1], Wk, E0, V.norm([-o.sgn * 0.2, -0.3, 1]), V.norm([0, -1, 0.1]));
+    });
+  } else if (sp.arms === 'lean') {
+    // SIT32: the right arm over the chair's back (city/bryantParkKit.js chairGeo31: its top 0.43 m over the seat and 0.21 m
+    // behind the seat point), the left forearm on the top, its elbow a little short of the elbow line (the torso leans back)
+    // (the backrest's top is only 12-15 cm under a seated shoulder and 6-10 cm behind it, so an arm aimed at its corner
+    // hung straight down beside the seat: the upper arm goes BACK, out and a little down, crossing the top a third of the
+    // way along, the elbow 25 cm behind the backrest, the forearm hanging down behind it, palm to the chair)
+    const o = SD[1], Sh = P.P[o.arm], { la, lb } = lens[1];
+    const E = V.add(Sh, V.mul(V.norm([o.sgn * 0.25, -0.35, -0.9]), la));
+    const W = V.add(E, V.mul(V.norm([0, -1, 0.15]), lb));
+    chain(1, E, W, V.norm([0, -1, 0.1]), V.norm([0, 0.1, 1]));
+    // (leaning back, the shoulder is ~10 cm further from the top: the elbow comes back to the edge and the forearm lies
+    // across it; aimed at the elbow line it floated 3-7 cm)
+    const E0L = elbowAt(0, -0.12), W0L = [0.06, yTop + rFaW(0) + 0.004, zElbow + 0.12 / s];
+    tableArm(0, E0L, W0L, V.norm(V.add(V.norm(V.sub(W0L, E0L)), [-0.3, 0, 0])), [0, -1, 0], true, -0.1);
+  } else if (sp.arms === 'cross') {
+    // SIT32: the left forearm on the top, the right hand on the crossed right thigh halfway to the knee
+    flatL(0.24, 0);
+    onThigh(1, 0.5, 0.02);
   } else if (sp.arms === 'knees') {
     // elbows on the thighs just short of the knees, hands clasped between the knees
     SD.forEach((o, side) => {
@@ -772,7 +949,7 @@ function standingBase(S, R, B, O, hinge) {
 // The arms of one walker: body B (outline O), sit clip c (one of synthSitClips' clips), world scale s. Returns the local
 // rotations of the override slots (Float32Array(ARM_SLOTS.length * 4); w = 2 marks a slot that keeps the clip's rotation)
 // and a diagnostic { pen: worst torso clearance of the arm capsules (> 0 = inside), reach: upper-arm length error }.
-export function solveSitArms(S, B, O, c, s = 1, table = null) {
+export function solveSitArms(S, B, O, c, s = 1, table = null, key = 0) {
   const R = rig(S);
   if (!R || !c || !c.spec || !S._sitHinge) return null;
   const D = S.clipData, base = S.clips.find((x) => x.name === 's_neutral_idle') || S.clips.find((x) => x.kind === 'idle' && x.age === 'adult');
@@ -785,7 +962,7 @@ export function solveSitArms(S, B, O, c, s = 1, table = null) {
   // its angle; the first lean whose elbows reach within 1 cm is kept (the most reaching one otherwise).
   const { J } = R;
   let r = null, lean = 0;
-  for (const ex of c.spec.table ? [0, 0.035, 0.07, 0.105, 0.14, 0.175] : [0]) {
+  for (const ex of c.spec.table && !c.spec.noLeanIn ? [0, 0.035, 0.07, 0.105, 0.14, 0.175] : [0]) {
     const lq = fr.lq.map((q) => q.slice());
     if (ex) {
       let P = fkOf(S, lq, fr.lt);
@@ -794,7 +971,7 @@ export function solveSitArms(S, B, O, c, s = 1, table = null) {
       P = fkOf(S, lq, fr.lt);
       lq[J.neck] = Q.norm(Q.mul(Q.inv(P.G[S.parents[J.neck]]), Q.mul(Q.inv(rx), P.G[J.neck])));
     }
-    const t = armsFor(S, R, B, O, { lq, lt: fr.lt }, c.spec, s, S._sitHinge, table);
+    const t = armsFor(S, R, B, O, { lq, lt: fr.lt }, c.spec, s, S._sitHinge, table, true, key);
     if (!r || t.info.reach < r.info.reach - 1e-4) { r = t; lean = ex; }
     if (t.info.reach <= 0.01) break;
   }
@@ -810,6 +987,43 @@ export function solveSitArms(S, B, O, c, s = 1, table = null) {
   return { q: out, info: r.info };
 }
 export { V as SIT_V, Q as SIT_Q, M4 as SIT_M4, fkOf as sitFK, frameOf as sitFrame, rig as sitRig };
+
+// SIT32 PROPS: what a seated walker in clip c holds or has before it, placed from its own arms (override rows q, frame 0,
+// world scale s): a hand prop as a frame in the holding hand's bone frame (b: its bone name), a table item as a frame
+// in the walker's model space on the top (b: null). m: column-major 4x4 with the walker's scale taken out (1 / s), so a
+// cup is 11.5 cm tall on every walker. The cup stands upright between the palms and goes with the right hand (to the
+// lips in the sip); the wrap sits in the right fist along the thumb side; the book lies under the hands' midpoint 4 cm
+// past the wrists, the laptop's base 9 cm past them.
+export function sitProps(S, B, c, q, s = 1) {
+  const sp = c && c.spec;
+  if (!sp || !sp.props) return [];
+  const R = rig(S), { SD } = R;
+  const fr = frameOf(S, S.clipData, c, 0, B, c.kBody[B.index]);
+  if (q) ARM_SLOTS.forEach((n, k) => { const o = k * 4; if (q[o + 3] < 1.5) fr.lq[S.bones.indexOf(n)] = [q[o], q[o + 1], q[o + 2], q[o + 3]]; });
+  const P = fkOf(S, fr.lq, fr.lt);
+  const hm = V.mul(V.add(P.P[SD[0].th], P.P[SD[1].th]), 0.5), yTop = hm[1] - SEAT_DROP + TABLE31.h / s, k = 1 / s;
+  const hand = (side) => {
+    const o = SD[side], f0 = V.norm(V.sub(P.P[o.mid], P.P[o.wr]));
+    const n0 = V.perp(V.mul(V.norm(V.cross(f0, V.norm(V.sub(P.P[o.idx], P.P[o.pky])))), o.sgn), f0);
+    return { o, f0, n0, c: V.add(P.P[o.wr], V.add(V.mul(f0, 0.05), V.mul(n0, 0.03))) };
+  };
+  const frame = (x, y, z, t) => [x[0] * k, x[1] * k, x[2] * k, 0, y[0] * k, y[1] * k, y[2] * k, 0, z[0] * k, z[1] * k, z[2] * k, 0, t[0], t[1], t[2], 1];
+  const inHand = (side, M) => M4.mul(M4.invRigid(M4.of(P.G[SD[side].wr], P.P[SD[side].wr])), M);
+  const out = [];
+  for (const kind of sp.props) {
+    if (kind === 'cup') {
+      const C = V.mul(V.add(hand(0).c, hand(1).c), 0.5);
+      out.push({ k: kind, b: S.bones[SD[1].wr], m: inHand(1, frame([1, 0, 0], [0, 1, 0], [0, 0, 1], C)) });
+    } else if (kind === 'wrap') {
+      const h = hand(1), up = V.norm(V.sub(P.P[h.o.idx], P.P[h.o.pky])), z = V.perp(h.f0, up), x = V.cross(up, z);
+      out.push({ k: kind, b: S.bones[SD[1].wr], m: inHand(1, frame(x, up, z, h.c)) });
+    } else if (kind === 'book' || kind === 'laptop') {
+      const a = P.P[SD[0].wr], b = P.P[SD[1].wr];
+      out.push({ k: kind, b: null, m: frame([1, 0, 0], [0, 1, 0], [0, 0, 1], [(a[0] + b[0]) / 2, yTop, Math.max(a[2], b[2]) + (kind === 'book' ? 0.04 : 0.09) / s]) });
+    }
+  }
+  return out;
+}
 // debugging aid for tools/assets/crowd_sitqa.mjs: the solver's torso model (pen at p for a sphere of radius r) in frame 0 of
 // clip c on body B
 export function sitTorsoProbe(S, B, O, c) {

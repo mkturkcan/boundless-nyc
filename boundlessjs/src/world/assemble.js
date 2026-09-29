@@ -14,7 +14,7 @@ import { buildShopSigns } from '../city/shopSigns.js';
 import { namedShopZone } from '../city/namedShops.js';
 import { buildBillboards, buildTsqScreens } from '../city/billboards.js';
 import { BP28, bpDropTree, bpTrees, bpOwns, bpBuild, bpWorld, bpApply, bpSkipBuilding } from '../city/bryantPark.js';
-import { tpTileHit, tpApply, tpStepsOwner, tpBuildSteps, tpSkipBuilding, tpBuildFurniture } from '../city/tsqPlaza.js';
+import { tpTileHit, tpApply, tpStepsOwner, tpBuildSteps, tpSkipBuilding, tpBuildFurniture, tpDropFrontage } from '../city/tsqPlaza.js';
 import { placeCurbRamps } from '../city/streetNYC.js';
 import { StaticPool } from './staticPool.js';
 import { buildTower, buildSetbacks, TOWER_H } from './towers.js';
@@ -2764,6 +2764,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     if (f.k === 33) sy = Math.max(0.5, f.p0 / 7);
     // a frontage modelled shop by shop (src/city/namedShops.js) carries its own awnings, or none
     if (f.k === FURN.AWNING && namedShopZone(wx, wz)) continue;
+    if (FRONTAGE_HUNG.has(f.k) && tpDropFrontage(wx, wz)) continue;   // TF32: building 59's awnings (the recruiting station replaces it)
     if (f.k === FURN.AWNING) { sx = Math.max(0.5, (f.p1 / 10) / 3.6); color = AWNING_COLORS[f.p0 % AWNING_COLORS.length]; }
     if (f.k === FURN.HYDRANT) color = HYDRANT_COLORS[(wx | 0) % 4 === 0 ? ((wz | 0) % 4) : 0];
     if (f.k === 36) color = [0xb02020, 0x2050a8, 0xc8a000, 0x20702a, 0xe05a10][f.p0 % 5]; // news boxes

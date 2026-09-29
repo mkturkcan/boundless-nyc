@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { ENV, applyLightTrim as LT } from '../world/materials.js';
 import { COLLIDERS } from './colliders.js';
 import { chairGeo31, tableGeo31 } from './bryantParkKit.js';   // the same folding bistro set, in the Alliance's red
+import { frameAt, addPieces, station, duffyMonument, cohanMonument, ticketTotem, subwayEntrance, redKiosk, foodCart, compactor, marquee, posterCube, streetKiosk } from './tsqKit.js';   // TF32
 export const TP28 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tp28') === '0');
 export const TP_MAT = 16;
 
@@ -419,6 +420,138 @@ export function tpBuildFurniture(group, roadsW, yAt, ox, oz, tileKey) {
     n += L.length;
   }
   if (typeof window !== 'undefined') window.__TF31 = { seats: tpSeats().length, pieces: n };
+  tf32Build(group, roadsW, yAt, inTile, onP, fits, box, lists);
+  return n;
+}
+
+// ---- TF32 (owner 2026-09-29: "not enough details ... Add more details to Times Square and add daytime shots using
+// proper references"): the Square's street pieces after the Wikimedia Commons photographs listed in
+// docs/notes/tsq-graphics.md (TF32), built by city/tsqKit.js. The recruiting station with its neon flag stands on the
+// 43rd St island on its own footprint (tile -3_5 building 59, which drew as a brick two-floor tenement box and is no
+// longer built); Father Duffy with his Celtic cross 4.6 m before the red steps' foot, facing down the Square, the red
+// ticket signs either side of the foot, George M. Cohan at the island's south end; the subway canopy on the plaza at
+// 42nd St; at each plaza block's north end a red kiosk with a poster cube beside it and a food cart, in the bench line
+// (where TF31's pieces leave room, up to 10 m back), a pair of solar compactor bins and a street kiosk at its south
+// end; the Kestrel Theatre's marquee on 1515 Broadway's Seventh Avenue frontage (building 21 e9), under its screen
+// stack. Walker obstacles as TF31.
+// `?tf32=0` leaves them out and builds building 59 again (so does `?tf31=0`).
+export const TF32 = TF31 && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tf32') === '0');
+const ST32 = { ring: [[-1264.4, 2914.1], [-1260.7, 2915.6], [-1265.3, 2928.1], [-1270.9, 2925.3]], c: [-1265.3, 2920.8] };
+// the frontage props the compiler hung on building 59 (its awnings: FURN.AWNING, and any FURN.MARQUEE) stay in the tile's
+// furniture when tpSkipBuilding drops the building, and float in front of the station's flag at 3-4.5 m (probe
+// t3DayFlag_day_0): the assembler's furniture loop asks here, as it asks namedShopZone for the named shop fronts
+export function tpDropFrontage(x, z) {
+  return TF32 && Math.hypot(x - ST32.c[0], z - ST32.c[1]) < 9.5;
+}
+const MQ32 = { a: [-1229.8, 2798.3], b: [-1253.6, 2841.8], n: [0.88, 0.48], w: 16 };
+function tf32Build(group, roadsW, yAt, inTile, onP, fits, box, lists) {
+  if (!TF32) return 0;
+  const P = [], got = {};
+  // TF31's pieces as obstacles (benches as capsules along their yaw, the cafe groups and planters as discs): the gap
+  // tables after a run's last bench can reach within 1 m of the block's end, so a slot is taken only where it is clear
+  const obs = [];
+  for (const [k, L] of Object.entries(lists)) for (const [x, , z, yaw] of L) {
+    if (k === 'bench12' || k === 'bench9') obs.push([x, z, Math.sin(yaw), Math.cos(yaw), k === 'bench12' ? 6 : 4.5, 0.8]);
+    else if (k === 'table' || k === 'planter' || k === 'bollard') obs.push([x, z, 0, 0, 0, k === 'table' ? 1.3 : k === 'planter' ? 1.3 : 0.25]);
+  }
+  const clear = (cx, cz, ux, uz, hl, hw2) => {
+    const nx = -uz, nz = ux;
+    for (const [ox, oz, dx, dz, hL, r] of obs) {
+      if (Math.abs(ox - cx) > hl + hw2 + hL + r + 1 || Math.abs(oz - cz) > hl + hw2 + hL + r + 1) continue;
+      for (const a of [-hl, 0, hl]) for (const b of [-hw2, 0, hw2]) {
+        const px = cx + ux * a + nx * b - ox, pz = cz + uz * a + nz * b - oz, t = Math.max(-hL, Math.min(hL, px * dx + pz * dz));
+        if (Math.hypot(px - dx * t, pz - dz * t) < r + 0.3) return false;
+      }
+    }
+    return true;
+  };
+  const add = (k, parts, x, y, z, fx, fz) => { P.push({ parts, place: frameAt(x, y, z, fx, fz) }); got[k] = (got[k] || 0) + 1; };
+  // the station, in world coordinates on its footprint; its obstacle along the long edge e1 (13.3 m), 5.2 m across
+  const [scx, scz] = ST32.c;
+  if (inTile(scx, scz)) {
+    const y = yAt(scx, scz), [p1, p2] = [ST32.ring[1], ST32.ring[2]], L = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    P.push({ parts: station(ST32.ring, y), place: null }); got.station = 1;
+    box(scx, y, scz, (p2[0] - p1[0]) / L, (p2[1] - p1[1]) / L, 6.7, 2.6, 2.3);
+  }
+  // Duffy Square: s up the steps' axis from their centre, t across (east); the island is 12-27 m wide from s -54 to 13
+  const [dcx, dcz] = DUFFY.c, [ax, az] = DUFFY.a, bx = -az, bz = ax;
+  const isl = (s, t) => [dcx + ax * s + bx * t, dcz + az * s + bz * t];
+  const inIsl = (s, t, r) => [[0, 0], [r, r], [r, -r], [-r, r], [-r, -r]].every(([ds, dt]) => tpInIsland(...isl(s + ds, t + dt)));
+  if (inTile(dcx, dcz)) {
+    const foot = -(DUFFY.run + DUFFY.land) / 2;
+    let [x, z] = isl(foot - 4.6, 0.75);
+    if (inIsl(foot - 4.6, 0.75, 1.6)) { const y = yAt(x, z); add('duffy', duffyMonument(), x, y, z, -ax, -az); box(x, y, z, ax, az, 1.5, 1.3, 3.1); }
+    for (const sd of [-1, 1]) {
+      const t = sd * (DUFFY.halfW + 0.7);
+      [x, z] = isl(foot - 0.6, t);
+      if (inIsl(foot - 0.6, t, 0.6)) { const y = yAt(x, z); add('totem', ticketTotem(), x, y, z, -ax, -az); box(x, y, z, ax, az, 0.16, 0.5, 1.6); }
+    }
+    // Cohan: the southmost s where the island is still 13 m wide, centred across it, 3 m in
+    let cp = null;
+    for (let s = foot - 20; s > -70; s -= 1) {
+      let t0 = null, t1 = null;
+      for (let t = -25; t <= 25; t += 0.5) if (tpInIsland(...isl(s, t))) { if (t0 === null) t0 = t; t1 = t; }
+      if (t0 === null || t1 - t0 < 13) break;
+      cp = [s + 3, (t0 + t1) / 2];
+    }
+    if (cp && inIsl(cp[0], cp[1], 3)) { [x, z] = isl(cp[0], cp[1]); const y = yAt(x, z); add('cohan', cohanMonument(), x, y, z, -ax, -az); box(x, y, z, ax, az, 3.0, 3.0, 1.9); }
+  }
+  // the plaza blocks, 42nd (0) to 46th (4) by where each Broadway piece starts
+  for (const r of roadsW) {
+    if (!r.noTraffic || r.level > 0 || r.pts.length < 2 || !/BROADWAY/.test(r.name || '')) continue;
+    if (!r.pts.some((p) => p[0] > BOX.x0 && p[0] < BOX.x1 && p[2] > BOX.z0 && p[2] < BOX.z1)) continue;
+    const hw = r.width / 2;
+    if (hw < 5.5) continue;
+    const st = [];                                  // stations every metre along the centre line, as TF31's
+    for (let k = 0; k < r.pts.length - 1; k++) {
+      const A = r.pts[k], Bp = r.pts[k + 1], dx = Bp[0] - A[0], dz = Bp[2] - A[2], L = Math.hypot(dx, dz);
+      if (L < 1e-3) continue;
+      for (let t = 0; t < L; t += 1) st.push({ x: A[0] + (dx / L) * t, z: A[2] + (dz / L) * t, ux: dx / L, uz: dz / L });
+    }
+    if (st.length < 50) continue;
+    const Lt = st.length - 1, at = (s) => st[Math.max(0, Math.min(Lt, Math.round(s)))];
+    const blk = Math.round((3032.1 - r.pts[0][2]) / 80);
+    // a piece at (s, t) on this block, its front toward the centre line (or `face`), its footprint hl along, hw2 across
+    // (the first of the stations `ss` where it fits the plaza and is clear of TF31 and of what this block has placed)
+    const mine = [];
+    const place = (k, parts, ss, t, hl, hw2, hh, face = null) => {
+      for (const s of ss) {
+        const q = at(s), nx = -q.uz, nz = q.ux, cx = q.x + nx * t, cz = q.z + nz * t;
+        if (!inTile(cx, cz) || !fits(cx, cz, q.ux, q.uz, hl, hw2) || !clear(cx, cz, q.ux, q.uz, hl, hw2)) continue;
+        if (mine.some(([mx, mz, mr]) => Math.hypot(mx - cx, mz - cz) < mr + Math.hypot(hl, hw2) + 0.3)) continue;
+        const [fx, fz] = face ? face(q) : t > 0 ? [-nx, -nz] : [nx, nz];
+        const y = yAt(cx, cz);
+        add(k, parts, cx, y, cz, fx, fz);
+        box(cx, y, cz, q.ux, q.uz, hl, hw2, hh);
+        mine.push([cx, cz, Math.hypot(hl, hw2)]);
+        return;
+      }
+    };
+    const off = hw - 1.9, north = Array.from({ length: 21 }, (_, i) => Lt - 3.3 - i * 0.5);   // from the block's end back 10 m
+    const plan = [
+      { kiosk: 0, cart: 1, bins: -1 },
+      { kiosk: -1, cart: 1, bins: 1 },
+      { kiosk: 1, cart: -1, bins: -1 },
+      { kiosk: -1, cart: 1, bins: 1 },     // r10: the red kiosk on the west side, 45th-46th
+      { kiosk: 1, cart: -1, bins: -1 },
+    ][Math.max(0, Math.min(4, blk))];
+    if (plan.kiosk) place('kiosk', redKiosk(), north, plan.kiosk * off, 1.3, 0.9, 1.4);
+    if (plan.cart) place('cart', foodCart(), north, plan.cart * off, 0.95, 0.45, 0.9);
+    if (plan.kiosk) place('cube', posterCube(blk), north.map((s) => s - 3.4), plan.kiosk * off, 0.68, 0.68, 1.05);   // r10: a poster cube by the kiosk
+    for (const s of [2.6, 3.4]) place('bin', compactor(), [s, s + 1.6, s + 3.2], plan.bins * off, 0.32, 0.32, 0.64);
+    // a street kiosk (a 2.9 m pillar, a lit screen each side, facing along the plaza) opposite the bins
+    place('link', streetKiosk(), [3.0, 4.6, 6.2, 7.8], -plan.bins * off, 0.17, 0.5, 1.45, (q) => [q.ux, q.uz]);
+    // the subway canopy on the 42nd-43rd block (r16, r22), open toward 42nd St, between the promenade's two centre lanes
+    if (blk === 0) place('subway', subwayEntrance(), [14, 16, 18], 0, 2.55, 1.55, 1.5, (q) => [-q.ux, -q.uz]);
+  }
+  // the marquee, centred on the frontage, its foot 2.35 m over the pavement in front of the wall: its top (3.95 m) stays
+  // under the brackets of the stack's catwalk (billboards.js TF32, 4.1-4.5 m over the building's base)
+  {
+    const [a, b] = [MQ32.a, MQ32.b], mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2, [nx, nz] = MQ32.n;
+    if (inTile(mx, mz)) add('marquee', marquee(MQ32.w, 2.2), mx, yAt(mx + nx * 1.2, mz + nz * 1.2) + 2.35, mz, nx, nz);
+  }
+  const n = P.length ? addPieces(group, P, 'tf32') : 0;
+  if (typeof window !== 'undefined') window.__TF32 = { ...(window.__TF32 || {}), ...got, meshes: n };
   return n;
 }
 
@@ -433,6 +566,7 @@ const DUFFY = { c: [-1157.65, 2661.15], a: [0.374, -0.927], halfW: 5.75, run: 13
 // on the Broadway plaza between 46th and 47th (centroid -1179.2, 2671.5)
 export function tpSkipBuilding(cx, cz, h, area) {
   if (!TP28 || h > 6 || area > 400) return false;
+  if (TF32 && Math.hypot(cx - ST32.c[0], cz - ST32.c[1]) < 2.5) return true;   // TF32: the recruiting station is built instead
   return Math.hypot(cx - DUFFY.c[0], cz - DUFFY.c[1]) < 3 || Math.hypot(cx + 1179.2, cz - 2671.5) < 2.5;
 }
 export function tpDuffyIn(x, z) {

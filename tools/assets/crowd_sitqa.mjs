@@ -12,6 +12,11 @@
 // BEFORE: sit_a / sit_b as round 1 shipped them (--v1 <module>: the first solver, shared arms solved on the reference body),
 // the new poses with their shared reference arms; AFTER: the arms the page applies, the bake's sample at the body's NYC
 // mean height scale (crowd.js TARGET_H; --fresh: a new solve instead). Frames 0, 25, 50, 75 of each 100-frame clip.
+// SIT32: a pose with a second arm pose (spec.keys 2: talk, eat, read, laptop and the cup's sip) is checked in both, 'after1'
+// being key 1 from the bake's keys1 at the same scale sample; which forearms rest on the top in each key is RESTING. The
+// crossed-legs pose also reports how far the upper (right) thigh is inside the lower one (legs). --write bakes keys1 and
+// the props (crowdSit.js sitProps, per scale sample from the key-0 arms) as version 3; with --poses it re-solves only those
+// poses into the existing bake.
 // --consistent also waives a vertex whose nearest torso vertex lies well off that vertex's normal (the solver's own test).
 //   node tools/assets/crowd_sitqa.mjs [--v1 crowdSit_v1.mjs] [--poses 1,3] [--bodies a,b] [--sheet out.png] [--json out.json] [--scale 1.08] [--fresh] [--consistent]
 //   node tools/assets/crowd_sitqa.mjs --write     (only solve and write boundlessjs/public/models/peds24/sit31_arms.json)
@@ -188,7 +193,8 @@ function insideOf(X, idx) {
   const near = fieldOf(X, idx);
   return (p) => { const r = near(p, true); if (r.dist > 0.06) return -1; return CONSISTENT && r.depth > 0 && r.dist > 1.15 * r.depth + 0.015 ? -1 : r.depth; };
 }
-function metrics(M, X, Pj, c, s, skip = null) {
+const RESTING = { table: [[1, 1]], chin: [[1, 0]], cup: [[1, 1], [1, 0]], talk: [[1, 1], [1, 0]], eat: [[1, 0], [1, 0]], read: [[1, 1], [1, 0]], laptop: [[1, 1], [1, 1]], lean: [[1, 0]], cross: [[1, 0]] };
+function metrics(M, X, Pj, c, s, skip = null, key = 0) {
   const dom = M.dom;
   const torsoIdx = [], armIdx = [[], []], lowIdx = [[], []], thighIdx = [[], []], foreIdx = [[], []];
   torsoIdx.push(...torsoSet(M));
@@ -225,15 +231,20 @@ function metrics(M, X, Pj, c, s, skip = null) {
     const hm = SIT.SIT_V.mul(SIT.SIT_V.add(Pj[G.thigh[0]], Pj[G.thigh[1]]), 0.5);
     const seatY = hm[1] - 0.085, seatZ = hm[2], yTop = seatY + SIT.TABLE31.h / s, zEdge = seatZ + 0.26 / s;
     table = [];
+    const rest = (RESTING[c.spec.arms] || [[1, 1]])[Math.min(key, (RESTING[c.spec.arms] || [[1, 1]]).length - 1)];
     for (let sd = 0; sd < 2; sd++) {
-      if (c.spec.arms === 'chin' && sd === 1) continue;   // the raised forearm
+      if (!rest[sd]) continue;   // a forearm off the top (raised, holding, over the chair's back)
       let mn = 1e9;
       for (const i of foreIdx[sd]) if (X[i * 3 + 2] > zEdge && X[i * 3 + 1] < mn) mn = X[i * 3 + 1];
       table.push(mn < 1e8 ? (mn - yTop) * s : null);   // world metres
       tableS[sd] = table[table.length - 1];
     }
   }
-  return { torso, where, thigh, table, worstAt, torsoS, thighS, tableS };
+  // crossed legs: the upper (right) thigh's vertices inside the lower (left) one
+  let legs = null;
+  // (past 18 cm from the right hip joint: nearer, the two thighs meet at the groin whether crossed or not)
+  if (c.spec.cross) { const inL = fieldOf(X, thighIdx[0]), H = Pj[G.thigh[1]]; legs = -1; for (const i of thighIdx[1]) { if (Math.hypot(X[i * 3] - H[0], X[i * 3 + 1] - H[1], X[i * 3 + 2] - H[2]) < 0.18) continue; const v = inL([X[i * 3], X[i * 3 + 1], X[i * 3 + 2]]); if (v > legs) legs = v; } }
+  return { torso, where, thigh, table, worstAt, torsoS, thighS, tableS, legs };
 }
 // the arm vertices inside the torso in the standing idle (per body)
 function standingSkip(B, M) {
@@ -342,17 +353,22 @@ function swivelQ(B, c, q, side, ang) {
   return out;
 }
 if (args.includes('--write')) {
-  const SC = [0.88, 0.94, 1, 1.06, 1.12], out = { version: 2, built: new Date().toISOString(), slots: SIT.ARM_SLOTS, scales: SC, bodies: {} };
+  const SC = [0.88, 0.94, 1, 1.06, 1.12], out = { version: 3, built: new Date().toISOString(), slots: SIT.ARM_SLOTS, scales: SC, bodies: {} };
   const tw = performance.now();
   const rnd = (a) => Array.from(a, (v) => +v.toFixed(5));
   const picks = {};
+  // --poses with --write: only those poses are solved, and written over the existing bake's entries (the rest kept)
+  const onlyPw = opt('poses') ? new Set(opt('poses').split(',').map(Number)) : null, prev = onlyPw && fs.existsSync(BASE + 'sit31_arms.json') ? JSON.parse(fs.readFileSync(BASE + 'sit31_arms.json', 'utf8')) : null;
+  if (prev) for (const [n, e] of Object.entries(prev.bodies)) out.bodies[n] = e;
   for (const B of bodies) {
     if (!outlines[B.name]) continue;
-    const s0 = meanScale(B), e = { s0: +s0.toFixed(5), poses: {}, pen: {}, pick: {} };
+    const s0 = meanScale(B), e = (prev && prev.bodies[B.name]) || { s0: +s0.toFixed(5), poses: {}, pen: {}, pick: {} };
+    e.pick = e.pick || {};
     const M = meshes.get(B.name);
     if (!skips.has(B.name)) skips.set(B.name, standingSkip(B, M));
     const sk = skips.get(B.name);
     for (const c of r.clips) {
+      if (onlyPw && !onlyPw.has(c.sitPose)) continue;
       // SELECTED BY THE QA'S OWN METRIC: the body's own solve, or the clip's reference arms (solved once on the reference
       // body) written out as rotations, whichever this check scores better on this body at this scale. The solver works on
       // 2-2.5 cm samples of torso and arm and waives a vertex whose nearest torso sample lies well off its normal; on heavy
@@ -390,8 +406,24 @@ if (args.includes('--write')) {
           if (some && !all) for (const x of list) if (x.q[o + 3] > 1.5) x.q.set(fr.lq[SK.bones.indexOf(n)], o);
         });
       }
+      // SIT32 key 1 (a gesture, a bite, a sip, a page, the hands across the keys): the body's own solve at each sample
+      const list1 = c.spec.keys === 2 ? (c.spec.table ? SC : [1]).map((k) => ({ q: SIT.solveSitArms(S, B, outlines[B.name], c, s0 * k, null, 1).q })) : null;
+      if (list1) {
+        const fr = SIT.sitFrame(S, S.clipData, c, 0, B, c.kBody[B.index]), both = [...list, ...list1];
+        SIT.ARM_SLOTS.forEach((n, k) => {
+          const o = k * 4, some = both.some((x) => x.q[o + 3] < 1.5), all = both.every((x) => x.q[o + 3] < 1.5);
+          if (some && !all) for (const x of both) if (x.q[o + 3] > 1.5) x.q.set(fr.lq[SK.bones.indexOf(n)], o);
+        });
+        (e.keys1 || (e.keys1 = {}))[c.sitPose] = list1.map((x) => rnd(x.q));
+      }
       e.poses[c.sitPose] = list.map((x) => rnd(x.q));
       e.pen[c.sitPose] = +Math.max(...list.map((x) => x.info.pen)).toFixed(4);
+      // SIT32 legs crossed: how deep the upper thigh lies in the lower one on this body (frame 0, this check's legs metric);
+      // crowd.js gives the pose to no body past 5 cm
+      if (c.spec.cross) { const { Sm, P } = poseMats(B, S.clipData, c, 0, c.kBody[B.index], list[list.length >> 1].q); (e.legs || (e.legs = {}))[c.sitPose] = +metrics(M, skin(M, Sm), P, c, s0, sk.skip).legs.toFixed(4); }
+      // SIT32 props, placed from each sample's key-0 arms
+      const pr = list.map((x, j) => SIT.sitProps(S, B, c, x.q, s0 * (c.spec.table ? SC[j] : 1)));
+      if (pr.some((a) => a.length)) (e.props || (e.props = {}))[c.sitPose] = pr.map((a) => a.map((p) => ({ k: p.k, b: p.b, m: rnd(p.m) })));
     }
     out.bodies[B.name] = e;
   }
@@ -429,13 +461,16 @@ for (const c of r.clips) {
     const sk = skips.get(B.name);
     res.armpit = { n: sk.n, worst: sk.worst };
     const c1 = r1 && r1.clips.find((x) => x.name === c.name);
-    for (const [tag, ovr] of [['before', null], ['after', sol && sol.q]]) {
+    // SIT32 key 1: the bake's second arm pose (or a fresh solve of it), checked the same way
+    const q1 = c.spec.keys === 2 ? (be && be.keys1 && be.keys1[c.sitPose] ? Float32Array.from(be.keys1[c.sitPose][c.spec.table ? 2 : 0]) : (!be ? SIT.solveSitArms(S, B, outlines[B.name], c, s, null, 1).q : null)) : null;
+    for (const [tag, ovr] of [['before', null], ['after', sol && sol.q], ...(q1 ? [['after1', q1]] : [])]) {
       let worst = { torso: -1, thigh: -1, table: null, where: null };
       const cc = tag === 'before' && c1 ? c1 : c, DD = tag === 'before' && c1 ? r1.data : S.clipData, kk = tag === 'before' && c1 ? c1.kBody[B.index] : k;
       for (const f of [0, 25, 50, 75]) {
         const { Sm, P } = poseMats(B, DD, cc, f, kk, ovr);
         const X = skin(M, Sm);
-        const mt = metrics(M, X, P, c, s, sk.skip);
+        const mt = metrics(M, X, P, c, s, sk.skip, tag === 'after1' ? 1 : 0);
+        if (mt.legs != null) worst.legs = Math.max(worst.legs ?? -1, mt.legs);
         if (mt.torso > worst.torso) { worst.torso = mt.torso; worst.where = mt.where; worst.at = { f, ...mt.worstAt }; }
         worst.thigh = Math.max(worst.thigh, mt.thigh);
         if (mt.table) worst.table = mt.table.map((v, i) => (worst.table && worst.table[i] != null && Math.abs(worst.table[i]) > Math.abs(v ?? 0) ? worst.table[i] : v));
@@ -460,7 +495,39 @@ for (const [p, xs] of byPose) {
   const mx = (k, t) => Math.max(...ad.map((x) => x[t][k]));
   const over = (t) => ad.filter((x) => x[t].torso > 0.01).length;
   const tb = ad.flatMap((x) => (x.after.table || []).filter((v) => v != null));
-  console.log(`-- ${p} adults ${ad.length}: torso worst before ${cm(mx('torso', 'before'))} after ${cm(mx('torso', 'after'))}; bodies over 1 cm before ${over('before')} after ${over('after')}; thigh worst after ${cm(mx('thigh', 'after'))}` + (tb.length ? `; table gap after ${cm(Math.min(...tb))}..${cm(Math.max(...tb))}` : ''));
+  const k1 = ad.filter((x) => x.after1), tb1 = k1.flatMap((x) => (x.after1.table || []).filter((v) => v != null)), lg = ad.filter((x) => x.after.legs != null);
+  console.log(`-- ${p} adults ${ad.length}: torso worst before ${cm(mx('torso', 'before'))} after ${cm(mx('torso', 'after'))}; bodies over 1 cm before ${over('before')} after ${over('after')}; thigh worst after ${cm(mx('thigh', 'after'))}` + (tb.length ? `; table gap after ${cm(Math.min(...tb))}..${cm(Math.max(...tb))}` : '') + (k1.length ? `; KEY 1 torso worst ${cm(Math.max(...k1.map((x) => x.after1.torso)))}, over 1 cm ${k1.filter((x) => x.after1.torso > 0.01).length}, thigh worst ${cm(Math.max(...k1.map((x) => x.after1.thigh)))}` + (tb1.length ? `, table gap ${cm(Math.min(...tb1))}..${cm(Math.max(...tb1))}` : '') : '') + (lg.length ? `; crossed thighs worst ${cm(Math.max(...lg.map((x) => x.after.legs)))}` : ''));
+}
+// SIT32 crossed knee against the park's tables (city/bryantParkKit.js tableGeo31), each adult fitted to a 0.452 m seat: the
+// least clearance of the crossed thigh's top (its hip-knee joint line, frame 0, + 6.5 cm) under the top (underside 0.7025 m)
+// or in the apron (round: 0.29 m from the centre, its bottom 0.655 m, the chairs 0.62 m out; square: 0.31-0.35 m, bottom
+// 0.645 m, chairs 0.64 m); < 0 = into the table
+{
+  const cx = r.clips.find((c) => c.spec && c.spec.cross);
+  const TT = { round: { under: (x, z) => Math.hypot(x, z - 0.62) < 0.3, apron: (x, z) => Math.abs(Math.hypot(x, z - 0.62) - 0.29) < 0.02, bottom: 0.655 },
+    square: { under: (x, z) => Math.abs(x) < 0.35 && Math.abs(z - 0.64) < 0.35, apron: (x, z) => { const d = Math.max(Math.abs(x), Math.abs(z - 0.64)); return d > 0.31 && d < 0.35; }, bottom: 0.645 } };
+  const kn = [];
+  if (cx) for (const B of bodies) {
+    const Vb = variants.find((v) => v.body === B.name);
+    if (!outlines[B.name] || (Vb && Vb.age === 'child')) continue;
+    const P = poseMats(B, S.clipData, cx, 0, cx.kBody[B.index], null).P, a = P[G.thigh[0]], b = P[G.thigh[1]];
+    const hm = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2], k = 0.452 / (hm[1] - 0.085);
+    const rel = (p) => [(p[0] - hm[0]) * k, p[1] * k, (p[2] - hm[2]) * k], H = rel(b), K = rel(P[G.knee[1]]);
+    const o = { top: K[1] + 0.05, side: K[0], fwd: K[2] };
+    for (const [tn, T] of Object.entries(TT)) {
+      let w = 1;
+      for (let t = 0.2; t <= 1.0001; t += 0.05) {
+        const x = H[0] + (K[0] - H[0]) * t, y = H[1] + (K[1] - H[1]) * t + 0.065, z = H[2] + (K[2] - H[2]) * t;
+        if (T.apron(x, z)) w = Math.min(w, T.bottom - y); else if (T.under(x, z)) w = Math.min(w, 0.7025 - y);
+      }
+      o[tn] = w;
+    }
+    kn.push(o);
+  }
+  if (kn.length) {
+    const rg = (f) => { const v = kn.map(f).sort((p, q) => p - q); return `${v[0].toFixed(3)}..${v[v.length - 1].toFixed(3)} (median ${v[v.length >> 1].toFixed(3)})`; };
+    console.log(`-- crossed knee (${cx.name}, ${kn.length} adults at a 0.452 m seat, m): top ${rg((x) => x.top)}, side ${rg((x) => x.side)}, fwd ${rg((x) => x.fwd)}; into the round park table ${kn.filter((x) => x.round < 0).length}, the square one ${kn.filter((x) => x.square < 0).length} (least clearance ${rg((x) => Math.min(x.round, x.square))})`);
+  }
 }
 if (args.includes('--why')) for (const x of rows) { const Bx = bodies.find((b) => b.name === x.body), cx = r.clips.find((q) => q.name === x.pose); const tf = SIT.sitTorsoProbe(S, Bx, outlines[x.body], cx); const pp = x.after.at && x.after.at.p; console.log('why', x.pose, x.body, 'after', (x.after.torso * 100).toFixed(1), 'solver pen', x.solve ? (x.solve.pen * 100).toFixed(1) : '-', 'solver model at that vertex (f0)', pp ? (tf.pen(pp, 0) * 100).toFixed(1) : '-', JSON.stringify(x.after.at)); }
 console.log(`\nsolves: ${nSolve}, mean ${(solveMs / Math.max(1, nSolve)).toFixed(2)} ms; checks ${((performance.now() - tS) / 1000).toFixed(1)} s`);

@@ -327,16 +327,18 @@ the research notes are not part of the runtime and live in the source repository
 
 ## Licence
 
-Code: TBD — owner to choose (MIT suggested). Data: under the terms of the
+Code: MIT, Copyright (c) 2026 Mehmet Kerem Turkcan (\`LICENSE\`). Data: under the terms of the
 sources it derives from (NYC Open Data terms / public domain, OpenStreetMap
 ODbL, Poly Haven and ambientCG CC0, CARLA assets CC-BY 4.0, ez-tree MIT). See
 the repository's \`README.md\` and \`boundlessjs/DATA_SOURCES.md\`.
 
-If you use boundless.js in your work, please cite:
+BoundlessNYC is a separate follow-up project, developed and maintained by
+Mehmet Kerem Turkcan. If you use it, the compiled city or imagery rendered
+with it, please cite BoundlessNYC itself:
 
-    Turkcan, Li, Zang, Ghaderi, Zussman, Kostic.
-    "Boundless: Generating photorealistic synthetic data for object detection
-    in urban streetscapes." arXiv:2409.03022, 2024.
+    M. K. Turkcan. "BoundlessNYC: a real-data, real-time digital twin of New
+    York City." Software, version 0.1.0, 2026.
+    https://github.com/mkturkcan/boundless-nyc
 `;
 }
 

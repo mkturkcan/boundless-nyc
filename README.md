@@ -24,7 +24,6 @@ Links:
 - Demo in the browser (WebGL2): <https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc>
 - Compiled city, models and textures: <https://huggingface.co/datasets/mehmetkeremturkcan/boundless-nyc>
 - Simulation server for Windows x64, compiled city included: <https://github.com/mkturkcan/boundless-nyc/releases>
-- Paper: [arXiv:2409.03022](https://arxiv.org/abs/2409.03022)
 
 ## How it works
 
@@ -144,11 +143,22 @@ evaluation, start the server with `--pedestrians procedural`, which uses the bui
 
 ## Citation
 
+BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. If you use
+BoundlessNYC, the compiled city or imagery rendered with it, please cite BoundlessNYC itself:
+
 ```bibtex
-@article{turkcan2024boundless,
-  title   = {Boundless: Generating photorealistic synthetic data for object detection in urban streetscapes},
-  author  = {Turkcan, Mehmet Kerem and Li, Yuyang and Zang, Chengbo and Ghaderi, Javad and Zussman, Gil and Kostic, Zoran},
-  journal = {arXiv preprint arXiv:2409.03022},
-  year    = {2024}
+@software{turkcan2026boundlessnyc,
+  author  = {Turkcan, Mehmet Kerem},
+  title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```
+
+## Acknowledgement
+
+BoundlessNYC follows up on earlier work, which it acknowledges here:
+M. K. Turkcan, Y. Li, C. Zang, J. Ghaderi, G. Zussman and Z. Kostic. *Boundless: Generating photorealistic
+synthetic data for object detection in urban streetscapes.* arXiv:2409.03022, 2024.
+<https://arxiv.org/abs/2409.03022>. To cite BoundlessNYC, use the citation above.

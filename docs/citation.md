@@ -1,13 +1,15 @@
 # Citation
 
-If you use BoundlessNYC, the compiled city or imagery rendered with it, please cite the Boundless paper:
+BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. If you use
+BoundlessNYC, the compiled city or imagery rendered with it, please cite BoundlessNYC itself:
 
 ```bibtex
-@article{turkcan2024boundless,
-  title   = {Boundless: Generating photorealistic synthetic data for object detection in urban streetscapes},
-  author  = {Turkcan, Mehmet Kerem and Li, Yuyang and Zang, Chengbo and Ghaderi, Javad and Zussman, Gil and Kostic, Zoran},
-  journal = {arXiv preprint arXiv:2409.03022},
-  year    = {2024}
+@software{turkcan2026boundlessnyc,
+  author  = {Turkcan, Mehmet Kerem},
+  title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
+  year    = {2026},
+  version = {0.1.0},
+  url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```
 

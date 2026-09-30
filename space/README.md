@@ -47,5 +47,6 @@ created with Epic Games' MetaHuman, which may not be used to build or enhance a 
 models; `LICENSING.md` in the
 repository explains the notice and the procedural alternative.
 
-**Citation.** M. K. Turkcan, Y. Li, C. Zang, J. Ghaderi, G. Zussman and Z. Kostic. *Boundless: Generating
-photorealistic synthetic data for object detection in urban streetscapes.* arXiv:2409.03022, 2024.
+**Citation.** BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. Please
+cite it as: M. K. Turkcan. *BoundlessNYC: a real-data, real-time digital twin of New York City.* Software, version
+0.1.0, 2026. <https://github.com/mkturkcan/boundless-nyc>

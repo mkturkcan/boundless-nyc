@@ -2,7 +2,8 @@ cff-version: 1.2.0
 title: "BoundlessNYC: a real-data, real-time digital twin of New York City"
 message: >-
   If you use this software, the compiled city or imagery rendered with it, please
-  cite this repository and the Boundless paper listed under preferred-citation.
+  cite it as below. BoundlessNYC is a separate follow-up project, developed and
+  maintained by Mehmet Kerem Turkcan, and is cited on its own.
 type: software
 version: "0.1.0"
 abstract: >-
@@ -46,27 +47,3 @@ references:
     title: "CARLA Simulator"
     notes: "Vehicle, pedestrian and prop assets, CC BY 4.0"
     url: "https://carla.org"
-preferred-citation:
-  type: article
-  title: >-
-    Boundless: Generating photorealistic synthetic data for object detection in
-    urban streetscapes
-  authors:
-    - family-names: Turkcan
-      given-names: Mehmet Kerem
-    - family-names: Li
-      given-names: Yuyang
-    - family-names: Zang
-      given-names: Chengbo
-    - family-names: Ghaderi
-      given-names: Javad
-    - family-names: Zussman
-      given-names: Gil
-    - family-names: Kostic
-      given-names: Zoran
-  journal: "arXiv preprint arXiv:2409.03022"
-  year: 2024
-  identifiers:
-    - type: other
-      value: "arXiv:2409.03022"
-  url: "https://arxiv.org/abs/2409.03022"

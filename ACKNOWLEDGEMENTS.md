@@ -125,8 +125,12 @@ During development, Google Street View panoramas and web photographs of New York
 references for comparison renders. They are not contained in this repository, the compiled city or any release. No
 such image has been used as a texture, as a source of geometry or as training data.
 
-## Related publication
+## Earlier work
 
+BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. It
+acknowledges the earlier Boundless work:
 M. K. Turkcan, Y. Li, C. Zang, J. Ghaderi, G. Zussman and Z. Kostic. *Boundless: Generating photorealistic
 synthetic data for object detection in urban streetscapes.* arXiv:2409.03022, 2024.
 <https://arxiv.org/abs/2409.03022>
+
+To cite BoundlessNYC itself, use [CITATION.cff](CITATION.cff).

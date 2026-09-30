@@ -3604,6 +3604,24 @@ const GND_GLSL = /* glsl */ `
 // lane, sealed and open crack runs of a constant width, alligator cracking and raveling in old wheel tracks, utility cuts
 // behind a dark saw cut with a settled or proud edge, dust at the kerb. `?gp31=0` restores GM28.
 export const GP31 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gp31') === '0');
+// CP32R (city/cpRelief.js): Central Park's relief takes its ground below the y = 0 river plane (the Lake's banks and
+// Bethesda's lower terrace at about -3 m) and onto slopes of 10-20 degrees. So over the park's rectangle on the grid's
+// bearing (NYC Parks M010, 10 m margin): the river plane is not drawn (the park's lakes are their own water), and the
+// ground shader's waterfront treatment (riprap on any soft bank over 9 degrees, wet rock and algae within a metre of sea
+// level, tide-stained pavement) is off, which turned the Lake's lawns and the lower terrace grey. `?cp32=0` / `?cp32r=0`.
+export const CP32R_MASK = !(typeof location !== 'undefined' && /(^|[?&])cp32r?=0(&|$)/.test(location.search));
+const CP_PARK_IN = (v) => `(abs(dot(${v} - vec2(447.2, 82.2), vec2(0.4848, -0.8746))) < 2084.0 && abs(dot(${v} - vec2(447.2, 82.2), vec2(0.8746, 0.4848))) < 451.0)`;
+// CP32R: the far LoD drew the park's ground one flat grey, so every aerial up the park turned grey past the near tiles
+// (~1.3 km). Over the same rectangle it lays the park as the USGS NAIP aerial has it (public domain; resampled onto the
+// rectangle at ~2 m a texel by boundlessjs/tools/cp/relief_farphoto.py): woods, lawns, the Lake and the Reservoir.
+let _cpFarPhoto = null;
+const cpFarPhoto = () => {
+  if (!_cpFarPhoto && typeof document !== 'undefined') {
+    _cpFarPhoto = new THREE.TextureLoader().load('textures/cp32_park_far.jpg');
+    _cpFarPhoto.anisotropy = 4;
+  }
+  return _cpFarPhoto;
+};
 // GP32 (owner 2026-09-29 on the trailer take fTraffic: "Asphalt decals/material have clear z fighting that's terrible. I
 // also don't like low-quality lines etc. I gave you high quality references don't give me lines."). Measured causes
 // (docs/notes/ground-gp32.md): the junction is a stack of coincident asphalt triangles whose per-triangle kerb frames
@@ -4823,6 +4841,10 @@ const GP31_SURF_GLSL = /* glsl */ `
             GND_tnW = nW * (1.0 - GND_wall);
           }
 `;
+// CP32L (city/cpLand.js): Central Park's ground-cover mask, filled by the park's land part once it has baked it. RGBA8
+// over the park's box: R the woodland floor (OSM natural=wood), G the ballfields' clay infields, B the tennis centre's
+// green clay, A the wet bank along every shore (1 at the water, 0 by 4 m); rect = x0, z0, 1/w, 1/h in world metres.
+export const CP32L_GROUND = { mask: { value: null }, rect: { value: new THREE.Vector4(0, 0, 0, 0) }, on: { value: 0 } };
 export function makeGroundMaterial() {
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.95, metalness: 0.0 });
   if (GP31) {
@@ -4843,6 +4865,8 @@ export function makeGroundMaterial() {
     sh.uniforms.windT = ENV.windT;
     sh.uniforms.snowA = ENV.snow;
     for (const k of ['asC', 'asN', 'asR', 'asD', 'coC', 'coN', 'grC', 'grN', 'pvC', 'pvN']) sh.uniforms['t_' + k] = { value: GTEX[k] };
+    sh.uniforms.cp32lMask = CP32L_GROUND.mask; sh.uniforms.cp32lRect = CP32L_GROUND.rect; sh.uniforms.cp32lOn = CP32L_GROUND.on;   // CP32L
+    if (CP32R_MASK) sh.uniforms.cpFarPhoto = { value: cpFarPhoto() };   // CP32R: the far park's ground (matId 8) from the aerial
     GTEX_UNIFORM_REFS.push(sh.uniforms); // async KTX2 arrivals refresh these
     if (GP32) sh.uniforms.gpVN = { value: 1 };
     if (GP31) { sh.uniforms.t_gpA = GP31_TEX.alb; sh.uniforms.t_gpN = GP31_TEX.nrm; sh.uniforms.gpReady = GP31_TEX.ready; sh.uniforms.gpSun = ENV.sunDir; sh.uniforms.gpMacroL = GP31_TEX.macroL; sh.uniforms.gpGravelL = GP31_TEX.gravelL; }
@@ -4888,6 +4912,8 @@ export function makeGroundMaterial() {
         uniform sampler2D t_coC; uniform sampler2D t_coN;`}
         uniform sampler2D t_grC; uniform sampler2D t_grN;
         uniform sampler2D t_pvC; uniform sampler2D t_pvN;
+        uniform sampler2D cp32lMask; uniform vec4 cp32lRect; uniform float cp32lOn;   // CP32L: Central Park's ground cover
+        ${CP32R_MASK ? 'uniform sampler2D cpFarPhoto;   // CP32R: the far park' : ''}
         uniform vec3 lb14StCal; uniform vec3 lb14Walk; uniform vec3 lb14Paint; uniform float lb14Road;   // LB14 (docs/notes/lb14.md)
         varying float vMat; varying vec3 vWPos;
         ${HASH_GLSL}
@@ -5761,6 +5787,13 @@ vec3 worn = mix(asph, paintC * 0.80, 0.62);
           soil *= 1.0 - smoothstep(0.5, 0.9, fbm(vWPos.xz * 0.06 + 19.0)) * 0.30;
           albedo = soil;
           if (m == 8) albedo = mix(albedo, vec3(0.118, 0.116, 0.112), 0.55); // urban carpet tint
+          ${CP32R_MASK ? `// CP32R: the far terrain over the park is the park from the USGS NAIP aerial (the far macro tiles carry no ground
+          // of their own: this is the ground past the near tiles), not the urban carpet's grey
+          if (m == 8 && ${CP_PARK_IN('vWPos.xz')}) {
+            vec2 cq = vWPos.xz - vec2(447.2, 82.2);
+            vec3 ph = texture2D(cpFarPhoto, vec2(dot(cq, vec2(0.4848, -0.8746)) / 4168.0 + 0.5, 0.5 - dot(cq, vec2(0.8746, 0.4848)) / 902.0)).rgb;
+            albedo = ph * ph * 1.2;
+          }` : ''}
           GND_rough = 0.95;
         }
         // ---- roadway edge classes the compiler cuts out of the asphalt ribbon
@@ -6154,6 +6187,87 @@ ${GP31_SURF_GLSL}
             }
           }
         }
+        // CP32L: Central Park's ground cover over the lawn (5) and the bare ground (7), from the park's mask (city/cpLand.js,
+        // CP32L_GROUND): the woodland floor (browned oak and maple litter, moss and ivy in the damp, trodden soil), the
+        // ballfields' clay infields, the tennis centre's green clay, the wet bank at every shore, the silt of the beds.
+        // Here, after the grass detail, so it is the lawn's last word (the revetment below skips the park).
+        if (cp32lOn > 0.5 && (m == 5 || m == 7) && GND_rock < 0.6) {
+          vec2 cpJ = (vec2(vnoise(vWPos.xz * 0.19 + 3.1), vnoise(vWPos.xz * 0.19 + 8.7)) - 0.5) * 3.0;   // ragged edges, +-1.5 m
+          vec2 cpUV = (vWPos.xz + cpJ - cp32lRect.xy) * cp32lRect.zw;
+          if (cpUV.x > 0.0 && cpUV.y > 0.0 && cpUV.x < 1.0 && cpUV.y < 1.0) {
+            vec4 cpM = texture2D(cp32lMask, cpUV);
+            float cpWood = smoothstep(0.15, 0.85, cpM.r), cpClay = smoothstep(0.2, 0.8, cpM.g), cpCourt = smoothstep(0.3, 0.7, cpM.b);
+            float cpWet = cpM.a;
+            if (cpWood > 0.002) {
+              float cpv_l1 = fbm(vWPos.xz * 0.85 + 3.0), cpv_l2 = vnoise(vWPos.xz * 3.7 + 11.0), cpv_l3 = fbm(vWPos.xz * 0.11 + 29.0);
+              // late September under the canopy (the lead's 08:00 review against photographs of the Ramble: brown litter,
+              // warm grey-brown to olive in shade, with green patches of understory): a warm, lighter litter, the
+              // understory's greens mottled through it, no sheen (the sky's specular had tinted it slate-blue)
+              vec3 cpL = mix(vec3(0.118, 0.090, 0.058), vec3(0.160, 0.122, 0.078), cpv_l1);
+              cpL = mix(cpL, mix(vec3(0.066, 0.092, 0.036), vec3(0.090, 0.118, 0.046), cpv_l2), smoothstep(0.50, 0.80, cpv_l3) * 0.45);
+              cpL = mix(cpL, vec3(0.092, 0.074, 0.052), smoothstep(0.62, 0.88, cpv_l2) * 0.3 * gNear);
+              cpL *= 0.9 + 0.2 * cpv_l2 * gNear + 0.1 * (1.0 - gNear);
+              albedo = mix(albedo, cpL, cpWood);
+              GND_tnW *= 1.0 - 0.75 * cpWood;
+              GND_rough = mix(GND_rough, 1.0, cpWood);
+              GND_spec = mix(GND_spec, 0.25, cpWood);
+            }
+            if (cpClay > 0.002) {
+              float cpv_c1 = fbm(vWPos.xz * 0.6 + 71.0), cpv_c2 = vnoise(vWPos.xz * 5.0 + 13.0);
+              vec3 cpC = mix(vec3(0.235, 0.118, 0.062), vec3(0.300, 0.160, 0.088), cpv_c1) * (0.9 + 0.2 * cpv_c2 * gNear);
+              albedo = mix(albedo, cpC, cpClay);
+              GND_tnW *= 1.0 - 0.9 * cpClay;
+              GND_rough = mix(GND_rough, 0.93, cpClay);
+            }
+            if (cpCourt > 0.002) {
+              vec3 cpT = mix(vec3(0.108, 0.128, 0.098), vec3(0.140, 0.160, 0.122), fbm(vWPos.xz * 0.5 + 91.0));
+              albedo = mix(albedo, cpT, cpCourt);
+              GND_tnW *= 1.0 - 0.9 * cpCourt;
+              GND_rough = mix(GND_rough, 0.94, cpCourt);
+            }
+            if (cpWet > 0.002) {
+              float cpv_w1 = fbm(vWPos.xz * 0.7 + 17.0);
+              vec3 cpMud = mix(vec3(0.052, 0.046, 0.032), vec3(0.082, 0.072, 0.050), cpv_w1);
+              float cpv_mw = smoothstep(0.72, 0.98, cpWet) * (0.45 + 0.45 * cpv_w1);
+              albedo = mix(albedo * mix(1.0, 0.84, smoothstep(0.15, 0.7, cpWet)), cpMud, cpv_mw);
+              GND_rough = mix(GND_rough, 0.7, cpv_mw);
+            }
+            if (m == 7) albedo = mix(albedo, mix(vec3(0.040, 0.040, 0.028), vec3(0.066, 0.060, 0.040), fbm(vWPos.xz * 0.4 + 5.0)), smoothstep(0.3, 0.9, cpWet));
+          }
+        }
+        // CP32L: the park's perimeter sidewalk, hexagonal asphalt block (8 in across the flats, laid 1930s-40s) with
+        // granite block margins at the kerb (Central Park Conservancy, "Park Perimeter"); the band is the park's own
+        // edges in the grid frame (the ring's medians: east 434.6, west -397.4, north 2079.5, south -2033 m) out 10 m.
+        if (cp32lOn > 0.5 && m == 1) {
+          vec2 cpq = vWPos.xz - vec2(447.2, 82.2);
+          float cpa = dot(cpq, vec2(0.4848, -0.8746)), cpb = dot(cpq, vec2(0.8746, 0.4848));
+          float cpde = max(max(cpb - 434.6, -397.4 - cpb), max(cpa - 2079.5, -2033.0 - cpa));
+          if (cpde > -2.5 && cpde < 10.0) {
+            vec2 cpv_hu = vec2(cpa, cpb) / 0.2;
+            vec4 cpv_hC = floor(vec4(cpv_hu, cpv_hu - vec2(0.5, 1.0)) / vec4(1.0, 1.7320508, 1.0, 1.7320508)) + 0.5;
+            vec4 cpv_hh = vec4(cpv_hu - cpv_hC.xy * vec2(1.0, 1.7320508), cpv_hu - (cpv_hC.zw + 0.5) * vec2(1.0, 1.7320508));
+            vec4 cpv_hx = dot(cpv_hh.xy, cpv_hh.xy) < dot(cpv_hh.zw, cpv_hh.zw) ? vec4(cpv_hh.xy, cpv_hC.xy) : vec4(cpv_hh.zw, cpv_hC.zw + 0.5);
+            vec2 cpv_ha = abs(cpv_hx.xy);
+            float cpv_hd = 0.5 - max(dot(cpv_ha, vec2(0.5, 0.8660254)), cpv_ha.x);
+            float cpv_hfw = gFw * 10.0 + 1e-4;   // gFw: the footprint taken in uniform flow at the top
+            float cpv_hdet = 1.0 - smoothstep(0.12, 0.35, cpv_hfw);
+            float cpv_joint = (1.0 - smoothstep(0.025, 0.025 + cpv_hfw, cpv_hd)) * cpv_hdet;
+            vec3 cpv_hexC = vec3(0.080, 0.078, 0.074) * mix(1.0, 0.84 + 0.32 * hash12(cpv_hx.zw * 1.37 + 3.0), cpv_hdet);
+            cpv_hexC *= 1.0 - 0.18 * smoothstep(0.55, 0.9, fbm(vWPos.xz * 0.21 + 61.0));   // traffic polish and stains
+            cpv_hexC = mix(cpv_hexC, vec3(0.050, 0.047, 0.043), cpv_joint * 0.8);
+            ${GP31 ? `if (kOk && kDn < 0.62) {
+              // the granite margin at the kerb: three courses of setts
+              vec2 cpv_gu = vec2(cpa / 0.21, kDn / 0.2);
+              vec2 cpv_gf = fract(cpv_gu + vec2(floor(cpv_gu.y) * 0.5, 0.0));
+              float cpv_gj = (1.0 - smoothstep(0.04, 0.04 + gFw * 9.5, min(cpv_gf.x, 1.0 - cpv_gf.x))) + (1.0 - smoothstep(0.05, 0.05 + gFw * 10.0, min(cpv_gf.y, 1.0 - cpv_gf.y)));
+              vec3 cpv_gr = vec3(0.205, 0.198, 0.188) * (0.88 + 0.24 * hash12(floor(cpv_gu + vec2(floor(cpv_gu.y) * 0.5, 0.0)) + 9.0));
+              cpv_hexC = mix(cpv_gr, cpv_gr * 0.55, clamp(cpv_gj, 0.0, 1.0) * cpv_hdet);
+            }` : ''}
+            albedo = cpv_hexC;
+            GND_tnW *= 0.3;
+            GND_rough = 0.88;
+          }
+        }
         // waterfront revetment — LAST albedo writer before decals/rain/snow.
         // It must sit AFTER the PBR detail block: the grass texture mix above
         // washed every earlier placement back to pale tan at close range (det
@@ -6165,7 +6279,7 @@ ${GP31_SURF_GLSL}
         // seawall toe is gentle but it is still tidal ground, never lawn).
         // vNormal is VIEW-space in three's pipeline — the slope gate needs the
         // geometric world normal from position derivatives.
-        if (m == 5 || m == 7 || m == 8 || m == 6) {
+        if ((m == 5 || m == 7 || m == 8 || m == 6)${CP32R_MASK ? ` && !${CP_PARK_IN('vWPos.xz')}` : ''}) {
           vec3 nWG = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
           float bankSl = 1.0 - abs(nWG.y);
           float bank = smoothstep(0.012, 0.05, bankSl); // 1-cos: 9deg=0.012 18deg=0.05
@@ -6193,7 +6307,7 @@ ${GP31_SURF_GLSL}
         // dropped to ~0.45m at the seawall base) must read as tide-stained
         // concrete, not fresh sidewalk. Gated on height alone — carved road
         // trenches this deep are rare and damp-dark suits them anyway.
-        if (m == 1 || m == 2 || m == 10) {
+        if ((m == 1 || m == 2 || m == 10)${CP32R_MASK ? ` && !${CP_PARK_IN('vWPos.xz')}` : ''}) {
           float lowP = 1.0 - smoothstep(0.2, 0.9, vWPos.y);
           albedo = mix(albedo, mix(vec3(0.106, 0.113, 0.113), vec3(0.148, 0.152, 0.148), vnoise(vWPos.xz * 1.7)), lowP * 0.8);
           albedo = mix(albedo, vec3(0.058, 0.074, 0.050),
@@ -6385,6 +6499,7 @@ export function makeFarMaterial() {
     sh.uniforms.cityAORect = ENV.cityAORect;
     sh.uniforms.cityAOAmt = ENV.cityAOAmt;
     sh.uniforms.uScale = { value: 1 / 8 };
+    if (CP32R_MASK) sh.uniforms.cpFarPhoto = { value: cpFarPhoto() };
     sh.defines = sh.defines || {};
     if (!NO_TOWER_FX) sh.defines.TOWERFX = 1;
     sh.vertexShader = sh.vertexShader
@@ -6397,7 +6512,7 @@ export function makeFarMaterial() {
         vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform vec2 playerXZ; uniform float nearR; uniform float night;${NEARMASK_GLSL}
+        uniform vec2 playerXZ; uniform float nearR; uniform float night;${NEARMASK_GLSL}${CP32R_MASK ? ' uniform sampler2D cpFarPhoto;' : ''}
         uniform float wet; uniform float snowA;
         uniform vec3 sunDirF; uniform vec3 sunColF; uniform vec3 skyAmbF;
         uniform sampler2D cityAO; uniform vec4 cityAORect; uniform float cityAOAmt;
@@ -6408,6 +6523,16 @@ export function makeFarMaterial() {
       {
         if (farHidden(vWPos.xz)) discard;   // NM24: a ready near tile draws this ground
         diffuseColor.rgb *= diffuseColor.rgb; // sRGB bytes → approx linear
+        ${CP32R_MASK ? `// CP32R: the park's ground from the aerial (level faces under 8 m only: not the walls in the rectangle's margin)
+        {
+          vec2 cq = vWPos.xz - vec2(447.2, 82.2);
+          float cu = dot(cq, vec2(0.4848, -0.8746)), cv = dot(cq, vec2(0.8746, 0.4848));
+          vec3 cN = normalize(cross(dFdx(vWPos), dFdy(vWPos)));
+          if (abs(cu) < 2084.0 && abs(cv) < 451.0 && vWPos.y < 8.0 && abs(cN.y) > 0.9) {
+            vec3 ph = texture2D(cpFarPhoto, vec2(cu / 4168.0 + 0.5, 0.5 - cv / 902.0)).rgb;
+            diffuseColor.rgb = ph * ph * 1.35;
+          }
+        }` : ''}
         // LIT far macro (was flat unlit albedo = the "whole horizon looks
         // flat" root cause): flat-shaded facet normals from derivatives,
         // lambert sun + hemispheric sky — tracks time of day for free since
@@ -6520,6 +6645,7 @@ export function makeWaterMaterial() {
       }
       void main() {
         vec2 p = vWorld.xz;
+        ${CP32R_MASK ? `if ${CP_PARK_IN('p')} discard;` : ''}
         // large-scale current patches: tidal rivers read as broad calm/ruffled
         // lanes from the air, never as one uniform tone
         float cur = fbm(p * 0.006 + vec2(time * 0.012, -time * 0.008));

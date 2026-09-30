@@ -6,6 +6,9 @@
 // read as one family. ?el14=0 leaves it out.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+// AR32W: the Manhattan Valley Viaduct's arch over W 125th St (city/w125wKit.js mvvBuild) carries the IRT deck across the
+// street, so the plain bents that stood in its span are left out (?ar32w=0 keeps them)
+import { mvvArchSkip } from './w125wData.js';   // AR32W
 
 const EL14 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('el14') === '0');
 const STEEL = 0x34383b;    // the els are painted a near-black green that weathers to rust-brown streaks
@@ -49,6 +52,7 @@ export async function buildElevated(scene) {
     const c = Math.cos(b.rot), s = -Math.sin(b.rot);   // +X rotated by rot about Y -> (cos, 0, -sin)
     const h = b.y1 - b.y0;
     if (h < 3) continue;
+    if (mvvArchSkip(b.x, b.z)) continue;   // AR32W: in the span of the Manhattan Valley arch at 125th St
     for (const off of [-b.a, b.b]) {
       const x = b.x + c * off, z = b.z + s * off;
       boxAt(steel, 0.55, h, 0.55, x, b.y0 + h / 2, z, b.rot);                 // column

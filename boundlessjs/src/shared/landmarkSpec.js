@@ -69,6 +69,14 @@ export const LANDMARKS = [
   { id: 59, key: 'p30hudson',       name: '30 Hudson Yards',             lat: 40.75390, lon: -74.00110, mode: 'replace' },
   { id: 60, key: 'one57',           name: 'One57',                       lat: 40.76545, lon: -73.97875, mode: 'replace' },
 ];
+// AR32C (city/w125c.js): the 125th Street part builds the Apollo's front itself (the terracotta, the marquee, the blade
+// sign); the old decorate builder's red and white boxes are kept off by giving the entry, in the browser only, a key no
+// builder has (the compiled footprint keeps its landmark id). `?ar32c=0` or `?ar32=0` restores it.
+{
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+  if (q && q.get('ar32c') !== '0' && q.get('ar32') !== '0') { const a = LANDMARKS.find((l) => l.id === 8); if (a) a.key = 'apolloTheaterAR32C'; }
+}
+// /AR32C
 
 // District style overrides — polygon (lon/lat) forcing palette/behavior.
 export const DISTRICTS = [
@@ -152,3 +160,24 @@ export const BUILDING_OVERRIDES = [
   { key: 'amstSE120', name: 'SE corner: 1217-1219 Amsterdam, buff brick over a limestone base, Hartley Chemist', lat: 40.80897, lon: -73.95900,
     style: 'PREWAR_APT', color: [190, 166, 128], wall: 'brickTan', base: { wall: 'limestone', floors: 3 }, roofKind: 0, set: ['CORNICE'], clear: ['FIRE_ESCAPE', 'STOREFRONT'] },
 ];
+// AR32C (city/w125c.js, docs/notes/area-w125c.md): 125th Street's landmarks on their real footprints, read-time only (the
+// browser, world/tiledata.js; `?ar32c=0` or `?ar32=0` keeps the compiled records). The compile had put Hotel Theresa's
+// point (id 9) on a 10.4 m shop row (#202) beside the Theresa and the State Office Building's (id 10) on a 26.1 m block west of
+// the boulevard; the Theresa is the 51.5 m, 12-storey footprint between 124th and 125th Streets west of the boulevard
+// (Wikipedia: "2082-96 Adam Clayton Powell Jr. Boulevard between West 124th and 125th Streets", 13 storeys, white
+// terracotta) and the State Office Building the 88.9 m, 19-storey tower east of it (163 W 125th St). Points are the
+// footprints' centroids (boundlessjs/tools/ar32/w125c_inside.mjs: each lies inside its footprint).
+{
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+  if (q && q.get('ar32c') !== '0' && q.get('ar32') !== '0') BUILDING_OVERRIDES.push(
+    { key: 'ar32cShopRow', name: 'shop row at 125th St and ACP Blvd (not the Theresa)', lat: 40.808924, lon: -73.949173, landmarkId: 0 },
+    { key: 'ar32cTheresa', name: 'Hotel Theresa (1913, George & Edward Blum): white terracotta, 13 storeys', lat: 40.808761, lon: -73.948930,
+      landmarkId: -9, color: [226, 223, 214], wall: 'limestone' },
+    { key: 'ar32cWestOfAcp', name: 'block west of ACP Blvd (not the State Office Building)', lat: 40.809595, lon: -73.948399, landmarkId: 0 },
+    { key: 'ar32cStateOffice', name: 'Adam Clayton Powell Jr. State Office Building (1973), 19 storeys', lat: 40.809219, lon: -73.947423, landmarkId: -10 },
+    // the Apollo's lobby (a point 3 m inside its frontage): the part builds the ground floor under the marquee, so the
+    // procedural shop fronts and awnings (they stood out under the marquee in the r1 stills) are off
+    { key: 'ar32cApollo', name: 'Apollo Theater lobby, 253 W 125th St', lat: 40.809923, lon: -73.950126, clear: ['STOREFRONT'] },
+  );
+}
+// /AR32C

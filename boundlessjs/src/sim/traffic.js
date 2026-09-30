@@ -1,6 +1,6 @@
 // Traffic: cars on the real street graph. IDM following, signal phases with amber,
 // turn-ratio routing, U-turns at dead ends, jam-aware intersection entry.
-import { spawnGuard } from './spawnGuard.js';
+import { spawnGuard, viewGuard } from './spawnGuard.js';
 import * as THREE from 'three';
 import { buildVehicleGeos, fleetColor, VH13 } from './vehicles.js';
 import { signalState } from './signals.js';
@@ -208,6 +208,43 @@ const VQ30 = VT29 && (typeof location === 'undefined' || new URLSearchParams(loc
 // (was 5) or ends its sideways motion 6 m short (was 3). A car kept out of its turn lane goes straight at the mouth, as
 // before. `?vq31=0` restores VQ30.
 const VQ31 = VQ30 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31') !== '0');
+// OV32 (owner 2026-09-29 on film 16's Lenox night swipe: "one turning vehicle clips through another during the turn. In
+// general in a simulator like this we should be careful to avoid silly mistakes like this"): nothing kept two bodies apart
+// in a junction box but rules for particular pairs, decided at the stop bar. A car on its connector followed only the car
+// ahead in its own target lane and on its own connector; once past the stop bar it drove through anything else on its
+// path. The take: a sedan waiting on the link across Lenox's median to turn left, a van turning left from the lane beside
+// it and through it. Census (scratchpad ov32_eval9k.js, 300 s round the 125th St boxes, four runs): 4-14 overlap events,
+// 2-7 of them 0.5-3.8 m deep, of two kinds: two cars from one arm whose connectors cross (a turn from the wrong lane; no
+// rule compares cars of one arm), and a car driving into one standing on its path (at the end of its connector, on a
+// short interior link).
+//   The sweep: every car on a connector moves its own body (grown 0.1 m, at the heading it will have at each point, its
+// rear axle towed behind; past the connector's end along the lane it enters) over the rest of its path, as far as it
+// needs to stop and 3 m more, and brakes to stand short of the first other body it would touch, whatever that car is
+// doing (a follower behind it excepted). At the stop bar a car does not enter the box while a standing body lies across
+// its path through it.
+//   Holding still for bodies alone gridlocked the boxes (junction passes 46-51 in 300 s -> 9-27 in half the runs), each
+// jam a wait on a wait: a car standing on the 15 m link across a divided avenue's median, its rear in the carriageway it
+// had crossed, waited by the heading rules (a)-(d) for the traffic now stopped for it; two cars on connectors into one
+// lane each took the other for its leader (s compared along connectors of different lengths); a pair each on the other's
+// path. So: a car that stands in the path of one in the box, or that the rules (a)-(d) alone have held for 10 s, goes as
+// soon as its own way is physically clear; on two connectors into one lane the one with less connector left leads; a
+// pair held in each other's way passes after 6 s where no camera sees it (sim/spawnGuard.js viewGuard) and after 20 s
+// anywhere (counted: ovUnseen, ovSqueeze); and a car that has stood 40 s out of sight, neither at a red light nor behind
+// another car, is recycled (ovRecycled). Three runs: passes 46, 46, 46, cars standing over 30 s at the end 0 (7-20
+// before), overlap events 2-4, nearly all out of sight. `?ov32=0` restores the old junction.
+const OV32 = typeof location === 'undefined' || new URLSearchParams(location.search).get('ov32') !== '0';
+const OV_M = 0.1;
+// CP32 (city/centralPark.js): Central Park's drives have been closed to cars since June 2018 (the transverse roads under
+// the park still carry traffic), but CSCL codes East, West, Center and Terrace Drive, the entrance and exit spurs, a path
+// and Bow Bridge as ordinary roadways, so cars drove the loop, parked along it and crossed the Lake on the footbridge. No
+// car is spawned, routed or parked on them. `?cp32=0` restores.
+const CP32T = typeof location === 'undefined' || new URLSearchParams(location.search).get('cp32') !== '0';
+const cpDrive = (r) => {
+  const n = r.name || '';
+  if (!CP32T || !(/^(EAST|WEST|CENTER|TERRACE) DR$/i.test(n) || /^THE MALL$/i.test(n) || (/^CENTRAL PARK /i.test(n) && !/^CENTRAL PARK (W|S|N|WEST|SOUTH|NORTH)$/i.test(n)))) return false;
+  const q = r.pts[r.pts.length >> 1];
+  return q[0] > -960 && q[0] < 1900 && q[2] > -2000 && q[2] < 2150;
+};
 // its parts, for the A/Bs: `?vq31e=0` picks the turn 34 m out as before, `?vq31t=0` keeps the 8 deg path at a crawl
 const VQ31E = VQ31 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31e') !== '0');
 const VQ31T = VQ31 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31t') !== '0');
@@ -382,6 +419,7 @@ export class Traffic {
     const ids = [];
     for (const r of data.roads) {
       if (r.rclass >= 5 || r.noTraffic || r.pts.length < 2) continue;   // paths and pedestrianised streets carry no cars
+      if (cpDrive(r)) continue;                                            // CP32: nor do Central Park's drives
       ids.push(this._addEdge(r.pts, r, key));
     }
     for (const n of data.nodes) if (n.signal) this.signals.set(this._canon(n.x, n.z), true);
@@ -391,7 +429,7 @@ export class Traffic {
     // rebucketer writes them into full-res or shell pools by camera distance
     const recs = [];
     for (const r of data.roads) {
-      if (r.rclass > 2 || r.level > 0 || !r.park || r.pts.length < 2) continue;
+      if (r.rclass > 2 || r.level > 0 || !r.park || r.pts.length < 2 || cpDrive(r)) continue;
       const e = { pts: r.pts, cum: [0] };
       for (let i = 1; i < r.pts.length; i++) e.cum.push(e.cum[i - 1] + Math.hypot(r.pts[i][0] - r.pts[i - 1][0], r.pts[i][2] - r.pts[i - 1][2]));
       e.len = e.cum[e.cum.length - 1];
@@ -1093,9 +1131,18 @@ export class Traffic {
     }
     // cars spawned through the external API (src/api/bridge.js, car.api) are extra, never part of the ambient target
     if (this.cars.length - (this.apiCount || 0) < this.target && this.edges.size > 30) for (let i = 0; i < 8; i++) this.spawnCar(px, pz);
+    if (OV32) this._ovGrid();
     for (let ci = this.cars.length - 1; ci >= 0; ci--) {
       const car = this.cars[ci];
       if (car.manual) continue;   // an API car under apply_control(): src/api/bridge.js moves and places it
+      // OV32 watchdog: a car that has stood 40 s where no camera sees it, not for a red light nor behind another car, heads a
+      // jam the rules above could not untie (a pair each held by the other's body since a spawn put one inside the other):
+      // it is recycled, and the ambient target puts a car back somewhere else
+      if (OV32 && !car.api) {
+        car._standT = (car.v || 0) < 0.1 ? (car._standT || 0) + dt : 0;
+        // (only the head of a jam: a car in a queue waits for the one ahead, and one at a red light for the light)
+        if (car._standT > 40 && (car.turn || !/^(signal|link red|queue)$/.test(car._why || '')) && !this._ovSeen(car)) { this.ovRecycled = (this.ovRecycled || 0) + 1; this._remove(ci); continue; }
+      }
       const e = car.e;
       if (e.minor) car.dead = true; // stranded on a fragment: recycle onto the network
       // ---- curved intersection turn in progress
@@ -1107,7 +1154,15 @@ export class Traffic {
         const ne = car.e, entryD = car.d;
         for (const oc of ne.cars) {
           if (oc === car || oc.dir !== car.dir || oc.lane !== car.lane) continue;
-          if (oc.turn) { if (oc.turnNode === car.turnNode && oc.turn.s > T.s) gapT = Math.min(gapT, oc.turn.s - T.s - followGap(oc, car)); continue; }
+          if (oc.turn) {
+            if (oc.turnNode !== car.turnNode) continue;
+            // OV32: on two connectors into this lane the one with less of its connector left leads (s is metres along each
+            // car's own connector: a car 1.3 m into a 26.7 m one took the lead over one standing at the start of an 18.9 m
+            // one, which then waited for it while the first was held by its body)
+            if (OV32) { const rO = oc.turn.len - oc.turn.s, rM = T.len - T.s; if (rO < rM) gapT = Math.min(gapT, rM - rO - followGap(oc, car)); }
+            else if (oc.turn.s > T.s) gapT = Math.min(gapT, oc.turn.s - T.s - followGap(oc, car));
+            continue;
+          }
           const ahead = (oc.d - entryD) * car.dir;
           if (ahead > -1) gapT = Math.min(gapT, (T.len - T.s) + ahead - followGap(oc, car));
         }
@@ -1115,6 +1170,12 @@ export class Traffic {
         // drove followers into the car ahead on 10 m connectors); without: the old behaviour
         const pgT = this._pedGap(car);
         if (pgT < gapT) { gapT = pgT; car._pyHold = true; }
+        // OV32: stand short of any other body on the rest of the path
+        if (OV32) {
+          const gB = this._ovSweepTurn(car, T);   // car._ovBy: the body it met this frame (null: none)
+          if (gB < gapT) { gapT = gB; car._ovT = car._ovBy === car._ovPrev ? (car._ovT || 0) + dt : dt; car._ovPrev = car._ovBy; }
+          else { car._ovT = 0; car._ovPrev = null; }
+        }
         // VT28: the connector's cap is met braking at up to 4.5 m/s2 (a tight bend used to cut the speed in one frame)
         const capT = VT28 ? Math.max(T.vCap, car.v - 4.5 * dt) : T.vCap;
         if (gapT < 1e8) car.v = gapT < 0.6 ? 0 : Math.min(car.v + IDM.a * dt, capT, Math.sqrt(Math.max(0, gapT - 0.6) * IDM.b));
@@ -1135,7 +1196,7 @@ export class Traffic {
         if (Math.abs(tx2) + Math.abs(tz2) < 1e-6) { tx2 = T.p2[0] - T.p0[0]; tz2 = T.p2[2] - T.p0[2]; } // degenerate (straight chord, k = 0) endpoints
         const yaw = Math.atan2(tx2, tz2);
         this._placeCar(car, bx, by, bz, yaw, dt);
-        if (T.s >= T.len) { car.turn = null; if (BX27) car._tail = this.carHalf(car)[1] + 0.6; }   // BX27: its rear is still in the box
+        if (T.s >= T.len) { car.turn = null; if (BX27) car._tail = this.carHalf(car)[1] + 0.6; car._ovT = 0; car._ovBy = car._ovPrev = car._ovForcedBy = null; }   // BX27: its rear is still in the box
         continue;
       }
       const s = this.sampleEdge(e, car.d);
@@ -1195,7 +1256,7 @@ export class Traffic {
         const vTurn = car.next.turn === 'uturn' ? 3.2 : 6.0, dM = Math.max(0, endD - Math.max(0, mEnd || 0));
         v0 = Math.min(v0, Math.sqrt(vTurn * vTurn + 4.4 * dM));
       }
-      let gap = 1e9, leadV = v0;
+      let gap = 1e9, leadV = v0, leadC = null;   // leadC: the car the gap is to (read by the census / probes only)
       const myLf = VT28 && car.laneF !== undefined ? car.laneF : car.lane;
       // VT29: a body across my lane is my leader when the two bodies' spans across the lane meet: their half widths plus
       // what their angle to the lane adds (a car stops mid lane change at that angle, and a box truck at 8 deg reaches 0.54 m
@@ -1213,7 +1274,7 @@ export class Traffic {
           if (VT29 ? dl * lwE > myW + this._latHalf(o) + 0.25 : dl >= 0.62) continue;
         }
         const g = (o.d - car.d) * car.dir - followGap(o, car);
-        if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = o.v; }
+        if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = o.v; leadC = o; }
       }
       // the car that just left my lane through the mouth is still my leader while it is on its
       // connector (audit: followers bumped the tail of a car 1 m into its turn)
@@ -1221,7 +1282,7 @@ export class Traffic {
         for (const oc of this.cars) {
           if (!oc.turn || oc.turnFrom !== e || oc.turnFromDir !== car.dir || oc.turnFromLane !== car.lane) continue;
           const g = (endD - mEnd) + oc.turn.s - followGap(oc, car);
-          if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = oc.v; }
+          if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = oc.v; leadC = oc; }
         }
       }
       // queue look-ahead across the junction: nearest car on the chosen next edge
@@ -1233,9 +1294,10 @@ export class Traffic {
           const g2 = (oc.d - entry0) * ndir;
           if (g2 < -1) continue;
           const g = endD + g2 - followGap(oc, car);
-          if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = oc.v; }
+          if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = oc.v; leadC = oc; }
         }
       }
+      car._leadCar = leadC;
       // ---- lane change: a blocked car slides to a clear adjacent lane
       const lanesDirNow = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
       // VQ30: and only into a gap it can finish in (14 m of the new lane clear ahead)
@@ -1279,32 +1341,35 @@ export class Traffic {
       const st = this.stateFor(nodeKey, s.dirx * car.dir, s.dirz * car.dir);
       const brakeDist = (car.v * car.v) / (2 * IDM.b);
       let hold = st === 'R' || (st === 'A' && endD - stopD > brakeDist * 0.7);
+      let why = hold ? 'signal' : '';   // OV32: why the car stands (read by the census / probes only)
       if (!hold && mEnd > 0 && endD < stopD + Math.max(7, brakeDist)) {
         hold = this._mustYield(car, nodeKey, s, st);
+        if (hold) why = 'yield';
       }
       // divided avenues: the 14 m link between the twin nodes is junction INTERIOR. A car never
       // stops on it (its stop point would be inside the box: audit "tesla d7 v0 x turning charger"),
       // and instead waits at THIS stop line while the far node shows red for the continuation
-      if (e.len < 26 && mEnd > 0) hold = false;
+      if (e.len < 26 && mEnd > 0) { hold = false; why = ''; }
       // junction-box occupancy decided AT THE STOP BAR: a car that waited at the mouth instead had
       // its nose 2 m inside the box, where the other arms' connectors sweep (audit: "tesla d6 v0
       // end6 m5" x turning car, 25 pairs per 30 s)
       if (!hold && car.next && mEnd > 0 && endD < stopD + 8 && endD > mEnd + 0.7 && this._boxBlocked(car, e, nodeKey, car.next)) {
-        hold = true;
+        hold = true; why = car._bxBy ? 'box body' : 'box rule';
         if (endD < stopD) car.v = 0;   // already past the stop bar when the box filled: stop where it is, short of the mouth
       }
       // VT29 (f): brake for the stop bar while the lane I turn into has no room for me past the turn (only while a
       // comfortable stop short of the bar is still possible; never on a divided avenue's interior link)
       if (VT29 && !hold && car.next && mEnd > 0 && e.len >= 26 && endD > stopD && endD - stopD < 30 && endD - stopD > brakeDist * 0.6
-          && this._exitFull(car, car.next)) hold = true;
+          && this._exitFull(car, car.next)) { hold = true; why = 'exit full'; }
       if (!hold && car.next && car.next.ne.len < 26) {
         const ne2 = car.next.ne, nd2 = car.next.o.dir;
         const hd = this.dirAt(ne2, nd2 > 0 ? ne2.len - 0.5 : 0.5, nd2);
         const onto = DL27 && Math.abs(s.dirx * car.dir * hd[1] - s.dirz * car.dir * hd[0]) > 0.5;   // DL27: turning onto the link
-        if (!onto && this.stateFor(nd2 > 0 ? ne2.b : ne2.a, hd[0], hd[1]) === 'R') hold = true;
+        if (!onto && this.stateFor(nd2 > 0 ? ne2.b : ne2.a, hd[0], hd[1]) === 'R') { hold = true; why = 'link red'; }
       }
       if (hold && endD - stopD < gap) { gap = Math.max(0.1, endD - stopD); leadV = 0; }
-      { const pg = this._pedGap(car); if (pg < gap) { gap = Math.max(0.05, pg); leadV = 0; } }
+      { const pg = this._pedGap(car); if (pg < gap) { gap = Math.max(0.05, pg); leadV = 0; why = 'walker'; } }
+      car._why = why || (gap < 1e8 && leadV < 0.5 ? 'queue' : '');
       car._gapQ = gap; car._leadQ = leadV;   // VQ30: what the lane-change spring below has left before the car stops
       const dv = car.v - leadV;
       const sStar = IDM.s0 + Math.max(0, car.v * IDM.T + (car.v * dv) / (2 * Math.sqrt(IDM.a * IDM.b)));
@@ -1348,13 +1413,14 @@ export class Traffic {
           if (blocked) {
             // hold at the mouth: pin the car ON the trigger (re-evaluated every frame, no back-jump) with zero speed
             car.d = car.dir > 0 ? Math.max(0.1, e.len - mEnd - 0.58) : Math.min(e.len - 0.1, mEnd + 0.58);
-            car.v = 0;
+            car.v = 0; car._why = car._bxBy ? 'mouth body' : 'mouth rule';
             const sH = this.sampleEdge(e, car.d); const offH = this._laneOffset(e, car);
             this._placeCar(car, sH.x - sH.dirz * car.dir * offH, sH.y + (NO_DATUM ? 0.03 : 0.002), sH.z + sH.dirx * car.dir * offH, Math.atan2(sH.dirx * car.dir, sH.dirz * car.dir), dt);
             continue;
           }
         }
         car.next = null;
+        car._bxPass = null; car._ruleF = undefined;   // OV32: a pass granted at this edge's stop bar ends with it
         if (PY25) car.turnLaneWant = -1;   // the next edge picks its own turn lane (34 m before ITS junction; VQ31: on entering it)
         e.cars.delete(car);
         if (!pick) {
@@ -1646,6 +1712,13 @@ export class Traffic {
   // any arm of this box (divided avenues' twin one-ways included); (d) an oncoming car is mid-left
   // turn across my path; (e) a through car on my target lane is about to pass the entry point.
   _boxBlocked(car, e, nodeKey, pick) {
+    // OV32: this car stands in the path of a car in the box (flagged by that car's sweep in the last two frames): it
+    // moves on as soon as its own way is physically clear; the rules (a)-(d) do not hold it (its sweep keeps it off the
+    // car that turns into its lane ahead of it)
+    // ... and so does one that the rules (a)-(d) alone have held for 10 s (a wait on a wait: one of them has to go first)
+    const clearBox = OV32 && ((car._ovBlk !== undefined && this._frame - car._ovBlk <= 2) || (car._ruleF !== undefined && this._frame - car._ruleF > 300));
+    const prevBx = car._bxBy;
+    car._bxBy = null; car._bxRule = '';
     const hx0 = this.dirAt(e, car.dir > 0 ? e.len - 0.5 : 0.5, car.dir);
     const neP = pick.ne, ndP = pick.o.dir, mNP = ndP > 0 ? neP.mouthA : neP.mouthB;
     const hBP = this.dirAt(neP, ndP > 0 ? Math.min(mNP + 1, neP.len * 0.5) : Math.max(neP.len - mNP - 1, neP.len * 0.5), ndP);
@@ -1660,17 +1733,28 @@ export class Traffic {
       const cross = Math.abs(hx0[0] * oc.turnHead[1] - hx0[1] * oc.turnHead[0]);
       if (BX27 && cross > 0.5) {
         if (!BP) BP = this._boxPath(car, e, neP, ndP, laneP);
-        if (this._bodyOnPath(BP, car, oc)) return true;                             // BX27: its body lies across my path
+        if (this._bodyOnPath(BP, car, oc) && this._bxHold(car, oc, prevBx)) return true;   // BX27: its body lies across my path
       }
       if (tail) continue;
-      if (oc.e === neP && oc.turnLane === laneP) return true;                       // (a)
+      if (clearBox) continue;                                                      // OV32: the path checks only
+      if (oc.e === neP && oc.turnLane === laneP) { car._bxRule = 'a'; if (car._ruleF === undefined) car._ruleF = this._frame; return true; }   // (a)
       if (oc.turn.s >= oc.turn.len - 4) continue;                                  // cleared the box
       const dot = hx0[0] * oc.turnHead[0] + hx0[1] * oc.turnHead[1];
-      if (cross > 0.5 && (oc.turn.s < oc.turn.len * 0.6 || oc.e === neP)) return true;   // (b)
-      if (myCr < -0.4 && dot < -0.5) return true;                                  // (c) oncoming in the box
-      if (dot < -0.5 && (oc.turnCr || 0) < -0.4 && myCr > -0.4) return true;       // (d)
+      if (cross > 0.5 && (oc.turn.s < oc.turn.len * 0.6 || oc.e === neP)) { car._bxRule = 'b'; if (car._ruleF === undefined) car._ruleF = this._frame; return true; }   // (b)
+      if (myCr < -0.4 && dot < -0.5) { car._bxRule = 'c box'; if (car._ruleF === undefined) car._ruleF = this._frame; return true; }       // (c) oncoming in the box
+      if (dot < -0.5 && (oc.turnCr || 0) < -0.4 && myCr > -0.4) { car._bxRule = 'd'; if (car._ruleF === undefined) car._ruleF = this._frame; return true; }   // (d)
     }
-    if (myCr < -0.4) {                                                             // (c) oncoming approaching
+    if (OV32) {
+      // OV32: a standing body across my path through the box, whatever it is doing (an edge car waiting on a divided
+      // avenue's link, a car stopped at the end of its connector with any heading); my own approach's cars are my queue
+      if (!BP) BP = this._boxPath(car, e, neP, ndP, laneP);
+      const q0 = car._pose;
+      if (q0) for (const oc of this._ovNear(q0[0], q0[2], 45)) {
+        if (oc === car || (oc.v || 0) > 1.0 || (oc.e === e && !oc.turn)) continue;
+        if (this._bodyOnPath(BP, car, oc) && this._bxHold(car, oc, prevBx)) return true;
+      }
+    }
+    if (myCr < -0.4 && !clearBox) {                                                // (c) oncoming approaching
       for (const oc of this.cars) {
         if (oc === car || oc.turn || !oc.e) continue;
         const oe = oc.e;
@@ -1679,15 +1763,16 @@ export class Traffic {
         const endO = oc.dir > 0 ? oe.len - oc.d : oc.d;
         if (endO > 28 || oc.v <= 1.0) continue;
         const ho = this.dirAt(oe, oc.dir > 0 ? oe.len - 0.5 : 0.5, oc.dir);
-        if (hx0[0] * ho[0] + hx0[1] * ho[1] < -0.5) return true;
+        if (hx0[0] * ho[0] + hx0[1] * ho[1] < -0.5) { car._bxRule = 'c approach'; if (car._ruleF === undefined) car._ruleF = this._frame; return true; }
       }
     }
     const entry0 = ndP > 0 ? Math.min(mNP + 1.0, neP.len * 0.5) : Math.max(neP.len - mNP - 1.0, neP.len * 0.5);
     for (const oc of neP.cars) {                                                   // (e)
       if (oc === car || oc.turn || oc.dir !== ndP || oc.lane !== laneP) continue;
       const behind = (entry0 - oc.d) * ndP;     // > 0: has not reached the entry point yet
-      if (behind > -2 && behind < 6 + oc.v * 2.0) return true;
+      if (behind > -2 && behind < 6 + oc.v * 2.0) { car._bxRule = 'e'; if (car._ruleF === undefined) car._ruleF = this._frame; return true; }
     }
+    car._ruleF = undefined;
     return false;
   }
   // VT29 (f), don't block the box: is the lane I turn into too full to take my whole body, my rear axle and 2 m past the
@@ -1840,6 +1925,132 @@ export class Traffic {
       T.vCap = Math.min(T.vCap ?? 12, Math.max(1.8, Math.sqrt(2.5 * rMin)));
     }
     return T;
+  }
+  // OV32 last resort: car has been held by oc's standing body for 8 s while oc is held by car's (two sweeps: each on the
+  // other's path; or an edge car pinned at its mouth that car's body keeps from its own path): neither can move without
+  // the other. Between two turning cars the one first in line (the lower index) goes; against an edge car the one in the
+  // box goes. Each such pass is counted.
+  _ovYield(car, oc) {
+    if (car._ovForcedBy === oc) return true;   // once granted, for the rest of this connector
+    if (car._ovPrev !== oc || (oc.v || 0) > 0.2) return false;
+    // out of sight: held 6 s by a standing body, pass the old way (a jam no camera sees dissolves); in sight, only after
+    // 20 s (a jam that has not cleared by then is a deadlock the rules cannot see: the car squeezes by, counted)
+    if ((car._ovT || 0) >= 6 && !this._ovSeen(car) && !this._ovSeen(oc)) { car._ovForcedBy = oc; this.ovUnseen = (this.ovUnseen || 0) + 1; return true; }
+    if ((car._ovT || 0) >= 20) { car._ovForcedBy = oc; this.ovSqueeze = (this.ovSqueeze || 0) + 1; return true; }
+    if ((car._ovT || 0) < 8) return false;
+    let go = false;
+    if (oc.turn) go = oc._ovPrev === car && (oc._ovT || 0) >= 8 && ((car.idx ?? 0) < (oc.idx ?? 0) || (car.idx === oc.idx && (car.kind || '') < (oc.kind || '')));
+    else go = oc._bxBy === car;
+    if (!go) return false;
+    if (car._ovForcedBy !== oc) { car._ovForcedBy = oc; this.ovForced = (this.ovForced || 0) + 1; }   // counted (census)
+    return true;
+  }
+  // OV32: hold at the stop bar or mouth for oc's body on my path; out of sight, not for more than 6 s (see _ovYield)
+  _bxHold(car, oc, prevBx) {
+    if (car._bxPass === oc) return false;   // granted below: for as long as the car is on this edge
+    if (oc !== prevBx || car._bxF === undefined) car._bxF = this._frame;
+    else if (OV32 && this._frame - car._bxF > 180 && !this._ovSeen(car) && !this._ovSeen(oc)) { car._bxPass = oc; this.ovUnseen = (this.ovUnseen || 0) + 1; return false; }
+    else if (OV32 && this._frame - car._bxF > 600) { car._bxPass = oc; this.ovSqueeze = (this.ovSqueeze || 0) + 1; return false; }
+    car._bxBy = oc;
+    return true;
+  }
+  _ovSeen(c) { const q = c._pose; return !q || viewGuard.seen(q[0], q[1] + 1, q[2], this.carHalf(c)[1] + 1); }
+  // OV32: the cars' bodies in 12 m cells, once a frame (their poses are read live; a car moves under 0.5 m a frame)
+  _ovGrid() {
+    const G = this._ovG || (this._ovG = new Map());
+    for (const a of G.values()) a.length = 0;
+    for (const c of this.cars) {
+      const q = c._pose;
+      if (!q || c.dead) continue;
+      const k = Math.floor(q[0] / 12) * 65536 + Math.floor(q[2] / 12);
+      let a = G.get(k);
+      if (!a) G.set(k, (a = []));
+      a.push(c);
+    }
+  }
+  _ovNear(x, z, r) {
+    const G = this._ovG, out = this._ovOut || (this._ovOut = []);
+    out.length = 0;
+    if (!G) return out;
+    const i0 = Math.floor((x - r) / 12), i1 = Math.floor((x + r) / 12), j0 = Math.floor((z - r) / 12), j1 = Math.floor((z + r) / 12);
+    for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) {
+      const a = G.get(i * 65536 + j);
+      if (a) for (const c of a) out.push(c);
+    }
+    return out;
+  }
+  // OV32: do a box at (x, z) heading yaw with half extents (hw, hl) and the body of `oc` overlap? (separating axes)
+  _ovHit(x, z, yaw, hw, hl, oc) {
+    const q = oc._pose;
+    if (!q) return false;
+    const hB = this.carHalf(oc), fx = Math.sin(yaw), fz = Math.cos(yaw), gx = Math.sin(q[3]), gz = Math.cos(q[3]);
+    const dx = q[0] - x, dz = q[2] - z;
+    if (dx * dx + dz * dz > (hl + hB[1] + hw + hB[0]) ** 2) return false;
+    // the four axes: my forward and side, its forward and side (no allocation: this runs ~10^4 times a frame)
+    const cfg = Math.abs(fx * gx + fz * gz), csg = Math.abs(fz * gx - fx * gz);   // |cos|, |sin| of the heading difference
+    if (Math.abs(dx * fx + dz * fz) > hl + hB[1] * cfg + hB[0] * csg) return false;
+    if (Math.abs(dx * fz - dz * fx) > hw + hB[1] * csg + hB[0] * cfg) return false;
+    if (Math.abs(dx * gx + dz * gz) > hB[1] + hl * cfg + hw * csg) return false;
+    if (Math.abs(dx * gz - dz * gx) > hB[0] + hl * csg + hw * cfg) return false;
+    return true;
+  }
+  // OV32: how far `car` can drive along the rest of its connector (and on into its new lane past its end) before its body,
+  // grown by OV_M (a big vehicle 0.1 m more), touches another; 1e9 when nothing is in the way within its stopping distance + 3 m.
+  // A body it already touches that is behind it (a follower's nose) is not in its way; one in front stops it where it is.
+  _ovSweepTurn(car, T) {
+    car._ovBy = null;
+    const q0 = car._pose;
+    if (!q0) return 1e9;
+    const h = this.carHalf(car), hw = h[0] + OV_M + (BIGV.test(car.kind || '') ? 0.1 : 0), hl = h[1] + OV_M;
+    const look = Math.max(3, (car.v * car.v) / (2 * IDM.b) + 3);
+    const near = this._ovNear(q0[0], q0[2], look + hl + 9);
+    const cand = this._ovCand || (this._ovCand = []);
+    cand.length = 0;
+    const fx0 = Math.sin(q0[3]), fz0 = Math.cos(q0[3]);
+    for (const oc of near) {
+      if (oc === car || oc.dead || !oc._pose) continue;
+      // a follower (behind, heading within 60 deg of mine) is not in my way: only my rear swinging round could reach it,
+      // and it held a car turning out of a queue for the car queued behind it, which waited for it in turn
+      { const rx = oc._pose[0] - q0[0], rz = oc._pose[2] - q0[2]; if (rx * fx0 + rz * fz0 < 0 && Math.cos(oc._pose[3] - q0[3]) > 0.5) continue; }
+      if (this._ovYield(car, oc)) continue;   // the last resort: this pair is deadlocked and car goes first
+      if (this._ovHit(q0[0], q0[2], q0[3], hw, hl, oc)) {
+        const rx = oc._pose[0] - q0[0], rz = oc._pose[2] - q0[2];
+        if (rx * fx0 + rz * fz0 <= 0) continue;   // touching from behind: not in the way
+        car._ovBy = oc; oc._ovBlk = this._frame;
+        return 0;
+      }
+      cand.push(oc);
+    }
+    if (!cand.length) return 1e9;
+    // the path's centre at arc length sv: the connector, then the lane it enters (car.e / car.d / car.dir are already the
+    // new edge's)
+    const pAt = (sv, out) => {
+      if (sv > T.len && car.e) {
+        const eN = car.e, dd = Math.max(0.05, Math.min(eN.len - 0.05, car.d + car.dir * (sv - T.len)));
+        const qE = this.sampleEdge(eN, dd), off = this._laneOffsetAt(eN, car, car.laneF ?? car.lane);
+        out[0] = qE.x - qE.dirz * car.dir * off; out[1] = qE.z + qE.dirx * car.dir * off;
+        return out;
+      }
+      const sE = Math.max(0, Math.min(sv, T.len)), t = TW26 && T.lut ? this._turnT(T, sE) : sE / T.len, u = 1 - t;
+      const a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
+      out[0] = a0 * T.p0[0] + a1 * T.c1[0] + a2 * T.c2[0] + a3 * T.p2[0];
+      out[1] = a0 * T.p0[2] + a1 * T.c1[2] + a2 * T.c2[2] + a3 * T.p2[2];
+      return out;
+    };
+    // the body's heading at each point is the one the car will have there (VT29: from its rear axle, towed lr behind, to its
+    // centre): the chord from the path lr back, or from where the rear axle is now while that point is behind the car. A
+    // long body off-tracks in a turn by up to a metre at its ends; the path's tangent missed that, and the wide margin that
+    // covered it held cars for others in the next lane.
+    const lr = car._lr || Math.max(1.25, Math.min(3.4, 0.56 * h[1])), rear0 = car._rear;
+    const C = [0, 0], Rr = [0, 0];
+    for (let ds = 0.4; ds <= look; ds += 0.4) {
+      const s2 = T.s + ds;
+      pAt(s2, C);
+      if (s2 - lr >= T.s || !rear0) pAt(s2 - lr, Rr); else { Rr[0] = rear0[0]; Rr[1] = rear0[1]; }
+      const yaw = Math.atan2(C[0] - Rr[0], C[1] - Rr[1]);
+      for (const oc of cand) if (this._ovHit(C[0], C[1], yaw, hw, hl, oc)) { car._ovBy = oc; oc._ovBlk = this._frame; return ds - 0.4; }
+    }
+    return 1e9;
   }
   _turnT(T, s) {
     const L = T.lut, tg = Math.min(Math.max(s, 0), T.len);

@@ -33,6 +33,8 @@ function kitColliders() {
 }
 import { tpPromenades, tpSeats } from '../city/tsqPlaza.js';
 import { bpPromenades, bpSeats } from '../city/bryantPark.js';
+import { cpPromenades, cpSeats, cpWater, cpKeepOut } from '../city/centralPark.js';
+import { areaPromenades, areaSeats } from '../city/areas.js';
 
 const PED_NEAR = typeof location !== 'undefined' && new URLSearchParams(location.search).has('pednear');
 // PY25 (owner 2026-09-25: "pedestrians should never clip into vehicles etc."): path-aware car checks, crossers published
@@ -273,7 +275,8 @@ export class Peds {
           const A = r.pts[i - 1], B = r.pts[i], n = Math.max(1, Math.ceil(Math.hypot(B[0] - A[0], B[2] - A[2])));
           for (let k = i === 1 ? 0 : 1; k <= n; k++) {
             const t = k / n, p = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
-            if (onStreet(p[0], p[2])) { if (cur.length >= 2) runs.push(cur); cur = []; } else cur.push(p);
+            // CP32: nor over Central Park's water (its bridges' own lines carry the walkers over their decks)
+            if (onStreet(p[0], p[2]) || cpWater(p[0], p[2], 0.3) || cpKeepOut(p[0], p[2])) { if (cur.length >= 2) runs.push(cur); cur = []; } else cur.push(p);
           }
         }
         if (cur.length >= 2) runs.push(cur);
@@ -286,6 +289,10 @@ export class Peds {
       // like College Walk's once the ground under them is in (_buildCampus cuts them where a cross street runs over)
       // BP28: the Bryant Park allees, once (their lines do not depend on the tile's roads)
       if (!this._bpDone) { this._bpDone = true; for (const pr of bpPromenades()) (this._campusTodo || (this._campusTodo = [])).push({ pts: pr.pts, busy: 3, y0: null, promenade: true }); }
+      // CP32: Central Park's promenades (the Mall, Bethesda Terrace, the bridges), once
+      if (!this._cpDone) { this._cpDone = true; for (const pr of cpPromenades()) (this._campusTodo || (this._campusTodo = [])).push({ pts: pr.pts, busy: pr.busy ?? 3, y0: null, promenade: true }); }
+      // AR32: the detailed areas' promenades (city/areas.js), once
+      if (!this._arDone) { this._arDone = true; for (const pr of areaPromenades()) (this._campusTodo || (this._campusTodo = [])).push({ pts: pr.pts, busy: pr.busy ?? 3, y0: null, promenade: true }); }
       for (const pr of tpPromenades(data.roads)) {
         const k = `${pr.pts[0][0].toFixed(1)},${pr.pts[0][2].toFixed(1)},${pr.off.toFixed(2)}`;
         if ((this._tpDone || (this._tpDone = new Set())).has(k)) continue;
@@ -2010,7 +2017,7 @@ export class Peds {
   // { x, y, z (the seat point on the floor plan, y the floor), yaw (the way a seated person faces), h (the seat's top
   // above y), table (a chair at a table), kind, take (taken, by hash), h4 (a hash for the pose), key, ped }
   _seatList() {
-    const A = tpSeats(), B = bpSeats(), n = A.length + B.length;
+    const A = tpSeats(), B = bpSeats(), C = cpSeats(), E = areaSeats(), n = A.length + B.length + C.length + E.length;
     if (n === this._seatN) return this._seatL;
     this._seatN = n;
     const old = new Map();
@@ -2026,7 +2033,7 @@ export class Peds {
       // the seat point: 4 cm behind a chair's centre (people sit back on a seat); a bench place as listed (0.2 m in from its edge)
       const back = kind === 'bench' ? 0 : 0.04;
       const grouped = s.group !== undefined && s.group >= 0;
-      const gk = grouped ? (tp ? `t${Math.round((s.tx ?? s.x) * 10)},${Math.round((s.tz ?? s.z) * 10)}` : `b${s.group}`) : null;
+      const gk = grouped ? (tp ? `t${Math.round((s.tx ?? s.x) * 10)},${Math.round((s.tz ?? s.z) * 10)}` : `${src}${s.group}`) : null;
       let take;
       if (gk) { let g = G.get(gk); if (g === undefined) G.set(gk, (g = hs(s.x, s.z, 1) < r[0])); take = g && hs(s.x, s.z, 2) < r[1]; }
       else take = hs(s.x, s.z, 3) < r[0];
@@ -2040,6 +2047,8 @@ export class Peds {
     };
     for (const s of A) put('t', s, true);
     for (const s of B) put('b', s, false);
+    for (const s of C) put('c', s, false);   // CP32: Central Park's benches
+    for (const s of E) put('a', s, false);   // AR32: the detailed areas' seats
     // SIT32 gaze: every table group's centre (the top's middle is 0.73 m over the floor for both cafe sets)
     const TG = (this._tableG = new Map());
     for (const S of L) {

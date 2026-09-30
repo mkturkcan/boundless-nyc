@@ -4,11 +4,11 @@ const BOOT = []; const bootMark = (stage) => { BOOT.push([+(performance.now() / 
 if (typeof window !== 'undefined') window.__BOOT = BOOT;
 let bootLoopUp = false;   // PC26: the real frame loop is installed (the precompile pump may release the picture)
 bootMark('main.js evaluated');
-import { spawnGuard } from './sim/spawnGuard.js';
+import { spawnGuard, viewGuard } from './sim/spawnGuard.js';
 import { Engine } from './core/engine.js';
 import { Sky } from './world/sky.js';
 import { Streamer } from './world/streamer.js';
-import { makeFacadeMaterial, makeTileFacadeMaterial, makeGroundMaterial, makeFarMaterial, makeWaterMaterial, ENV, initGTEX, initCityAO } from './world/materials.js';
+import { makeFacadeMaterial, makeTileFacadeMaterial, makeGroundMaterial, makeFarMaterial, makeWaterMaterial, ENV, initGTEX, initCityAO, CP32R_MASK } from './world/materials.js';
 import { NycDresser } from './world/nycDress.js';
 import { Instancer } from './city/instancer.js';
 import { COLLIDERS } from './city/colliders.js';
@@ -124,7 +124,11 @@ class FlyCam {
     if (this.relY !== null) {
       const g = streamer.terrainAt(this.pos.x, this.pos.z);
       if (g !== null) {
-        this.pos.y = Math.max(g, 0.5) + this.relY;
+        // CP32R: Central Park's relief takes its ground below the river plane's clamp (the Lake's banks at -3 m): a height
+        // there is over the park's own ground (the park's rectangle, as world/materials.js masks the river plane)
+        const qx = this.pos.x - 447.2, qz = this.pos.z - 82.2;
+        const park = CP32R_MASK && Math.abs(qx * 0.4848 - qz * 0.8746) < 2084 && Math.abs(qx * 0.8746 + qz * 0.4848) < 451;
+        this.pos.y = (park ? g : Math.max(g, 0.5)) + this.relY;
         this.relY = null;
       }
     }
@@ -752,6 +756,7 @@ async function boot() {
     if (apiHooks) tick('api', () => apiHooks.preStep(dt));
     const p = tick('controller', () => controller ? controller.update(dt) : { x: px, z: pz });
     spawnGuard.update(engine.camera);   // film takes: traffic / walkers never spawn in view (window.__SPAWNGUARD)
+    viewGuard.update(engine.camera);    // OV32: what the camera can see (sim/spawnGuard.js)
     tick('sun', () => engine.updateSun(sky.sunDir, p.x, p.y ?? 50, p.z));
     sweepFrame(engine);   // SV29 (?sv29=0 off): which shadow casters can still shadow the view (core/shadowSweep.js)
     tick('lamps', () => cityLamps.update(engine.camera, ENV.night.value, dt, engine));
@@ -850,6 +855,20 @@ async function boot() {
         if ((lat > 0.5 || d > allow) && spawnGuard.inView(q[0], q[1] + 1, q[2], 2)) out.push(`${c.kind || 'car'} ${d.toFixed(2)} m (side ${lat.toFixed(2)}) ${Math.hypot(q[0] - engine.camera.position.x, q[2] - engine.camera.position.z).toFixed(0)} m away`);
       }
       jumpPrev = next;
+      return out.length ? out : null;
+    };
+    // OV32: pairs of vehicle bodies in view overlapping by more than 0.1 m (owner 2026-09-29: "one turning vehicle clips
+    // through another during the turn"); the recorder asks once a stepped frame and reports CAR-OVERLAP
+    window.__CAR_OVERLAPS = () => {
+      if (!traffic || !traffic._ovHit) return null;
+      const L = [], out = [];
+      for (const c of traffic.cars) { const q = c._pose; if (q && !c.dead && spawnGuard.inView(q[0], q[1] + 1, q[2], 3)) L.push(c); }
+      for (let a = 0; a < L.length; a++) for (let b = a + 1; b < L.length; b++) {
+        const A = L[a], B = L[b], qa = A._pose, qb = B._pose;
+        if (Math.abs(qa[0] - qb[0]) > 12 || Math.abs(qa[2] - qb[2]) > 12) continue;
+        const h = traffic.carHalf(A);
+        if (traffic._ovHit(qa[0], qa[2], qa[3], h[0] - 0.1, h[1] - 0.1, B)) out.push(`${A.kind || 'car'}${A.turn ? ' (turning)' : ''} x ${B.kind || 'car'}${B.turn ? ' (turning)' : ''} ${Math.hypot(qa[0] - engine.camera.position.x, qa[2] - engine.camera.position.z).toFixed(0)} m away`);
+      }
       return out.length ? out : null;
     };
     // ...and drops the TAA history before a re-shot frame (a void frame must not survive in the history)
@@ -958,12 +977,13 @@ onmessage = async (e) => {
         const T4 = performance.now();
         const lens = o.checks ? window.__LENS_HIT() : null;
         const jumps = o.checks && o.dt > 0 ? window.__CAR_JUMPS(o.dt) : null;
+        const ovl = o.checks && o.dt > 0 ? window.__CAR_OVERLAPS() : null;   // OV32
         // o.encBoth: the same drawn frame both ways (<name>_blob, <name>_wkr) for an A/B of the two capture paths
         if (o.encBoth) { const d = o.name.lastIndexOf('.'); sendBlob(o.name.slice(0, d) + '_blob' + o.name.slice(d), o); sendWorker(o.name.slice(0, d) + '_wkr' + o.name.slice(d), o); }
         else if (o.enc === 'worker') sendWorker(o.name, o);
         else sendBlob(o.name, o);
         const T5 = performance.now();
-        return { lens, jumps, pumped, frames: engine.frames, threw,
+        return { lens, jumps, ovl, pumped, frames: engine.frames, threw,
           t: { wait: +(T1 - T0).toFixed(1), step: +(T2 - T1).toFixed(1), settle: +(T3 - T2).toFixed(1), acc: +(T4 - T3).toFixed(1), cap: +(T5 - T4).toFixed(1) } };
       } catch (e) {
         err = String(e && e.stack || e).slice(0, 400);

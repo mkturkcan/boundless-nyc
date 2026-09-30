@@ -14,6 +14,8 @@ import { buildShopSigns } from '../city/shopSigns.js';
 import { namedShopZone } from '../city/namedShops.js';
 import { buildBillboards, buildTsqScreens } from '../city/billboards.js';
 import { BP28, bpDropTree, bpTrees, bpOwns, bpBuild, bpWorld, bpApply, bpSkipBuilding } from '../city/bryantPark.js';
+import { cpTileHit, cpApply, cpSkipBuilding, cpDropFurniture, cpFurniture, cpBuild, cpLift } from '../city/centralPark.js';
+import { areaTileHit, areaApply, areaSkipBuilding, areaDropFurniture, areaFurniture, areaBuild } from '../city/areas.js';
 import { tpTileHit, tpApply, tpStepsOwner, tpBuildSteps, tpSkipBuilding, tpBuildFurniture, tpDropFrontage } from '../city/tsqPlaza.js';
 import { placeCurbRamps } from '../city/streetNYC.js';
 import { StaticPool } from './staticPool.js';
@@ -1525,6 +1527,12 @@ export async function assembleTile(key, arrayBuf, ctx) {
   }
   // BP28: Bryant Park's gravel walks re-kinded out of its lawn, likewise before anything samples the ground
   try { bpApply(tile, ox, oz); } catch (e) { console.warn('bp28 walks', e); }
+  // CP32: Central Park's water, ground cover, terrace and landmarks re-kind the tile's ground, likewise (city/centralPark.js)
+  const CPT = cpTileHit(ox, oz);
+  if (CPT) cpApply(tile, ox, oz);
+  // AR32: the detailed areas (125th Street, Hunters Point: city/areas.js), likewise
+  const ART = areaTileHit(ox, oz);
+  if (ART) areaApply(tile, ox, oz);
 
   // tile terrain sampler (carved grid) for foundation depths
   const terrRes = tile.header.res, terrN = terrRes + 1, terrG = tile.S.terrain;
@@ -1897,7 +1905,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     cx /= ring.length; cz /= ring.length;
     // a footprint that lies entirely in the traffic lanes is not a building
     if (!NO_DATUM && !b.landmarkId && b.area <= 200 && onCarriageway(ring, cx, cz)) { culledOnRoad++; cyDrop(); continue; }   // CY12: a footprint that is not a building has no courts
-    if (tpSkipBuilding(cx, cz, b.height, b.area) || bpSkipBuilding(cx, cz, b.height, b.area)) { cyDrop(); continue; }   // TP28: the TKTS booth (the red steps stand there) and the kiosk box on the Duffy Square plaza
+    if (tpSkipBuilding(cx, cz, b.height, b.area) || bpSkipBuilding(cx, cz, b.height, b.area) || (CPT && cpSkipBuilding(cx, cz, b.height, b.area)) || (ART && areaSkipBuilding(cx, cz, b.height, b.area))) { cyDrop(); continue; }   // TP28: the TKTS booth (the red steps stand there) and the kiosk box on the Duffy Square plaza
     // foundation: walls extend down to below the lowest terrain under the footprint,
     // shader renders the below-grade band (v<0) as a stone/brick foundation course
     let minT = 1e9;
@@ -1912,6 +1920,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     // and every wall decal came down with them. Ask the ground instead: the
     // median pavement height around the footprint, clamped so a bad sample can
     // never move a building (and never a landmark, which carries its own pads).
+    if (CPT) { const dy = cpLift(cx, cz); if (dy) b.baseY += dy; }   // CP32: the park's relief under its compiled buildings
     let y0 = b.baseY;
     if (!b.landmarkId && !NO_DATUM) {
       const padY = padUnderRing(ring);
@@ -2482,9 +2491,14 @@ export async function assembleTile(key, arrayBuf, ctx) {
   // BP28: Bryant Park's allee planes join this tile's furniture (and its compiled scatter trees are dropped below)
   const bpExtra = [];
   if (BP28) for (const t of bpTrees(ox, oz, 0)) { t.bp = true; t.y = padYNear(t.x + ox, t.z + oz); bpExtra.push(t); }
+  // CP32: Central Park's trees, lamps and benches likewise (a record without a height stands on the ground under it)
+  if (CPT) for (const t of cpFurniture(ox, oz)) { if (t.y === null) t.y = padYNear(t.x + ox, t.z + oz); bpExtra.push(t); }
+  if (ART) for (const t of areaFurniture(ox, oz)) { if (t.y === null) t.y = padYNear(t.x + ox, t.z + oz); bpExtra.push(t); }
   for (const f of (bpExtra.length ? [...furnitureOf(tile), ...bpExtra] : furnitureOf(tile))) {
     let wx = f.x + ox, wz = f.z + oz;
     if (BP28 && f.k === FURN.TREE && !f.bp && bpDropTree(wx, wz, f)) continue;
+    if (CPT && !f.cp && cpDropFurniture(wx, wz, f)) continue;
+    if (ART && !f.ar && areaDropFurniture(wx, wz, f)) continue;
     // GROUND SNAP. Three compiler datums reach us for things that stand on the
     // pavement: `terrain + 0.28` (correct on the flags), the bare `terrain`
     // plane (compile.mjs:1501 frontage — stoops, scaffolds, standpipes, fire
@@ -2801,6 +2815,9 @@ export async function assembleTile(key, arrayBuf, ctx) {
   if (tpStepsOwner(ox, oz)) { try { tpBuildSteps(group, padYNear(-1157.65, 2661.15)); } catch (e) { console.warn('tp28 steps', e); } }
   // TF31: the plaza's benches, bollards, cafe tables and planters, for the pieces of plaza in this tile
   if (tpRoadsW) { try { tpBuildFurniture(group, tpRoadsW, (x, z) => sectionY('plaza', x, z, 0.6) ?? padYNear(x, z), ox, oz, key); } catch (e) { console.warn('tf31', e); } }
+  // CP32: Central Park's meshes for this tile (each part builds what lies in it)
+  if (CPT) cpBuild(group, { ox, oz, key, tile, sampleT, sectionY, surfY, padYNear });
+  if (ART) areaBuild(group, { ox, oz, key, tile, sampleT, sectionY, surfY, padYNear });
   if (BP28 && bpOwns(ox, oz)) {
     try {
       const [lx, lz] = bpWorld(77, 69);

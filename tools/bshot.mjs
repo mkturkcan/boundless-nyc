@@ -197,7 +197,19 @@ const PRESETS = {
   fidiRiver:     P(-73.99984, 40.70467, 55, 0.91, 0.11),    // FiDi + bridge from the harbour
 };
 
+// --cams <file.json>: more views without editing this file, { name: [cx, cz, alt, tx, tz, pitch] } in world metres (the
+// L() convention above) or { name: { x, y, z, yaw, pitch } }; a name there overrides a preset of the same name
+if (opt('cams')) {
+  const J = JSON.parse(await fs.readFile(path.resolve(opt('cams')), 'utf8'));
+  for (const [k, v] of Object.entries(J)) if (!k.startsWith('_')) PRESETS[k] = Array.isArray(v) ? L(...v) : v;
+}
 const views = (opt('views', 'harlem125')).split(',');
+// --onepage: every view after the first in the same page, the camera teleported there (window.__TELEPORT) and the frame
+// taken once the tiles under it and the dresser are in: one boot for the whole list instead of one per view (a view
+// costs ~40 s instead of ~2 min). The sims run on between views; each view keeps its own log.
+const onepage = opt('onepage') === '1';
+let sharedPage = null;
+const cur = { logs: [], errors: [] };
 const time = opt('time', 'day');
 const outDir = path.resolve(root, opt('out', 'boundlessjs/shots/nyc'));
 const bench = opt('bench') === '1';
@@ -240,10 +252,15 @@ try {
   for (const name of views) {
     const p = PRESETS[name];
     if (!p) { console.log('unknown preset', name); continue; }
-    const page = await browser.newPage({ viewport: { width: W, height: H } });
+    const reuse = onepage && !!sharedPage;
+    const page = reuse ? sharedPage : await browser.newPage({ viewport: { width: W, height: H } });
     const errors = [], logs = [];
-    page.on('console', (m) => { const t = `[${m.type()}] ${m.text().slice(0, 400)}`; logs.push(t); if (m.type() === 'error') errors.push(m.text().slice(0, 300)); });
-    page.on('pageerror', (e) => { errors.push('PAGEERROR ' + String(e).slice(0, 400)); logs.push('PAGEERROR ' + String(e)); });
+    cur.logs = logs; cur.errors = errors;
+    if (!reuse) {
+      page.on('console', (m) => { const t = `[${m.type()}] ${m.text().slice(0, 400)}`; cur.logs.push(t); if (m.type() === 'error') cur.errors.push(m.text().slice(0, 300)); });
+      page.on('pageerror', (e) => { cur.errors.push('PAGEERROR ' + String(e).slice(0, 400)); cur.logs.push('PAGEERROR ' + String(e)); });
+    }
+    if (onepage) sharedPage = page;
     // lmwait=150: a harness render must not assemble tiles before the landmarks module lands (decorate landmarks such as
     // Whittier Hall were missing from the final_v17 oblique when Vite served the module after main.js's 30 s boot cap)
     const lmq = /(^|&)lmwait=/.test(extraQ) ? '' : '&lmwait=150';
@@ -252,6 +269,22 @@ try {
     const logFile = path.join(outDir, `${tag}.log`);
     const writeLog = () => fs.writeFile(logFile, logs.join('\n')).catch(() => {});
     try {
+      if (reuse) {
+        // over the view high first, so the tiles under it come in, then down to its height over the ground there (rel=1:
+        // the preset's y is over the terrain, as main.js FlyCam takes it, the park's own ground inside its rectangle)
+        await page.evaluate(([x, y, z, yaw, pitch]) => window.__TELEPORT(x, y + 80, z, yaw, pitch), [p.x, p.y, p.z, p.yaw, p.pitch]);
+        await new Promise((s) => setTimeout(s, 1500));
+        try { await page.waitForFunction('(function(){ const s = window.__STREAMER; return !!(s && s.readyUnder && s.readyUnder()); })()', undefined, { timeout: 120000 }); } catch { console.log(name, ': tiles under the view not ready after 120 s'); }
+        const yAbs = await page.evaluate(([x, y, z, yaw, pitch]) => {
+          const S = window.__STREAMER, g = S && S.terrainAt ? S.terrainAt(x, z) : null;
+          const qx = x - 447.2, qz = z - 82.2, park = Math.abs(qx * 0.4848 - qz * 0.8746) < 2084 && Math.abs(qx * 0.8746 + qz * 0.4848) < 451;
+          const yy = (g === null || !isFinite(g) ? 0 : park ? g : Math.max(g, 0.5)) + y;
+          window.__TELEPORT(x, yy, z, yaw, pitch);
+          return yy;
+        }, [p.x, p.y, p.z, p.yaw, p.pitch]);
+        console.log(`  onepage: ${name} at y ${Number(yAbs).toFixed(2)}`);
+        await new Promise((s) => setTimeout(s, waitS > 0 ? waitS * 1000 : 3000));
+      } else {
       await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });   // Vite cold start with the public/ tile index can exceed 60 s
       if (waitS > 0) {
         await new Promise((s) => setTimeout(s, waitS * 1000));
@@ -259,6 +292,7 @@ try {
         try {
           await page.waitForFunction('window.__READY === true', undefined, { timeout: 90000 });
         } catch { console.log(name, ': READY timeout — capturing anyway'); }
+      }
       }
       // the WORLD must exist before the frame is trusted: READY and the dresser can
       // both fire on an empty scene (critic round 2: 35 % of frames were open water
@@ -416,8 +450,9 @@ try {
       const p2 = await page.evaluate(() => window.__PERF ? window.__PERF() : null).catch(() => null);
       console.log(JSON.stringify({ view: name, time, nodress, ...p2 }));
     }
-    await page.close();
+    if (!onepage) await page.close();
   }
+  if (sharedPage) await sharedPage.close();
 } finally {
   await browser.close();
   releaseGpu();

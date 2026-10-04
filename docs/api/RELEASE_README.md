@@ -5,7 +5,7 @@ buildings, signals, traffic and pedestrians) behind a CARLA-style API.
 
 ```
 StartServer.bat                                        (or: BoundlessNYC.exe --port 2000 --res 1280x720)
-pip install PythonAPI/dist/boundless-{{VERSION}}-py3-none-any.whl
+pip install PythonAPI/dist/boundless-0.1.0-py3-none-any.whl
 python PythonAPI/examples/intersection_120_amsterdam.py
 ```
 
@@ -27,8 +27,8 @@ hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v{{V
 **Requirements.** Windows 10/11 x64 and a GPU with Direct3D 11. On hybrid laptops the server requests the discrete
 GPU. The Python package needs Python ≥ 3.8; `numpy` is optional.
 
-**Licensing.** Code: MIT (`LICENSE`). Compiled city: ODbL 1.0. Vehicle, prop and pedestrian models: CC BY 4.0, except the
-Rocketbox pedestrian set (`Content/models/peds24/rb27/`): MIT. The
+**Licensing.** Code: MIT (`LICENSE`). Compiled city: ODbL 1.0. Models: CC BY 4.0, except the Rocketbox pedestrian set
+(`Content/models/peds24/rb27/`): MIT, and Central Park's cherubs and boulders: CC0. Textures: CC0. The
 photoreal pedestrians contain MetaHuman-derived components that may not be used to build or enhance a dataset or to
 train or test AI models. For that work, start the server with `--pedestrians procedural`. `LICENSING.md` covers every component, and
 `ACKNOWLEDGEMENTS.md` lists the required attributions.

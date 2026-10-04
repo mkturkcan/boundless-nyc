@@ -1,0 +1,6595 @@
+{
+  "_meta": {
+    "generated": "2026-10-01T20:10:22.859Z",
+    "fps": 30,
+    "size": "2560x1440",
+    "flags": "hud=0&lmwait=150&life=0&clean=1&f24lod=60,180&crowdlod=20,60&pedtarget=640&filmlod=1&accum=15"
+  },
+  "shots": {
+    "mCollegeWalk": {
+      "act": "montage",
+      "time": "golden",
+      "duration": 5.4,
+      "ease": 0.22,
+      "warm": 60,
+      "fov": 45,
+      "flags": "gfx=sunAzim:-10,sunElev:3",
+      "title": "College Walk pushing north to Low Library",
+      "caption": "A procedural digital twin of New York — in a browser tab",
+      "keys": [
+        {
+          "p": [
+            -73.96208,
+            40.807284,
+            3.6
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            25
+          ]
+        },
+        {
+          "p": [
+            -73.962092,
+            40.807446,
+            4.1
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            25
+          ]
+        },
+        {
+          "p": [
+            -73.962104,
+            40.807608,
+            4.8
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            26
+          ]
+        }
+      ]
+    },
+    "mLowAerial": {
+      "act": "montage",
+      "time": "golden",
+      "duration": 5.4,
+      "ease": 0.2,
+      "warm": 240,
+      "title": "Morningside campus from 96 m SE, Low Library dome as the subject",
+      "caption": "Columbia's Morningside campus, built on the real lot lines",
+      "keys": [
+        {
+          "p": [
+            -73.960721,
+            40.807144,
+            104
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.960864,
+            40.807306,
+            98
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.961006,
+            40.807468,
+            92
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            27
+          ]
+        }
+      ]
+    },
+    "mLenoxTop": {
+      "act": "montage",
+      "time": "day",
+      "duration": 5.4,
+      "ease": 0.2,
+      "warm": 600,
+      "title": "125th & Lenox from 52 m, descending oblique",
+      "caption": "125th Street & Lenox Avenue — every lane, crossing and signal from public data",
+      "keys": [
+        {
+          "p": [
+            -73.945565,
+            40.807538,
+            52
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            1
+          ]
+        },
+        {
+          "p": [
+            -73.945519,
+            40.807601,
+            45
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            1
+          ]
+        },
+        {
+          "p": [
+            -73.945473,
+            40.807664,
+            38
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            1
+          ]
+        }
+      ]
+    },
+    "mLenoxEye": {
+      "act": "montage",
+      "time": "day",
+      "duration": 5.4,
+      "ease": 0.2,
+      "warm": 600,
+      "title": "125th St mid-roadway at 4 m, creeping ESE toward the Lenox crossing",
+      "caption": null,
+      "keys": [
+        {
+          "p": [
+            -73.945887,
+            40.807951,
+            4
+          ],
+          "look": [
+            -73.94503,
+            40.807787,
+            7
+          ]
+        },
+        {
+          "p": [
+            -73.945814,
+            40.807921,
+            4
+          ],
+          "look": [
+            -73.945009,
+            40.807778,
+            7
+          ]
+        },
+        {
+          "p": [
+            -73.945741,
+            40.80789,
+            4
+          ],
+          "look": [
+            -73.944989,
+            40.807769,
+            7
+          ]
+        }
+      ]
+    },
+    "mBrownstone": {
+      "act": "montage",
+      "time": "day",
+      "duration": 5.4,
+      "ease": 0.2,
+      "warm": 300,
+      "clearTrees": 5,
+      "title": "W 122nd St: truck ESE along the stoop row",
+      "caption": "Harlem brownstone rows, stoop by stoop",
+      "keys": [
+        {
+          "p": [
+            -73.946906,
+            40.804982,
+            3
+          ],
+          "look": [
+            -73.946692,
+            40.805035,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946792,
+            40.804934,
+            3
+          ],
+          "look": [
+            -73.946578,
+            40.804987,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946678,
+            40.804886,
+            3
+          ],
+          "look": [
+            -73.946463,
+            40.804939,
+            4
+          ]
+        }
+      ]
+    },
+    "mMidtownSky": {
+      "act": "montage",
+      "time": "golden",
+      "duration": 5.4,
+      "ease": 0.18,
+      "warm": 180,
+      "title": "Midtown skyline from 1.7 km south at 330 m, slow push",
+      "caption": "930,787 buildings, streamed as 512 m tiles",
+      "keys": [
+        {
+          "p": [
+            -73.980387,
+            40.740775,
+            330
+          ],
+          "look": [
+            -73.9793,
+            40.7565,
+            160
+          ]
+        },
+        {
+          "p": [
+            -73.98034,
+            40.74132,
+            326
+          ],
+          "look": [
+            -73.9793,
+            40.7565,
+            160
+          ]
+        },
+        {
+          "p": [
+            -73.98029,
+            40.74188,
+            321
+          ],
+          "look": [
+            -73.9793,
+            40.7565,
+            160
+          ]
+        }
+      ]
+    },
+    "swipeLenoxAir": {
+      "act": "swipe",
+      "time": "day",
+      "times": [
+        "day",
+        "night"
+      ],
+      "duration": 9,
+      "ease": 0.16,
+      "warm": 900,
+      "title": "Descending over 125th & Lenox — the day/night A/B path",
+      "caption": null,
+      "keys": [
+        {
+          "p": [
+            -73.945772,
+            40.807255,
+            62
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            3
+          ]
+        },
+        {
+          "p": [
+            -73.94568,
+            40.807381,
+            53
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            3
+          ]
+        },
+        {
+          "p": [
+            -73.945582,
+            40.807514,
+            44
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            3
+          ]
+        },
+        {
+          "p": [
+            -73.94549,
+            40.80764,
+            35
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            3
+          ]
+        }
+      ]
+    },
+    "fStreetGeom": {
+      "act": "feature",
+      "time": "day",
+      "duration": 9.5,
+      "ease": 0.14,
+      "warm": 600,
+      "title": "Near-nadir over 125th & Lenox, 120 m descending to 104 m",
+      "caption": "Real street geometry: CSCL centrelines, PLUTO lots and DOB footprints, compiled to tiles",
+      "keys": [
+        {
+          "p": [
+            -73.945507,
+            40.807617,
+            120
+          ],
+          "look": [
+            -73.945342,
+            40.807917,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.94549,
+            40.80764,
+            114
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.945473,
+            40.807664,
+            108
+          ],
+          "look": [
+            -73.945258,
+            40.807883,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.945455,
+            40.807688,
+            104
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            0
+          ]
+        }
+      ]
+    },
+    "fMarkings": {
+      "act": "feature",
+      "time": "day",
+      "duration": 9.5,
+      "ease": 0.18,
+      "warm": 600,
+      "title": "125th St red bus lane from 4.2 m, creeping ESE into the Lenox crossing",
+      "caption": "NYC DOT markings: ladder crosswalks, stop bars, gutters, red bus lanes, BUS ONLY legends",
+      "keys": [
+        {
+          "p": [
+            -73.945764,
+            40.807933,
+            4.2
+          ],
+          "look": [
+            -73.945238,
+            40.807874,
+            1.2
+          ]
+        },
+        {
+          "p": [
+            -73.945681,
+            40.807899,
+            4.2
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            1.2
+          ]
+        },
+        {
+          "p": [
+            -73.945598,
+            40.807864,
+            4.2
+          ],
+          "look": [
+            -73.945196,
+            40.807856,
+            1.2
+          ]
+        }
+      ]
+    },
+    "fBrownstone": {
+      "act": "feature",
+      "time": "day",
+      "duration": 9.5,
+      "ease": 0.18,
+      "warm": 300,
+      "clearTrees": 5,
+      "title": "W 122nd St: long lateral truck along the stoop row",
+      "caption": "Brownstone rows: per-lot massing, stoops and railings, fire escapes, tree pits",
+      "keys": [
+        {
+          "p": [
+            -73.946968,
+            40.805008,
+            3
+          ],
+          "look": [
+            -73.946754,
+            40.805061,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946823,
+            40.804947,
+            3
+          ],
+          "look": [
+            -73.946609,
+            40.805,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946678,
+            40.804886,
+            3
+          ],
+          "look": [
+            -73.946463,
+            40.804939,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946533,
+            40.804825,
+            3
+          ],
+          "look": [
+            -73.946318,
+            40.804878,
+            4
+          ]
+        }
+      ]
+    },
+    "fBrownstoneNight": {
+      "act": "feature",
+      "time": "night",
+      "duration": 9.5,
+      "ease": 0.18,
+      "warm": 300,
+      "clearTrees": 5,
+      "title": "W 122nd St after dark: the same truck along the stoop row",
+      "caption": "After dark: every street lamp is a real light, the rows light up window by window",
+      "keys": [
+        {
+          "p": [
+            -73.946968,
+            40.805008,
+            3
+          ],
+          "look": [
+            -73.946754,
+            40.805061,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946823,
+            40.804947,
+            3
+          ],
+          "look": [
+            -73.946609,
+            40.805,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946678,
+            40.804886,
+            3
+          ],
+          "look": [
+            -73.946463,
+            40.804939,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946533,
+            40.804825,
+            3
+          ],
+          "look": [
+            -73.946318,
+            40.804878,
+            4
+          ]
+        }
+      ]
+    },
+    "fFountain": {
+      "act": "feature",
+      "time": "golden",
+      "duration": 9.5,
+      "ease": 0.18,
+      "warm": 60,
+      "title": "Low Plaza: an arc round the east fountain",
+      "caption": "The Low Plaza fountains: water veils, the jet and its crown, foam on the pool",
+      "keys": [
+        {
+          "p": [
+            -73.962089,
+            40.807501,
+            1.8
+          ],
+          "look": [
+            -73.962013,
+            40.807597,
+            1.9
+          ]
+        },
+        {
+          "p": [
+            -73.962053,
+            40.807485,
+            1.8
+          ],
+          "look": [
+            -73.962013,
+            40.807597,
+            1.9
+          ]
+        },
+        {
+          "p": [
+            -73.962013,
+            40.80748,
+            1.8
+          ],
+          "look": [
+            -73.962013,
+            40.807597,
+            1.9
+          ]
+        },
+        {
+          "p": [
+            -73.961973,
+            40.807485,
+            1.8
+          ],
+          "look": [
+            -73.962013,
+            40.807597,
+            1.9
+          ]
+        }
+      ]
+    },
+    "fColumbia": {
+      "act": "feature",
+      "time": "golden",
+      "duration": 9.5,
+      "ease": 0.16,
+      "warm": 60,
+      "title": "Campus axis: College Walk rising to the Low Library staircase and Alma Mater",
+      "caption": "Procedural landmarks: Low Library's colonnade, the grand staircase, Alma Mater",
+      "keys": [
+        {
+          "p": [
+            -73.96208,
+            40.807338,
+            3.4
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            23
+          ]
+        },
+        {
+          "p": [
+            -73.962068,
+            40.807446,
+            4.4
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            23
+          ]
+        },
+        {
+          "p": [
+            -73.962056,
+            40.807554,
+            5.6
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            24
+          ]
+        },
+        {
+          "p": [
+            -73.962044,
+            40.807662,
+            7
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            25
+          ]
+        }
+      ]
+    },
+    "fStreetLife": {
+      "act": "feature",
+      "time": "day",
+      "duration": 9.5,
+      "ease": 0.18,
+      "warm": 930,
+      "title": "125th St north sidewalk at 1.8 m: walking ESE with the crowd, the westbound traffic alongside",
+      "caption": "People and vehicles: 25 photoreal walkers with bags and phones, 13 NYC vehicle kinds, NY plates, TLC cabs",
+      "keys": [
+        {
+          "p": [
+            -73.945934,
+            40.808109,
+            1.8
+          ],
+          "look": [
+            -73.945707,
+            40.807974,
+            1.3
+          ]
+        },
+        {
+          "p": [
+            -73.945872,
+            40.808083,
+            1.8
+          ],
+          "look": [
+            -73.945645,
+            40.807948,
+            1.3
+          ]
+        },
+        {
+          "p": [
+            -73.94581,
+            40.808057,
+            1.8
+          ],
+          "look": [
+            -73.945582,
+            40.807922,
+            1.3
+          ]
+        }
+      ]
+    },
+    "fTraffic": {
+      "act": "feature",
+      "time": "day",
+      "duration": 9.5,
+      "ease": 0.14,
+      "warm": 300,
+      "phase": 18.5,
+      "title": "125th & Lenox from 16 m — queues, signals, turns",
+      "caption": "Traffic simulation on the compiled lane graph — signals, queues, turns, walkers on the crossings",
+      "keys": [
+        {
+          "p": [
+            -73.945565,
+            40.807538,
+            17
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.94553,
+            40.807585,
+            16
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.945496,
+            40.807632,
+            15
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        }
+      ]
+    },
+    "fWeather": {
+      "act": "feature",
+      "time": "dusk",
+      "flags": "rain=0.55",
+      "duration": 9.5,
+      "ease": 0.14,
+      "warm": 300,
+      "phase": 18.5,
+      "title": "The same junction at dusk in the rain",
+      "caption": "Weather and time of day: wet asphalt, headlights, lit storefronts, skyglow",
+      "keys": [
+        {
+          "p": [
+            -73.945565,
+            40.807538,
+            17
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.94553,
+            40.807585,
+            16
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.945496,
+            40.807632,
+            15
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        }
+      ]
+    },
+    "fSkyline": {
+      "act": "feature",
+      "time": "golden",
+      "flags": "gfx=sunAzim:40,sunElev:-1",
+      "duration": 9.5,
+      "ease": 0.14,
+      "warm": 180,
+      "title": "From 560 m over Midtown looking down the island to FiDi",
+      "caption": "2,882 street tiles near the camera, 209 far-LoD macros carrying the skyline behind them",
+      "keys": [
+        {
+          "p": [
+            -73.976,
+            40.758,
+            560
+          ],
+          "look": [
+            -74.008,
+            40.712,
+            100
+          ]
+        },
+        {
+          "p": [
+            -73.979,
+            40.7565,
+            552
+          ],
+          "look": [
+            -74.008,
+            40.712,
+            100
+          ]
+        },
+        {
+          "p": [
+            -73.982,
+            40.755,
+            545
+          ],
+          "look": [
+            -74.008,
+            40.712,
+            100
+          ]
+        }
+      ]
+    },
+    "tDive": {
+      "act": "teaser",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.4,
+      "ease": 0.12,
+      "warm": 450,
+      "title": "Teaser: spiral dive onto 125th & Lenox",
+      "keys": [
+        {
+          "p": [
+            -73.945422,
+            40.807646,
+            250
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.945556,
+            40.807769,
+            165
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.945537,
+            40.8079,
+            95
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            0
+          ]
+        }
+      ]
+    },
+    "tSwoop": {
+      "act": "teaser",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.6,
+      "ease": 0.14,
+      "warm": 450,
+      "clearTrees": 6,
+      "title": "Teaser: swoop down Lenox into the 125th St junction",
+      "keys": [
+        {
+          "p": [
+            -73.94438,
+            40.809159,
+            42
+          ],
+          "look": [
+            -73.945473,
+            40.807664,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.944754,
+            40.808648,
+            24
+          ],
+          "look": [
+            -73.945645,
+            40.807428,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.945099,
+            40.808175,
+            9
+          ],
+          "look": [
+            -73.945933,
+            40.807034,
+            3
+          ]
+        }
+      ]
+    },
+    "tAvenue": {
+      "act": "teaser",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.2,
+      "ease": 0.1,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser: glide down 125th St over the traffic",
+      "keys": [
+        {
+          "p": [
+            -73.946634,
+            40.808265,
+            7.5
+          ],
+          "look": [
+            -73.94602,
+            40.808028,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946156,
+            40.808065,
+            7
+          ],
+          "look": [
+            -73.945543,
+            40.807827,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.945679,
+            40.807864,
+            7
+          ],
+          "look": [
+            -73.944947,
+            40.807752,
+            4
+          ]
+        }
+      ]
+    },
+    "tCurb": {
+      "act": "teaserOut",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.4,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 55,
+      "title": "Teaser: along the kerb at 0.55 m",
+      "keys": [
+        {
+          "p": [
+            -73.946333,
+            40.808268,
+            0.6
+          ],
+          "look": [
+            -73.946184,
+            40.808175,
+            0.1
+          ]
+        },
+        {
+          "p": [
+            -73.94625,
+            40.808234,
+            0.6
+          ],
+          "look": [
+            -73.946101,
+            40.80814,
+            0.1
+          ]
+        },
+        {
+          "p": [
+            -73.946167,
+            40.808199,
+            0.6
+          ],
+          "look": [
+            -73.946018,
+            40.808105,
+            0.1
+          ]
+        }
+      ]
+    },
+    "tBrownstone": {
+      "act": "teaser",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.2,
+      "ease": 0.12,
+      "warm": 300,
+      "clearTrees": 5,
+      "title": "Teaser: W 122nd stoop row, tracking",
+      "keys": [
+        {
+          "p": [
+            -73.946968,
+            40.805008,
+            3.2
+          ],
+          "look": [
+            -73.946754,
+            40.805061,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946782,
+            40.80493,
+            3.2
+          ],
+          "look": [
+            -73.946567,
+            40.804983,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.946595,
+            40.804851,
+            3.2
+          ],
+          "look": [
+            -73.94638,
+            40.804904,
+            4
+          ]
+        }
+      ]
+    },
+    "tCampus": {
+      "act": "teaser",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.14,
+      "warm": 60,
+      "fov": 50,
+      "flags": "fall=0.7&gfx=sunAzim:-10,sunElev:3,saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "title": "Teaser: crane up over the Low Plaza fountain",
+      "keys": [
+        {
+          "p": [
+            -73.96193,
+            40.807435,
+            1.7
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            22
+          ]
+        },
+        {
+          "p": [
+            -73.961977,
+            40.807516,
+            6
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            24
+          ]
+        },
+        {
+          "p": [
+            -73.962013,
+            40.807615,
+            13
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            26
+          ]
+        }
+      ]
+    },
+    "tRain": {
+      "act": "teaser",
+      "time": "dusk",
+      "flags": "rain=0.55&fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "duration": 3.2,
+      "ease": 0.12,
+      "warm": 300,
+      "phase": 18.5,
+      "title": "Teaser: 125th & Lenox in the rain, arcing",
+      "keys": [
+        {
+          "p": [
+            -73.945513,
+            40.80748,
+            18
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.945553,
+            40.807554,
+            15.5
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.945571,
+            40.807627,
+            13
+          ],
+          "look": [
+            -73.9453,
+            40.8079,
+            2
+          ]
+        }
+      ]
+    },
+    "tNight": {
+      "act": "teaser",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.2,
+      "ease": 0.1,
+      "warm": 450,
+      "title": "Teaser: 125th St at night, low glide",
+      "keys": [
+        {
+          "p": [
+            -73.946405,
+            40.808169,
+            5
+          ],
+          "look": [
+            -73.945813,
+            40.807941,
+            3
+          ]
+        },
+        {
+          "p": [
+            -73.946094,
+            40.808038,
+            4.8
+          ],
+          "look": [
+            -73.945502,
+            40.80781,
+            3
+          ]
+        },
+        {
+          "p": [
+            -73.945783,
+            40.807908,
+            4.6
+          ],
+          "look": [
+            -73.945092,
+            40.807813,
+            3
+          ]
+        }
+      ]
+    },
+    "tTop": {
+      "act": "teaser",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.6,
+      "ease": 0.14,
+      "warm": 300,
+      "phase": 5,
+      "fov": 58,
+      "title": "Teaser: top-down drift over the 125th St crosswalk",
+      "keys": [
+        {
+          "p": [
+            -73.945556,
+            40.807977,
+            7.2
+          ],
+          "look": [
+            -73.945549,
+            40.807976,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.945588,
+            40.807933,
+            7
+          ],
+          "look": [
+            -73.945581,
+            40.807931,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.945619,
+            40.80789,
+            6.8
+          ],
+          "look": [
+            -73.945615,
+            40.807886,
+            0
+          ]
+        }
+      ]
+    },
+    "tMedian": {
+      "act": "teaserOut",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.4,
+      "ease": 0.1,
+      "warm": 300,
+      "clearTrees": 1.2,
+      "fov": 62,
+      "title": "Teaser: down the Lenox median at 1.6 m",
+      "keys": [
+        {
+          "p": [
+            -73.94461,
+            40.808968,
+            1.6
+          ],
+          "look": [
+            -73.945254,
+            40.808087,
+            1.4
+          ]
+        },
+        {
+          "p": [
+            -73.944748,
+            40.808779,
+            1.6
+          ],
+          "look": [
+            -73.945393,
+            40.807898,
+            1.4
+          ]
+        },
+        {
+          "p": [
+            -73.944886,
+            40.80859,
+            1.6
+          ],
+          "look": [
+            -73.945531,
+            40.807709,
+            1.4
+          ]
+        }
+      ]
+    },
+    "tSkyline": {
+      "act": "teaser",
+      "flags": "fall=0.7&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 4,
+      "ease": 0.16,
+      "warm": 180,
+      "title": "Teaser: Midtown skyline push",
+      "keys": [
+        {
+          "p": [
+            -73.98045,
+            40.7403,
+            336
+          ],
+          "look": [
+            -73.9793,
+            40.7565,
+            160
+          ]
+        },
+        {
+          "p": [
+            -73.98035,
+            40.74125,
+            326
+          ],
+          "look": [
+            -73.9793,
+            40.7565,
+            160
+          ]
+        },
+        {
+          "p": [
+            -73.98025,
+            40.7422,
+            316
+          ],
+          "look": [
+            -73.9793,
+            40.7565,
+            160
+          ]
+        }
+      ]
+    },
+    "t2Allee": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.3",
+      "time": "golden",
+      "duration": 3.8,
+      "ease": 0.1,
+      "warm": 240,
+      "fov": 55,
+      "title": "Teaser 2: down the Bryant Park allee at golden hour",
+      "keys": [
+        {
+          "p": [
+            -73.983842,
+            40.754244,
+            2.6
+          ],
+          "look": [
+            -73.983193,
+            40.753981,
+            2.9
+          ]
+        },
+        {
+          "p": [
+            -73.983749,
+            40.754205,
+            2.6
+          ],
+          "look": [
+            -73.9831,
+            40.753942,
+            2.9
+          ]
+        },
+        {
+          "p": [
+            -73.983655,
+            40.754165,
+            2.6
+          ],
+          "look": [
+            -73.983006,
+            40.753902,
+            2.9
+          ]
+        }
+      ]
+    },
+    "t2Lawn": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.3",
+      "time": "golden",
+      "duration": 3.8,
+      "ease": 0.14,
+      "warm": 240,
+      "fov": 55,
+      "title": "Teaser 2: rise off the Bryant Park lawn to the Midtown towers",
+      "keys": [
+        {
+          "p": [
+            -73.983992,
+            40.753926,
+            2.4
+          ],
+          "look": [
+            -73.983245,
+            40.753612,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.984075,
+            40.753961,
+            15
+          ],
+          "look": [
+            -73.983203,
+            40.753594,
+            8
+          ]
+        },
+        {
+          "p": [
+            -73.984178,
+            40.754005,
+            34
+          ],
+          "look": [
+            -73.983141,
+            40.753568,
+            14
+          ]
+        }
+      ]
+    },
+    "t2Aerial": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.3",
+      "time": "golden",
+      "duration": 3.8,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 55,
+      "title": "Teaser 2: golden-hour push over Bryant Park",
+      "keys": [
+        {
+          "p": [
+            -73.98256,
+            40.753324,
+            56
+          ],
+          "look": [
+            -73.983992,
+            40.753926,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.982716,
+            40.753389,
+            51
+          ],
+          "look": [
+            -73.984095,
+            40.75397,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.982871,
+            40.753455,
+            46
+          ],
+          "look": [
+            -73.984199,
+            40.754013,
+            4
+          ]
+        }
+      ]
+    },
+    "t2Lions": {
+      "act": "teaser2Out",
+      "flags": "fall=0.7&gfx=sunAzim:-45,saturation:1.14,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.8,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 50,
+      "title": "Teaser 2: along the library front on Fifth Avenue",
+      "keys": [
+        {
+          "p": [
+            -73.981426,
+            40.752519,
+            3.2
+          ],
+          "look": [
+            -73.981546,
+            40.752837,
+            7
+          ]
+        },
+        {
+          "p": [
+            -73.981299,
+            40.752692,
+            3.2
+          ],
+          "look": [
+            -73.981477,
+            40.752931,
+            7
+          ]
+        },
+        {
+          "p": [
+            -73.981173,
+            40.752865,
+            3.2
+          ],
+          "look": [
+            -73.981408,
+            40.753026,
+            7
+          ]
+        }
+      ]
+    },
+    "t2Canyon42": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.8,
+      "ease": 0.1,
+      "warm": 240,
+      "fov": 55,
+      "title": "Teaser 2: down 42nd St past Bryant Park",
+      "keys": [
+        {
+          "p": [
+            -73.98405,
+            40.754815,
+            13
+          ],
+          "look": [
+            -73.982266,
+            40.754064,
+            16
+          ]
+        },
+        {
+          "p": [
+            -73.983697,
+            40.754667,
+            12
+          ],
+          "look": [
+            -73.981913,
+            40.753916,
+            15
+          ]
+        },
+        {
+          "p": [
+            -73.983345,
+            40.754518,
+            11
+          ],
+          "look": [
+            -73.98156,
+            40.753767,
+            14
+          ]
+        }
+      ]
+    },
+    "t2Drop": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 62,
+      "title": "Teaser 2: drop into Times Square at night",
+      "keys": [
+        {
+          "p": [
+            -73.98542,
+            40.758215,
+            190
+          ],
+          "look": [
+            -73.985539,
+            40.757981,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.985325,
+            40.758377,
+            108
+          ],
+          "look": [
+            -73.985911,
+            40.757393,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.985301,
+            40.758521,
+            44
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            26
+          ]
+        }
+      ]
+    },
+    "t2Plaza": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.3",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.1,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 2: over the Times Square crowd up the Broadway plaza",
+      "keys": [
+        {
+          "p": [
+            -73.986068,
+            40.756667,
+            4.2
+          ],
+          "look": [
+            -73.985666,
+            40.757659,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.986017,
+            40.756792,
+            4.2
+          ],
+          "look": [
+            -73.985609,
+            40.757802,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.985965,
+            40.756918,
+            4.2
+          ],
+          "look": [
+            -73.985553,
+            40.757945,
+            12
+          ]
+        }
+      ]
+    },
+    "t2Seventh": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.4,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 2: down Seventh Avenue between the screens",
+      "keys": [
+        {
+          "p": [
+            -73.984877,
+            40.758805,
+            24
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            20
+          ]
+        },
+        {
+          "p": [
+            -73.985244,
+            40.758335,
+            19
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            18
+          ]
+        },
+        {
+          "p": [
+            -73.985581,
+            40.757903,
+            14
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            16
+          ]
+        }
+      ]
+    },
+    "t2Steps": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.3",
+      "time": "night",
+      "duration": 3.4,
+      "ease": 0.14,
+      "warm": 450,
+      "fov": 58,
+      "title": "Teaser 2: rise toward the red steps in Duffy Square",
+      "keys": [
+        {
+          "p": [
+            -73.985049,
+            40.758937,
+            1.7
+          ],
+          "look": [
+            -73.984921,
+            40.759179,
+            3.2
+          ]
+        },
+        {
+          "p": [
+            -73.985027,
+            40.758979,
+            4.8
+          ],
+          "look": [
+            -73.984916,
+            40.759188,
+            3.6
+          ]
+        },
+        {
+          "p": [
+            -73.985005,
+            40.759021,
+            8.5
+          ],
+          "look": [
+            -73.984912,
+            40.759196,
+            4
+          ]
+        }
+      ]
+    },
+    "t2Rise": {
+      "act": "teaser2",
+      "flags": "fall=0.7&gfx=saturation:1.14,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.8,
+      "ease": 0.14,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 2: rise out of Times Square",
+      "keys": [
+        {
+          "p": [
+            -73.985389,
+            40.758337,
+            22
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            22
+          ]
+        },
+        {
+          "p": [
+            -73.985294,
+            40.758661,
+            46
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            14
+          ]
+        },
+        {
+          "p": [
+            -73.985199,
+            40.758985,
+            72
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            8
+          ]
+        }
+      ]
+    },
+    "t3ParkDive": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.5,
+      "ease": 0.12,
+      "warm": 450,
+      "title": "Teaser 3: spiral dive onto Bryant Park",
+      "keys": [
+        {
+          "p": [
+            -73.983881,
+            40.754585,
+            210
+          ],
+          "look": [
+            -73.983569,
+            40.753762,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.984261,
+            40.754187,
+            135
+          ],
+          "look": [
+            -73.983569,
+            40.753762,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.984219,
+            40.753797,
+            70
+          ],
+          "look": [
+            -73.983569,
+            40.753762,
+            0
+          ]
+        }
+      ]
+    },
+    "t3LawnSkim": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.4,
+      "ease": 0.1,
+      "warm": 450,
+      "fov": 58,
+      "title": "Teaser 3: skim along the Bryant Park lawn",
+      "keys": [
+        {
+          "p": [
+            -73.983715,
+            40.75412,
+            4
+          ],
+          "look": [
+            -73.983364,
+            40.753858,
+            1.2
+          ]
+        },
+        {
+          "p": [
+            -73.98358,
+            40.754064,
+            4
+          ],
+          "look": [
+            -73.9832,
+            40.753747,
+            1.5
+          ]
+        },
+        {
+          "p": [
+            -73.983445,
+            40.754007,
+            4
+          ],
+          "look": [
+            -73.983037,
+            40.753637,
+            2.5
+          ]
+        }
+      ]
+    },
+    "t3DayCorner": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 3: swoop past the corner screen to One Times Square by day",
+      "keys": [
+        {
+          "p": [
+            -73.98622,
+            40.756645,
+            34
+          ],
+          "look": [
+            -73.985953,
+            40.756317,
+            20
+          ]
+        },
+        {
+          "p": [
+            -73.986172,
+            40.756537,
+            18
+          ],
+          "look": [
+            -73.986172,
+            40.756177,
+            16
+          ]
+        },
+        {
+          "p": [
+            -73.986089,
+            40.756447,
+            7
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            30
+          ]
+        }
+      ]
+    },
+    "t3DayFlag": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.6,
+      "ease": 0.14,
+      "warm": 450,
+      "fov": 58,
+      "title": "Teaser 3: crane up from the neon flag over the bowtie by day",
+      "keys": [
+        {
+          "p": [
+            -73.985988,
+            40.756861,
+            2.6
+          ],
+          "look": [
+            -73.986184,
+            40.756809,
+            2.4
+          ]
+        },
+        {
+          "p": [
+            -73.986,
+            40.756897,
+            13
+          ],
+          "look": [
+            -73.985864,
+            40.757275,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.986012,
+            40.756933,
+            30
+          ],
+          "look": [
+            -73.98534,
+            40.758702,
+            22
+          ]
+        }
+      ]
+    },
+    "t3DayDuffy": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.4,
+      "ease": 0.14,
+      "warm": 450,
+      "fov": 55,
+      "title": "Teaser 3: arc round Father Duffy and the red steps by day",
+      "keys": [
+        {
+          "p": [
+            -73.98495,
+            40.758927,
+            3.2
+          ],
+          "look": [
+            -73.984985,
+            40.75904,
+            4.2
+          ]
+        },
+        {
+          "p": [
+            -73.985043,
+            40.758932,
+            4.1
+          ],
+          "look": [
+            -73.984985,
+            40.75904,
+            4.4
+          ]
+        },
+        {
+          "p": [
+            -73.985114,
+            40.758977,
+            5
+          ],
+          "look": [
+            -73.984985,
+            40.75904,
+            4.6
+          ]
+        }
+      ]
+    },
+    "t3Fountain": {
+      "act": "teaser3",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.14,
+      "warm": 240,
+      "fov": 55,
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "title": "Teaser 3: arc round the Bryant Park fountain",
+      "keys": [
+        {
+          "p": [
+            -73.984184,
+            40.754101,
+            5.2
+          ],
+          "look": [
+            -73.983754,
+            40.753843,
+            1.5
+          ]
+        },
+        {
+          "p": [
+            -73.984238,
+            40.754046,
+            4.6
+          ],
+          "look": [
+            -73.983754,
+            40.753843,
+            1.5
+          ]
+        },
+        {
+          "p": [
+            -73.98427,
+            40.753983,
+            4
+          ],
+          "look": [
+            -73.983754,
+            40.753843,
+            1.5
+          ]
+        }
+      ]
+    },
+    "t3Crane": {
+      "act": "teaser3",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.14,
+      "warm": 240,
+      "fov": 55,
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "title": "Teaser 3: crane up over the Bryant Park lawn",
+      "keys": [
+        {
+          "p": [
+            -73.983776,
+            40.753701,
+            1.8
+          ],
+          "look": [
+            -73.982816,
+            40.753493,
+            8
+          ]
+        },
+        {
+          "p": [
+            -73.983829,
+            40.753703,
+            12
+          ],
+          "look": [
+            -73.982816,
+            40.753493,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.983879,
+            40.753709,
+            30
+          ],
+          "look": [
+            -73.982816,
+            40.753493,
+            4
+          ]
+        }
+      ]
+    },
+    "t3Drop": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 62,
+      "title": "Teaser 3: spinning drop into Times Square",
+      "keys": [
+        {
+          "p": [
+            -73.985444,
+            40.758179,
+            230
+          ],
+          "look": [
+            -73.985088,
+            40.758089,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.985372,
+            40.758341,
+            125
+          ],
+          "look": [
+            -73.98542,
+            40.757711,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.985301,
+            40.758503,
+            50
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            24
+          ]
+        }
+      ]
+    },
+    "t3Seventh": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.4,
+      "ease": 0.14,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 3: swoop down Seventh Avenue",
+      "keys": [
+        {
+          "p": [
+            -73.984328,
+            40.759508,
+            62
+          ],
+          "look": [
+            -73.98563,
+            40.757842,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.984775,
+            40.759042,
+            30
+          ],
+          "look": [
+            -73.985919,
+            40.757471,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.98516,
+            40.758548,
+            10
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            18
+          ]
+        }
+      ]
+    },
+    "t3Plaza": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 3: glide across the Times Square plaza",
+      "keys": [
+        {
+          "p": [
+            -73.986122,
+            40.756687,
+            6
+          ],
+          "look": [
+            -73.985652,
+            40.757695,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.986008,
+            40.756813,
+            6
+          ],
+          "look": [
+            -73.985609,
+            40.757802,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.985894,
+            40.756939,
+            6
+          ],
+          "look": [
+            -73.985567,
+            40.75791,
+            10
+          ]
+        }
+      ]
+    },
+    "t3Steps": {
+      "act": "teaser3",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 4,
+      "ease": 0.14,
+      "warm": 450,
+      "fov": 58,
+      "title": "Teaser 3: crane up the red steps past Father Duffy",
+      "keys": [
+        {
+          "p": [
+            -73.984942,
+            40.758982,
+            2
+          ],
+          "look": [
+            -73.984907,
+            40.759204,
+            4.5
+          ]
+        },
+        {
+          "p": [
+            -73.984927,
+            40.759036,
+            9
+          ],
+          "look": [
+            -73.984872,
+            40.759271,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.984911,
+            40.759089,
+            20
+          ],
+          "look": [
+            -73.984757,
+            40.759488,
+            10
+          ]
+        }
+      ]
+    },
+    "t3Rise": {
+      "act": "teaser3Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.8,
+      "ease": 0.16,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 3: rise out of Times Square",
+      "keys": [
+        {
+          "p": [
+            -73.985472,
+            40.758103,
+            26
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            18
+          ]
+        },
+        {
+          "p": [
+            -73.985401,
+            40.758337,
+            95
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.985318,
+            40.75858,
+            190
+          ],
+          "look": [
+            -73.986602,
+            40.7563,
+            0
+          ]
+        }
+      ]
+    },
+    "t4Dive": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 4: dive over the Pond, tilting up to Billionaires' Row",
+      "keys": [
+        {
+          "p": [
+            -73.974107,
+            40.768703,
+            260
+          ],
+          "look": [
+            -73.974308,
+            40.767623,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.974225,
+            40.768163,
+            150
+          ],
+          "look": [
+            -73.975115,
+            40.765553,
+            50
+          ]
+        },
+        {
+          "p": [
+            -73.974344,
+            40.767713,
+            60
+          ],
+          "look": [
+            -73.976776,
+            40.764024,
+            120
+          ]
+        }
+      ]
+    },
+    "t4Arrive": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 7.2,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "Teaser 4: over Central Park toward Midtown",
+      "keys": [
+        {
+          "p": [
+            -73.967285,
+            40.78094,
+            380
+          ],
+          "look": [
+            -73.975708,
+            40.762854,
+            120
+          ]
+        },
+        {
+          "p": [
+            -73.968234,
+            40.779051,
+            350
+          ],
+          "look": [
+            -73.975886,
+            40.762494,
+            120
+          ]
+        },
+        {
+          "p": [
+            -73.969183,
+            40.777161,
+            320
+          ],
+          "look": [
+            -73.976064,
+            40.762134,
+            120
+          ]
+        },
+        {
+          "p": [
+            -73.970132,
+            40.775271,
+            290
+          ],
+          "look": [
+            -73.976242,
+            40.761774,
+            120
+          ]
+        }
+      ]
+    },
+    "t4Gapstow": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 55,
+      "abs": true,
+      "title": "Teaser 4: up over Gapstow Bridge to Central Park South",
+      "keys": [
+        {
+          "p": [
+            -73.973881,
+            40.767191,
+            -1.0000000000000002
+          ],
+          "look": [
+            -73.973834,
+            40.76693,
+            -0.5000000000000002
+          ]
+        },
+        {
+          "p": [
+            -73.973857,
+            40.767083,
+            1.2999999999999998
+          ],
+          "look": [
+            -73.973881,
+            40.766453,
+            7.8
+          ]
+        },
+        {
+          "p": [
+            -73.973834,
+            40.766975,
+            6.3
+          ],
+          "look": [
+            -73.973976,
+            40.765553,
+            38
+          ]
+        }
+      ]
+    },
+    "t4Mall": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 4,
+      "ease": 0.1,
+      "warm": 240,
+      "fov": 58,
+      "title": "Teaser 4: up the Mall under the elms",
+      "keys": [
+        {
+          "p": [
+            -73.972386,
+            40.770356,
+            2
+          ],
+          "look": [
+            -73.972113,
+            40.771045,
+            1.6
+          ]
+        },
+        {
+          "p": [
+            -73.972243,
+            40.770699,
+            4
+          ],
+          "look": [
+            -73.971949,
+            40.771478,
+            3
+          ]
+        },
+        {
+          "p": [
+            -73.972085,
+            40.771086,
+            6.5
+          ],
+          "look": [
+            -73.971753,
+            40.771997,
+            5
+          ]
+        }
+      ]
+    },
+    "t4Crane": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.14,
+      "warm": 450,
+      "fov": 58,
+      "abs": true,
+      "title": "Teaser 4: crane down to Bethesda Fountain",
+      "keys": [
+        {
+          "p": [
+            -73.971129,
+            40.773544,
+            32.59
+          ],
+          "look": [
+            -73.970829,
+            40.774315,
+            -3.2
+          ]
+        },
+        {
+          "p": [
+            -73.971058,
+            40.773796,
+            14.59
+          ],
+          "look": [
+            -73.970829,
+            40.774315,
+            2.0999999999999996
+          ]
+        },
+        {
+          "p": [
+            -73.970986,
+            40.774012,
+            1.2999999999999998
+          ],
+          "look": [
+            -73.970829,
+            40.774315,
+            4.1
+          ]
+        }
+      ]
+    },
+    "t4Angel": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 4,
+      "ease": 0.14,
+      "warm": 240,
+      "fov": 55,
+      "abs": true,
+      "title": "Teaser 4: round the Angel of the Waters at golden hour",
+      "keys": [
+        {
+          "p": [
+            -73.970728,
+            40.774239,
+            -0.40000000000000036
+          ],
+          "look": [
+            -73.970829,
+            40.774315,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.970829,
+            40.774207,
+            -0.40000000000000036
+          ],
+          "look": [
+            -73.970829,
+            40.774315,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.970929,
+            40.774239,
+            -0.40000000000000036
+          ],
+          "look": [
+            -73.970829,
+            40.774315,
+            5
+          ]
+        }
+      ]
+    },
+    "t4Lake": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.1,
+      "warm": 450,
+      "fov": 30,
+      "abs": true,
+      "title": "Teaser 4: across the Lake to Bow Bridge and the San Remo",
+      "keys": [
+        {
+          "p": [
+            -73.970346,
+            40.77546,
+            -1.7600000000000002
+          ],
+          "look": [
+            -73.973715,
+            40.776657,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.970488,
+            40.775487,
+            -1.1600000000000001
+          ],
+          "look": [
+            -73.973739,
+            40.776675,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.970631,
+            40.775523,
+            -0.56
+          ],
+          "look": [
+            -73.973763,
+            40.776693,
+            26
+          ]
+        }
+      ]
+    },
+    "t4Belvedere": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 45,
+      "abs": true,
+      "title": "Teaser 4: arc round Belvedere Castle",
+      "keys": [
+        {
+          "p": [
+            -73.968348,
+            40.779911,
+            72
+          ],
+          "look": [
+            -73.968892,
+            40.779322,
+            31.6
+          ]
+        },
+        {
+          "p": [
+            -73.968071,
+            40.779682,
+            68
+          ],
+          "look": [
+            -73.968892,
+            40.779322,
+            31.6
+          ]
+        },
+        {
+          "p": [
+            -73.967947,
+            40.779384,
+            64
+          ],
+          "look": [
+            -73.968892,
+            40.779322,
+            31.6
+          ]
+        }
+      ]
+    },
+    "t4Turtle": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 40,
+      "abs": true,
+      "title": "Teaser 4: over Turtle Pond to Belvedere Castle",
+      "keys": [
+        {
+          "p": [
+            -73.96837,
+            40.779631,
+            11.4
+          ],
+          "look": [
+            -73.968892,
+            40.779322,
+            18.5
+          ]
+        },
+        {
+          "p": [
+            -73.968456,
+            40.779673,
+            11.1
+          ],
+          "look": [
+            -73.968892,
+            40.779322,
+            18.5
+          ]
+        },
+        {
+          "p": [
+            -73.968543,
+            40.779717,
+            10.8
+          ],
+          "look": [
+            -73.968892,
+            40.779322,
+            18.5
+          ]
+        }
+      ]
+    },
+    "t4Bow": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 55,
+      "abs": true,
+      "title": "Teaser 4: over Bow Bridge to the San Remo",
+      "keys": [
+        {
+          "p": [
+            -73.971414,
+            40.775613,
+            -2.56
+          ],
+          "look": [
+            -73.971912,
+            40.775793,
+            -1.6600000000000001
+          ]
+        },
+        {
+          "p": [
+            -73.971627,
+            40.775685,
+            2.34
+          ],
+          "look": [
+            -73.973573,
+            40.776891,
+            30
+          ]
+        },
+        {
+          "p": [
+            -73.971853,
+            40.775775,
+            7.84
+          ],
+          "look": [
+            -73.975198,
+            40.778061,
+            95
+          ]
+        }
+      ]
+    },
+    "t4Sheep": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.1,
+      "warm": 450,
+      "fov": 58,
+      "title": "Teaser 4: across the Sheep Meadow toward the towers",
+      "keys": [
+        {
+          "p": [
+            -73.975174,
+            40.772572,
+            1.5
+          ],
+          "look": [
+            -73.972624,
+            40.762404,
+            150
+          ]
+        },
+        {
+          "p": [
+            -73.974996,
+            40.771987,
+            2.5
+          ],
+          "look": [
+            -73.972564,
+            40.762404,
+            140
+          ]
+        },
+        {
+          "p": [
+            -73.974795,
+            40.771402,
+            16
+          ],
+          "look": [
+            -73.972505,
+            40.762404,
+            120
+          ]
+        }
+      ]
+    },
+    "t4Reservoir": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "abs": true,
+      "title": "Teaser 4: across the Reservoir toward Midtown",
+      "keys": [
+        {
+          "p": [
+            -73.959811,
+            40.787779,
+            20.89
+          ],
+          "look": [
+            -73.970014,
+            40.772302,
+            110
+          ]
+        },
+        {
+          "p": [
+            -73.96076,
+            40.787059,
+            22.89
+          ],
+          "look": [
+            -73.970488,
+            40.771852,
+            110
+          ]
+        },
+        {
+          "p": [
+            -73.961709,
+            40.786339,
+            24.89
+          ],
+          "look": [
+            -73.970963,
+            40.771402,
+            110
+          ]
+        }
+      ]
+    },
+    "t4GreatLawn": {
+      "act": "teaser4",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "Teaser 4: over the Great Lawn at golden hour",
+      "keys": [
+        {
+          "p": [
+            -73.968234,
+            40.776801,
+            140
+          ],
+          "look": [
+            -73.963489,
+            40.786249,
+            30
+          ]
+        },
+        {
+          "p": [
+            -73.96776,
+            40.777431,
+            132
+          ],
+          "look": [
+            -73.963251,
+            40.786519,
+            30
+          ]
+        },
+        {
+          "p": [
+            -73.967285,
+            40.778061,
+            125
+          ],
+          "look": [
+            -73.963014,
+            40.786789,
+            30
+          ]
+        }
+      ]
+    },
+    "exCpHandoff": {
+      "act": "explainer",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 6.0,
+      "ease": 0.3,
+      "warm": 300,
+      "fov": 34.0,
+      "abs": true,
+      "title": "Explainer CP: straight down on the map's footprint (tools/explainer/cp/handoff.py), tilting into a fly-in over Bethesda and the Lake",
+      "keys": [
+        {
+          "p": [
+            -73.9706007,
+            40.77567415,
+            1480.13
+          ],
+          "look": [
+            -73.97058919,
+            40.77568989,
+            8.25
+          ]
+        },
+        {
+          "p": [
+            -73.97094557,
+            40.77501666,
+            828.25
+          ],
+          "look": [
+            -73.97019221,
+            40.77614028,
+            8.25
+          ]
+        },
+        {
+          "p": [
+            -73.97148576,
+            40.77390629,
+            388.25
+          ],
+          "look": [
+            -73.96974335,
+            40.77656886,
+            8.25
+          ]
+        },
+        {
+          "p": [
+            -73.9719628,
+            40.77297515,
+            138.25
+          ],
+          "look": [
+            -73.9695708,
+            40.77680497,
+            -1.75
+          ]
+        }
+      ]
+    },
+    "exCpAerial": {
+      "act": "explainer",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 19,
+      "ease": 0.1,
+      "warm": 300,
+      "fov": 34,
+      "abs": true,
+      "title": "Explainer CP opening: from the Pond to Harlem Meer, high over the park (the page draws the layers through this lens)",
+      "keys": [
+        {
+          "p": [
+            -73.97672837,
+            40.76715965,
+            1500
+          ],
+          "look": [
+            -73.97500287,
+            40.76952068,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.97179141,
+            40.77413768,
+            1350
+          ],
+          "look": [
+            -73.96869678,
+            40.77818651,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.96465817,
+            40.78297017,
+            1120
+          ],
+          "look": [
+            -73.96060829,
+            40.78795486,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.95806628,
+            40.79161873,
+            900
+          ],
+          "look": [
+            -73.9537739,
+            40.79619282,
+            5
+          ]
+        }
+      ]
+    },
+    "exCpCastle": {
+      "act": "explainer",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 300,
+      "fov": 50,
+      "abs": true,
+      "title": "Explainer CP opening: rising from Turtle Pond to Belvedere Castle, Midtown behind it",
+      "keys": [
+        {
+          "p": [
+            -73.96794976,
+            40.77976548,
+            10.5
+          ],
+          "look": [
+            -73.96887795,
+            40.77931208,
+            24
+          ]
+        },
+        {
+          "p": [
+            -73.96816404,
+            40.77973211,
+            22
+          ],
+          "look": [
+            -73.96886757,
+            40.77930772,
+            27
+          ]
+        },
+        {
+          "p": [
+            -73.96837833,
+            40.77969875,
+            35
+          ],
+          "look": [
+            -73.96887333,
+            40.77929985,
+            30
+          ]
+        }
+      ]
+    },
+    "exCpTerrace": {
+      "act": "explainer",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 300,
+      "fov": 45,
+      "abs": true,
+      "title": "Explainer CP opening: across the Lake toward Bethesda Fountain and the terrace",
+      "keys": [
+        {
+          "p": [
+            -73.97089166,
+            40.77522034,
+            5.5
+          ],
+          "look": [
+            -73.97091125,
+            40.77430263,
+            0.5
+          ]
+        },
+        {
+          "p": [
+            -73.97076128,
+            40.77508321,
+            6.5
+          ],
+          "look": [
+            -73.97088125,
+            40.77426944,
+            0.5
+          ]
+        },
+        {
+          "p": [
+            -73.9706309,
+            40.77494609,
+            7.5
+          ],
+          "look": [
+            -73.97085125,
+            40.77423625,
+            0.5
+          ]
+        }
+      ]
+    },
+    "exCpBow": {
+      "act": "explainer",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 300,
+      "fov": 34,
+      "abs": true,
+      "title": "Explainer CP opening: low round Bow Bridge on the Lake",
+      "keys": [
+        {
+          "p": [
+            -73.97250959,
+            40.77557082,
+            -2.2
+          ],
+          "look": [
+            -73.97176926,
+            40.7757642,
+            -0.5
+          ]
+        },
+        {
+          "p": [
+            -73.97255217,
+            40.77575384,
+            -0.9
+          ],
+          "look": [
+            -73.97176926,
+            40.7757642,
+            -0.5
+          ]
+        },
+        {
+          "p": [
+            -73.97251806,
+            40.77593786,
+            0.8
+          ],
+          "look": [
+            -73.97176926,
+            40.7757642,
+            -0.5
+          ]
+        }
+      ]
+    },
+    "exCpReservoir": {
+      "act": "explainer",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 300,
+      "fov": 50,
+      "abs": true,
+      "title": "Explainer CP opening: rising off the Reservoir toward Midtown",
+      "keys": [
+        {
+          "p": [
+            -73.96059523,
+            40.78856667,
+            10.4
+          ],
+          "look": [
+            -73.96583221,
+            40.78192053,
+            30
+          ]
+        },
+        {
+          "p": [
+            -73.96111762,
+            40.78796323,
+            24
+          ],
+          "look": [
+            -73.96601603,
+            40.7814834,
+            22
+          ]
+        },
+        {
+          "p": [
+            -73.96165039,
+            40.78736416,
+            48
+          ],
+          "look": [
+            -73.96619985,
+            40.78104627,
+            4
+          ]
+        }
+      ]
+    },
+    "exCpMall": {
+      "act": "explainer",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "day",
+      "duration": 4,
+      "ease": 0.12,
+      "warm": 300,
+      "fov": 55,
+      "abs": true,
+      "title": "Explainer CP opening: rising up the Mall between the elms",
+      "keys": [
+        {
+          "p": [
+            -73.97246189,
+            40.77010673,
+            6.6
+          ],
+          "look": [
+            -73.97184184,
+            40.7717037,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.97234458,
+            40.77040886,
+            8.6
+          ],
+          "look": [
+            -73.97172454,
+            40.77200582,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.97222728,
+            40.77071099,
+            11
+          ],
+          "look": [
+            -73.97160723,
+            40.77230795,
+            11
+          ]
+        }
+      ]
+    },
+    "t4Out": {
+      "act": "teaser4Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 4.4,
+      "ease": 0.16,
+      "warm": 240,
+      "fov": 60,
+      "title": "Teaser 4: rise out of Bethesda Terrace",
+      "prestream": [
+        [
+          -73.985437,
+          40.791198,
+          300
+        ],
+        [
+          -73.98425,
+          40.780401,
+          300
+        ]
+      ],
+      "keys": [
+        {
+          "p": [
+            -73.970903,
+            40.773832,
+            32
+          ],
+          "look": [
+            -73.9712,
+            40.775901,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.97037,
+            40.772122,
+            150
+          ],
+          "look": [
+            -73.970488,
+            40.777251,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.969895,
+            40.770502,
+            300
+          ],
+          "look": [
+            -73.970014,
+            40.778601,
+            0
+          ]
+        }
+      ]
+    },
+    "t5DinoGlide": {
+      "act": "teaser5",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "Under the Riverside Drive Viaduct to Dinosaur Bar-B-Que",
+      "keys": [
+        {
+          "p": [
+            -73.959977,
+            40.817528,
+            4
+          ],
+          "look": [
+            -73.960463,
+            40.817995,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.960262,
+            40.817797,
+            5.5
+          ],
+          "look": [
+            -73.960712,
+            40.818166,
+            11
+          ]
+        },
+        {
+          "p": [
+            -73.960487,
+            40.818013,
+            9
+          ],
+          "look": [
+            -73.960807,
+            40.818211,
+            12.5
+          ]
+        }
+      ]
+    },
+    "t5ValleyArch": {
+      "act": "teaser5",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "The Manhattan Valley arch over 125th Street",
+      "keys": [
+        {
+          "p": [
+            -73.957557,
+            40.814864,
+            30
+          ],
+          "look": [
+            -73.958292,
+            40.815701,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.958007,
+            40.815386,
+            6
+          ],
+          "look": [
+            -73.958292,
+            40.815701,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.958482,
+            40.815926,
+            5
+          ],
+          "look": [
+            -73.95815,
+            40.815854,
+            17
+          ]
+        }
+      ]
+    },
+    "t5ViaductCrane": {
+      "act": "teaser5",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "Dinosaur Bar-B-Que's roof sign and the viaduct from Twelfth Avenue",
+      "keys": [
+        {
+          "p": [
+            -73.961377,
+            40.818193,
+            3
+          ],
+          "look": [
+            -73.960902,
+            40.818103,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.961163,
+            40.818247,
+            9
+          ],
+          "look": [
+            -73.960819,
+            40.818121,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.961116,
+            40.818508,
+            26
+          ],
+          "look": [
+            -73.960345,
+            40.817878,
+            18
+          ]
+        }
+      ]
+    },
+    "t5ApolloDive": {
+      "act": "teaser5",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "The Apollo: a dive from over 125th Street to the marquee",
+      "keys": [
+        {
+          "p": [
+            -73.950752,
+            40.80991,
+            38
+          ],
+          "look": [
+            -73.950148,
+            40.809883,
+            14
+          ]
+        },
+        {
+          "p": [
+            -73.950495,
+            40.809854,
+            15
+          ],
+          "look": [
+            -73.950148,
+            40.809883,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.950314,
+            40.809823,
+            4.6
+          ],
+          "look": [
+            -73.95013,
+            40.809881,
+            7.2
+          ]
+        }
+      ]
+    },
+    "t5BladeCrane": {
+      "act": "teaser5",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 56,
+      "title": "The Apollo: a crane up the blade sign to the rooftop frame",
+      "keys": [
+        {
+          "p": [
+            -73.950387,
+            40.809852,
+            2.4
+          ],
+          "look": [
+            -73.950184,
+            40.809895,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.950379,
+            40.809855,
+            12
+          ],
+          "look": [
+            -73.950184,
+            40.809895,
+            17.5
+          ]
+        },
+        {
+          "p": [
+            -73.950358,
+            40.809838,
+            27
+          ],
+          "look": [
+            -73.9501,
+            40.809966,
+            20
+          ]
+        }
+      ]
+    },
+    "t5StreetGlide": {
+      "act": "teaser5",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "125th Street east: Hotel Theresa and the State Office Building plaza with its vendors",
+      "keys": [
+        {
+          "p": [
+            -73.949807,
+            40.809606,
+            6
+          ],
+          "look": [
+            -73.949075,
+            40.809308,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.949087,
+            40.809293,
+            9
+          ],
+          "look": [
+            -73.948666,
+            40.808849,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.948432,
+            40.809039,
+            15
+          ],
+          "look": [
+            -73.947561,
+            40.809042,
+            24
+          ]
+        }
+      ]
+    },
+    "t6PepsiDive": {
+      "act": "teaser6",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "abs": true,
+      "title": "Hunters Point: a dive from over the East River down to the Pepsi-Cola letters",
+      "keys": [
+        {
+          "p": [
+            -73.959294,
+            40.748079,
+            60
+          ],
+          "look": [
+            -73.957667,
+            40.747523,
+            17.9
+          ]
+        },
+        {
+          "p": [
+            -73.95843,
+            40.747774,
+            26
+          ],
+          "look": [
+            -73.957667,
+            40.747523,
+            17.9
+          ]
+        },
+        {
+          "p": [
+            -73.957877,
+            40.747559,
+            18.5
+          ],
+          "look": [
+            -73.957694,
+            40.747468,
+            18
+          ]
+        }
+      ]
+    },
+    "t6LetterGlide": {
+      "act": "teaser6",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 55,
+      "abs": true,
+      "title": "Hunters Point: a glide along the neon letters from the P's curl to the bottle",
+      "keys": [
+        {
+          "p": [
+            -73.957661,
+            40.747766,
+            18.5
+          ],
+          "look": [
+            -73.95762,
+            40.747621,
+            18.5
+          ]
+        },
+        {
+          "p": [
+            -73.957746,
+            40.747541,
+            16.5
+          ],
+          "look": [
+            -73.957711,
+            40.747435,
+            17.5
+          ]
+        },
+        {
+          "p": [
+            -73.95787,
+            40.747345,
+            19.5
+          ],
+          "look": [
+            -73.957782,
+            40.747292,
+            18.5
+          ]
+        }
+      ]
+    },
+    "t6MidtownTurn": {
+      "act": "teaser6",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.8,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "abs": true,
+      "title": "Hunters Point: from under the neon, a crane and turn west to Midtown across the river",
+      "keys": [
+        {
+          "p": [
+            -73.957844,
+            40.747473,
+            7.5
+          ],
+          "look": [
+            -73.957703,
+            40.747451,
+            20
+          ]
+        },
+        {
+          "p": [
+            -73.958019,
+            40.74758,
+            20
+          ],
+          "look": [
+            -73.960523,
+            40.748007,
+            25
+          ]
+        },
+        {
+          "p": [
+            -73.958272,
+            40.747711,
+            34
+          ],
+          "look": [
+            -73.978318,
+            40.748367,
+            90
+          ]
+        }
+      ]
+    },
+    "t6GantryArc": {
+      "act": "teaser6",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "abs": true,
+      "title": "Hunters Point: an arc low over the slip up to the LONG ISLAND gantries",
+      "keys": [
+        {
+          "p": [
+            -73.959524,
+            40.744493,
+            4
+          ],
+          "look": [
+            -73.958812,
+            40.744763,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.959286,
+            40.744763,
+            8
+          ],
+          "look": [
+            -73.958812,
+            40.744763,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.959073,
+            40.744961,
+            18
+          ],
+          "look": [
+            -73.958808,
+            40.744749,
+            14
+          ]
+        }
+      ]
+    },
+    "gWindBorder": {
+      "act": "veg",
+      "time": "day",
+      "duration": 4,
+      "ease": 0,
+      "warm": 450,
+      "fov": 58,
+      "title": "GROUND: wind through the South garden's border",
+      "keys": [
+        {
+          "p": [
+            -73.952479,
+            40.79298,
+            1.6
+          ],
+          "look": [
+            -73.952787,
+            40.793178,
+            0.8
+          ]
+        },
+        {
+          "p": [
+            -73.952479,
+            40.79298,
+            1.6
+          ],
+          "look": [
+            -73.952787,
+            40.793178,
+            0.8
+          ]
+        }
+      ]
+    },
+    "t7ArchTrack": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "The Riverside Drive Viaduct: along the spans to the 125th Street arch from the Twelfth Avenue side",
+      "keys": [
+        {
+          "p": [
+            -73.960949,
+            40.817609,
+            14
+          ],
+          "look": [
+            -73.96059,
+            40.81758,
+            15
+          ]
+        },
+        {
+          "p": [
+            -73.960787,
+            40.817839,
+            14.5
+          ],
+          "look": [
+            -73.960422,
+            40.817808,
+            16
+          ]
+        },
+        {
+          "p": [
+            -73.960624,
+            40.818069,
+            15
+          ],
+          "look": [
+            -73.960254,
+            40.818036,
+            16
+          ]
+        }
+      ]
+    },
+    "t7ArchCrane": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "The Riverside Drive Viaduct: a crane up the 125th Street arch's south-west tower to the deck",
+      "keys": [
+        {
+          "p": [
+            -73.960805,
+            40.817805,
+            5
+          ],
+          "look": [
+            -73.96061,
+            40.817795,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.960812,
+            40.817824,
+            13.5
+          ],
+          "look": [
+            -73.960593,
+            40.817819,
+            13.5
+          ]
+        },
+        {
+          "p": [
+            -73.960829,
+            40.817846,
+            28
+          ],
+          "look": [
+            -73.960501,
+            40.817944,
+            17
+          ]
+        }
+      ]
+    },
+    "t7ArchSoffit": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 60,
+      "title": "The Riverside Drive Viaduct: under the 125th Street arch between its ribs",
+      "keys": [
+        {
+          "p": [
+            -73.960498,
+            40.817779,
+            10
+          ],
+          "look": [
+            -73.960383,
+            40.817936,
+            19
+          ]
+        },
+        {
+          "p": [
+            -73.960413,
+            40.817887,
+            11
+          ],
+          "look": [
+            -73.960302,
+            40.818046,
+            19
+          ]
+        },
+        {
+          "p": [
+            -73.960328,
+            40.817995,
+            10.5
+          ],
+          "look": [
+            -73.960209,
+            40.818171,
+            16
+          ]
+        }
+      ]
+    },
+    "t7ValleyArch": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "The Manhattan Valley arch over 125th Street",
+      "keys": [
+        {
+          "p": [
+            -73.957557,
+            40.814864,
+            30
+          ],
+          "look": [
+            -73.958292,
+            40.815701,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.958007,
+            40.815386,
+            7.5
+          ],
+          "look": [
+            -73.958292,
+            40.815701,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.958482,
+            40.815926,
+            6.5
+          ],
+          "look": [
+            -73.95815,
+            40.815854,
+            17.5
+          ]
+        }
+      ],
+      "from": "t5ValleyArch"
+    },
+    "t7ViaductCrane": {
+      "act": "teaser7Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "Dinosaur Bar-B-Que's roof sign and the viaduct from Twelfth Avenue",
+      "keys": [
+        {
+          "p": [
+            -73.961377,
+            40.818193,
+            12.5
+          ],
+          "look": [
+            -73.960902,
+            40.818103,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.961163,
+            40.818247,
+            15
+          ],
+          "look": [
+            -73.960819,
+            40.818121,
+            13
+          ]
+        },
+        {
+          "p": [
+            -73.961116,
+            40.818508,
+            27
+          ],
+          "look": [
+            -73.960345,
+            40.817878,
+            18
+          ]
+        }
+      ],
+      "from": "t5ViaductCrane"
+    },
+    "t7DinoGlide": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "Under the Riverside Drive Viaduct to Dinosaur Bar-B-Que",
+      "keys": [
+        {
+          "p": [
+            -73.959977,
+            40.817528,
+            5.2
+          ],
+          "look": [
+            -73.960463,
+            40.817995,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.960262,
+            40.817797,
+            6.3
+          ],
+          "look": [
+            -73.960712,
+            40.818166,
+            11
+          ]
+        },
+        {
+          "p": [
+            -73.960487,
+            40.818013,
+            9
+          ],
+          "look": [
+            -73.960807,
+            40.818211,
+            12.5
+          ]
+        }
+      ],
+      "from": "t5DinoGlide"
+    },
+    "t7StreetGlide": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "125th Street east: Hotel Theresa and the State Office Building plaza with its vendors",
+      "keys": [
+        {
+          "p": [
+            -73.949807,
+            40.809606,
+            6
+          ],
+          "look": [
+            -73.949075,
+            40.809308,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.949087,
+            40.809293,
+            9
+          ],
+          "look": [
+            -73.948666,
+            40.808849,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.948432,
+            40.809039,
+            15
+          ],
+          "look": [
+            -73.947561,
+            40.809042,
+            24
+          ]
+        }
+      ],
+      "from": "t5StreetGlide"
+    },
+    "t7ApolloDive": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "The Apollo: a dive from over 125th Street to the marquee",
+      "keys": [
+        {
+          "p": [
+            -73.950752,
+            40.80991,
+            38
+          ],
+          "look": [
+            -73.950148,
+            40.809883,
+            14
+          ]
+        },
+        {
+          "p": [
+            -73.950495,
+            40.809854,
+            15
+          ],
+          "look": [
+            -73.950148,
+            40.809883,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.950314,
+            40.809823,
+            5.6
+          ],
+          "look": [
+            -73.95013,
+            40.809881,
+            7.6
+          ]
+        }
+      ],
+      "from": "t5ApolloDive"
+    },
+    "t7BladeCrane": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 56,
+      "title": "The Apollo: a crane up the blade sign to the rooftop frame",
+      "keys": [
+        {
+          "p": [
+            -73.950387,
+            40.809852,
+            5.2
+          ],
+          "look": [
+            -73.950184,
+            40.809895,
+            10.5
+          ]
+        },
+        {
+          "p": [
+            -73.950379,
+            40.809855,
+            13
+          ],
+          "look": [
+            -73.950184,
+            40.809895,
+            18
+          ]
+        },
+        {
+          "p": [
+            -73.950358,
+            40.809838,
+            27
+          ],
+          "look": [
+            -73.9501,
+            40.809966,
+            20
+          ]
+        }
+      ],
+      "from": "t5BladeCrane"
+    },
+    "t7PepsiDive": {
+      "act": "teaser7Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "abs": true,
+      "title": "Hunters Point: a dive from over the East River down to the Pepsi-Cola letters",
+      "keys": [
+        {
+          "p": [
+            -73.959294,
+            40.748079,
+            60
+          ],
+          "look": [
+            -73.957667,
+            40.747523,
+            17.9
+          ]
+        },
+        {
+          "p": [
+            -73.95843,
+            40.747774,
+            26
+          ],
+          "look": [
+            -73.957667,
+            40.747523,
+            17.9
+          ]
+        },
+        {
+          "p": [
+            -73.957877,
+            40.747559,
+            18.5
+          ],
+          "look": [
+            -73.957694,
+            40.747468,
+            18
+          ]
+        }
+      ],
+      "from": "t6PepsiDive"
+    },
+    "t7GantryArc": {
+      "act": "teaser7Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "abs": true,
+      "title": "Hunters Point: an arc low over the slip up to the LONG ISLAND gantries",
+      "keys": [
+        {
+          "p": [
+            -73.959524,
+            40.744493,
+            4
+          ],
+          "look": [
+            -73.958812,
+            40.744763,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.959286,
+            40.744763,
+            8
+          ],
+          "look": [
+            -73.958812,
+            40.744763,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.959073,
+            40.744961,
+            18
+          ],
+          "look": [
+            -73.958808,
+            40.744749,
+            14
+          ]
+        }
+      ],
+      "from": "t6GantryArc"
+    },
+    "t7LetterGlide": {
+      "act": "teaser7Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 55,
+      "abs": true,
+      "title": "Hunters Point: a glide along the neon letters from the P's curl to the bottle",
+      "keys": [
+        {
+          "p": [
+            -73.957661,
+            40.747766,
+            18.5
+          ],
+          "look": [
+            -73.95762,
+            40.747621,
+            18.5
+          ]
+        },
+        {
+          "p": [
+            -73.957746,
+            40.747541,
+            16.5
+          ],
+          "look": [
+            -73.957711,
+            40.747435,
+            17.5
+          ]
+        },
+        {
+          "p": [
+            -73.95787,
+            40.747345,
+            19.5
+          ],
+          "look": [
+            -73.957782,
+            40.747292,
+            18.5
+          ]
+        }
+      ],
+      "from": "t6LetterGlide"
+    },
+    "t7MidtownTurn": {
+      "act": "teaser7Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.8,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "abs": true,
+      "title": "Hunters Point: from under the neon, a crane and turn west to Midtown across the river",
+      "keys": [
+        {
+          "p": [
+            -73.957844,
+            40.747473,
+            7.5
+          ],
+          "look": [
+            -73.957703,
+            40.747451,
+            20
+          ]
+        },
+        {
+          "p": [
+            -73.958019,
+            40.74758,
+            20
+          ],
+          "look": [
+            -73.960523,
+            40.748007,
+            25
+          ]
+        },
+        {
+          "p": [
+            -73.958272,
+            40.747711,
+            34
+          ],
+          "look": [
+            -73.978318,
+            40.748367,
+            90
+          ]
+        }
+      ],
+      "from": "t6MidtownTurn"
+    },
+    "t7Mall": {
+      "act": "teaser7Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 4,
+      "ease": 0.1,
+      "warm": 240,
+      "fov": 58,
+      "title": "Central Park: up the Mall under the elms",
+      "keys": [
+        {
+          "p": [
+            -73.972386,
+            40.770356,
+            2.7
+          ],
+          "look": [
+            -73.972113,
+            40.771045,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.972243,
+            40.770699,
+            4.3
+          ],
+          "look": [
+            -73.971949,
+            40.771478,
+            3.2
+          ]
+        },
+        {
+          "p": [
+            -73.972085,
+            40.771086,
+            6.5
+          ],
+          "look": [
+            -73.971753,
+            40.771997,
+            5
+          ]
+        }
+      ],
+      "from": "t4Mall"
+    },
+    "t7ParkCrane": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "The Park Avenue viaduct: from 125th Street up over the Harlem-125th St station to its platforms",
+      "keys": [
+        {
+          "p": [
+            -73.939545,
+            40.805255,
+            5.5
+          ],
+          "look": [
+            -73.938971,
+            40.805168,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.939305,
+            40.805096,
+            13
+          ],
+          "look": [
+            -73.938858,
+            40.805305,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.939403,
+            40.804763,
+            24
+          ],
+          "look": [
+            -73.938387,
+            40.805931,
+            11
+          ]
+        }
+      ]
+    },
+    "t7RfkGlide": {
+      "act": "teaser7Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "East along 125th Street to the RFK Bridge's Harlem River lift span",
+      "keys": [
+        {
+          "p": [
+            -73.931837,
+            40.802067,
+            18
+          ],
+          "look": [
+            -73.928645,
+            40.800683,
+            32
+          ]
+        },
+        {
+          "p": [
+            -73.93095,
+            40.801796,
+            24
+          ],
+          "look": [
+            -73.928639,
+            40.800597,
+            34
+          ]
+        },
+        {
+          "p": [
+            -73.929924,
+            40.801529,
+            34
+          ],
+          "look": [
+            -73.928516,
+            40.800392,
+            38
+          ]
+        }
+      ]
+    },
+    "t7ValleyTrain": {
+      "act": "teaser7",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 240,
+      "fov": 58,
+      "title": "The 1 train leaving 125th Street northbound on the Manhattan Valley Viaduct",
+      "keys": [
+        {
+          "p": [
+            -73.9571676,
+            40.8169823,
+            23.48
+          ],
+          "look": [
+            -73.9579454,
+            40.8161776,
+            17.48
+          ]
+        },
+        {
+          "p": [
+            -73.9573108,
+            40.8167956,
+            21.48
+          ],
+          "look": [
+            -73.9578994,
+            40.8162406,
+            17.48
+          ]
+        },
+        {
+          "p": [
+            -73.9574539,
+            40.8166089,
+            20.08
+          ],
+          "look": [
+            -73.9578534,
+            40.8163035,
+            17.48
+          ]
+        }
+      ]
+    },
+    "t8MorningsideSwoop": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "125th Street BID: a swoop from over Morningside Avenue down onto the north block face (383-351 W 125th)",
+      "keys": [
+        {
+          "p": [
+            -73.95416,
+            40.811463,
+            28
+          ],
+          "look": [
+            -73.953315,
+            40.811226,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.95389,
+            40.811331,
+            15
+          ],
+          "look": [
+            -73.95312,
+            40.811122,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.953562,
+            40.811186,
+            7.5
+          ],
+          "look": [
+            -73.952809,
+            40.81099,
+            7
+          ]
+        }
+      ]
+    },
+    "t8StNickDive": {
+      "act": "teaser8Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 56,
+      "title": "125th Street BID: a dive onto the A C B D subway entrances at St Nicholas Avenue",
+      "keys": [
+        {
+          "p": [
+            -73.953129,
+            40.811146,
+            32
+          ],
+          "look": [
+            -73.952853,
+            40.810781,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.953016,
+            40.811005,
+            16
+          ],
+          "look": [
+            -73.952853,
+            40.810781,
+            1
+          ]
+        },
+        {
+          "p": [
+            -73.952947,
+            40.810914,
+            6.6
+          ],
+          "look": [
+            -73.952853,
+            40.810781,
+            1.6
+          ]
+        }
+      ]
+    },
+    "t8FdbCrane": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "125th Street BID: a crane up at Frederick Douglass Boulevard, the street east to the Apollo block",
+      "keys": [
+        {
+          "p": [
+            -73.951167,
+            40.810181,
+            6
+          ],
+          "look": [
+            -73.950145,
+            40.809811,
+            8
+          ]
+        },
+        {
+          "p": [
+            -73.951154,
+            40.810176,
+            17
+          ],
+          "look": [
+            -73.950053,
+            40.809751,
+            11
+          ]
+        },
+        {
+          "p": [
+            -73.951133,
+            40.810167,
+            33
+          ],
+          "look": [
+            -73.949753,
+            40.809604,
+            12
+          ]
+        }
+      ]
+    },
+    "t8ApolloGlide": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 56,
+      "title": "125th Street BID: a low glide along the Apollo block face, the marquee, the blade sign and the Victoria",
+      "keys": [
+        {
+          "p": [
+            -73.95085,
+            40.810052,
+            6
+          ],
+          "look": [
+            -73.950145,
+            40.809903,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.950508,
+            40.809908,
+            6.4
+          ],
+          "look": [
+            -73.949834,
+            40.809772,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.950156,
+            40.809759,
+            6.8
+          ],
+          "look": [
+            -73.949492,
+            40.809627,
+            11
+          ]
+        }
+      ]
+    },
+    "t8VictoriaCrane": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "125th Street BID: a crane up from the Victoria marquee and blade, turning east down the night street",
+      "keys": [
+        {
+          "p": [
+            -73.949726,
+            40.809531,
+            6
+          ],
+          "look": [
+            -73.949548,
+            40.809662,
+            9
+          ]
+        },
+        {
+          "p": [
+            -73.949763,
+            40.809536,
+            15
+          ],
+          "look": [
+            -73.949406,
+            40.80956,
+            8
+          ]
+        },
+        {
+          "p": [
+            -73.949815,
+            40.809558,
+            26
+          ],
+          "look": [
+            -73.948809,
+            40.809225,
+            4
+          ]
+        }
+      ]
+    },
+    "t8TheresaArc": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 56,
+      "title": "125th Street BID: an arc round the Hotel Theresa at Adam Clayton Powell Jr Blvd",
+      "keys": [
+        {
+          "p": [
+            -73.948183,
+            40.809043,
+            22
+          ],
+          "look": [
+            -73.948667,
+            40.808939,
+            27
+          ]
+        },
+        {
+          "p": [
+            -73.948119,
+            40.808872,
+            20
+          ],
+          "look": [
+            -73.948667,
+            40.808939,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.948266,
+            40.808707,
+            18
+          ],
+          "look": [
+            -73.948736,
+            40.808844,
+            24
+          ]
+        }
+      ]
+    },
+    "t8PlazaGlide": {
+      "act": "teaser8Out",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "125th Street BID: a glide across the State Office Building plaza behind its vendors, the street beyond",
+      "keys": [
+        {
+          "p": [
+            -73.947909,
+            40.80901,
+            5
+          ],
+          "look": [
+            -73.947584,
+            40.808749,
+            1.6
+          ]
+        },
+        {
+          "p": [
+            -73.947684,
+            40.80891,
+            5
+          ],
+          "look": [
+            -73.947356,
+            40.808653,
+            2
+          ]
+        },
+        {
+          "p": [
+            -73.947448,
+            40.808805,
+            5.5
+          ],
+          "look": [
+            -73.947119,
+            40.808532,
+            3
+          ]
+        }
+      ]
+    },
+    "t8MuseumGlide": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "125th Street BID: a low night glide along the south block face east of the plaza, the Studio Museum blade and the shop signs",
+      "keys": [
+        {
+          "p": [
+            -73.947076,
+            40.808442,
+            6.2
+          ],
+          "look": [
+            -73.946638,
+            40.808114,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.946765,
+            40.808311,
+            6.2
+          ],
+          "look": [
+            -73.946327,
+            40.807982,
+            5.5
+          ]
+        },
+        {
+          "p": [
+            -73.946457,
+            40.808176,
+            6.6
+          ],
+          "look": [
+            -73.946016,
+            40.807851,
+            6
+          ]
+        }
+      ]
+    },
+    "t8LenoxDive": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "125th Street BID: a dive onto 125th and Lenox, the 2 3 subway entrance",
+      "keys": [
+        {
+          "p": [
+            -73.945042,
+            40.807513,
+            30
+          ],
+          "look": [
+            -73.945527,
+            40.807997,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.945206,
+            40.807623,
+            15
+          ],
+          "look": [
+            -73.945527,
+            40.807997,
+            1
+          ]
+        },
+        {
+          "p": [
+            -73.945292,
+            40.80769,
+            6.5
+          ],
+          "look": [
+            -73.945527,
+            40.807997,
+            2
+          ]
+        }
+      ]
+    },
+    "t8BusGlide": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5&busat=2202.1,-2713.2,M60,mtaxd60",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 60,
+      "title": "125th Street BID: east of Lenox at night, the M60 SBS at its stop and the shop signs",
+      "keys": [
+        {
+          "p": [
+            -73.945322,
+            40.807723,
+            7
+          ],
+          "look": [
+            -73.945002,
+            40.807475,
+            2.5
+          ]
+        },
+        {
+          "p": [
+            -73.945045,
+            40.807601,
+            6.6
+          ],
+          "look": [
+            -73.944495,
+            40.807426,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.944735,
+            40.807469,
+            7
+          ],
+          "look": [
+            -73.944034,
+            40.807314,
+            7
+          ]
+        }
+      ]
+    },
+    "t8FifthCrane": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "125th Street BID: a crane up at Fifth Avenue looking west over the whole stretch",
+      "keys": [
+        {
+          "p": [
+            -73.942559,
+            40.806548,
+            6
+          ],
+          "look": [
+            -73.943856,
+            40.807095,
+            8
+          ]
+        },
+        {
+          "p": [
+            -73.942528,
+            40.806535,
+            18
+          ],
+          "look": [
+            -73.943804,
+            40.807073,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.942487,
+            40.806518,
+            40
+          ],
+          "look": [
+            -73.944011,
+            40.80716,
+            0
+          ]
+        }
+      ]
+    },
+    "t8StNickDiveE": {
+      "act": "teaser8",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 56,
+      "title": "125th Street BID: a dive from the east onto the A C B D elevator tower at St Nicholas Avenue, the BID1 blocks behind",
+      "keys": [
+        {
+          "p": [
+            -73.952209,
+            40.810737,
+            30
+          ],
+          "look": [
+            -73.952853,
+            40.810781,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.952463,
+            40.810761,
+            15
+          ],
+          "look": [
+            -73.952853,
+            40.810781,
+            1
+          ]
+        },
+        {
+          "p": [
+            -73.952637,
+            40.810782,
+            7
+          ],
+          "look": [
+            -73.952853,
+            40.810781,
+            1.6
+          ]
+        }
+      ]
+    }
+  },
+  "probes": {
+    "pBrownstoneB": {
+      "time": "day",
+      "title": "ALT brownstone: closer rake, 12 m off the north facade line",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.947602,
+            40.805254,
+            1.7
+          ],
+          "look": [
+            -73.94744,
+            40.805309,
+            4
+          ]
+        },
+        {
+          "p": [
+            -73.947592,
+            40.805264,
+            1.7
+          ],
+          "look": [
+            -73.94744,
+            40.805309,
+            4
+          ]
+        }
+      ]
+    },
+    "pBrownstoneC": {
+      "time": "day",
+      "title": "ALT brownstone: further ESE down W 122nd (next lot run)",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.947176,
+            40.805096,
+            1.8
+          ],
+          "look": [
+            -73.946962,
+            40.805148,
+            4.2
+          ]
+        },
+        {
+          "p": [
+            -73.947166,
+            40.805106,
+            1.8
+          ],
+          "look": [
+            -73.946962,
+            40.805148,
+            4.2
+          ]
+        }
+      ]
+    },
+    "pLenoxEyeB": {
+      "time": "day",
+      "title": "ALT Lenox eye: 34 m WNW, tighter on the crossing",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.945682,
+            40.808009,
+            2.4
+          ],
+          "look": [
+            -73.945072,
+            40.807804,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.945672,
+            40.808019,
+            2.4
+          ],
+          "look": [
+            -73.945072,
+            40.807804,
+            6
+          ]
+        }
+      ]
+    },
+    "pMarkingsB": {
+      "time": "day",
+      "title": "ALT markings: 18 m WNW, lens almost on the bars",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.945533,
+            40.807916,
+            1.4
+          ],
+          "look": [
+            -73.945175,
+            40.807848,
+            2.4
+          ]
+        },
+        {
+          "p": [
+            -73.945523,
+            40.807926,
+            1.4
+          ],
+          "look": [
+            -73.945175,
+            40.807848,
+            2.4
+          ]
+        }
+      ]
+    },
+    "pLowAerialB": {
+      "time": "golden",
+      "title": "ALT campus aerial: 95 m, closer on the dome",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.960911,
+            40.80736,
+            96
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            26
+          ]
+        },
+        {
+          "p": [
+            -73.96090099999999,
+            40.807370000000006,
+            96
+          ],
+          "look": [
+            -73.96205,
+            40.80862,
+            26
+          ]
+        }
+      ]
+    },
+    "pLad12": {
+      "time": "day",
+      "title": "LADDER 125th: 12 m south of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.94568,
+            40.807936,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        },
+        {
+          "p": [
+            -73.94566999999999,
+            40.807946,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        }
+      ]
+    },
+    "pLad16": {
+      "time": "day",
+      "title": "LADDER 125th: 16 m south of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.945703,
+            40.807905,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        },
+        {
+          "p": [
+            -73.94569299999999,
+            40.807915,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        }
+      ]
+    },
+    "pLad20": {
+      "time": "day",
+      "title": "LADDER 125th: 20 m south of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.945726,
+            40.807873,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        },
+        {
+          "p": [
+            -73.94571599999999,
+            40.807883000000004,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        }
+      ]
+    },
+    "pLad24": {
+      "time": "day",
+      "title": "LADDER 125th: 24 m south of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.945749,
+            40.807842,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        },
+        {
+          "p": [
+            -73.945739,
+            40.807852000000004,
+            1.5
+          ],
+          "look": [
+            -73.945217,
+            40.807865,
+            2.6
+          ]
+        }
+      ]
+    },
+    "pRowW40": {
+      "time": "day",
+      "title": "ROW W 122nd: 40 m WNW of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.948193,
+            40.805523,
+            1.8
+          ],
+          "look": [
+            -73.947978,
+            40.805576,
+            4.2
+          ]
+        },
+        {
+          "p": [
+            -73.948183,
+            40.805533000000004,
+            1.8
+          ],
+          "look": [
+            -73.947978,
+            40.805576,
+            4.2
+          ]
+        }
+      ]
+    },
+    "pRowW18": {
+      "time": "day",
+      "title": "ROW W 122nd: 18 m WNW of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.947965,
+            40.805427,
+            1.8
+          ],
+          "look": [
+            -73.94775,
+            40.80548,
+            4.2
+          ]
+        },
+        {
+          "p": [
+            -73.947955,
+            40.805437000000005,
+            1.8
+          ],
+          "look": [
+            -73.94775,
+            40.80548,
+            4.2
+          ]
+        }
+      ]
+    },
+    "pRowE64": {
+      "time": "day",
+      "title": "ROW W 122nd: 64 m ESE of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.947114,
+            40.805069,
+            1.8
+          ],
+          "look": [
+            -73.946899,
+            40.805122,
+            4.2
+          ]
+        },
+        {
+          "p": [
+            -73.947104,
+            40.805079000000006,
+            1.8
+          ],
+          "look": [
+            -73.946899,
+            40.805122,
+            4.2
+          ]
+        }
+      ]
+    },
+    "pRowE92": {
+      "time": "day",
+      "title": "ROW W 122nd: 92 m ESE of the anchor",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.946823,
+            40.804947,
+            1.8
+          ],
+          "look": [
+            -73.946609,
+            40.805,
+            4.2
+          ]
+        },
+        {
+          "p": [
+            -73.94681299999999,
+            40.804957,
+            1.8
+          ],
+          "look": [
+            -73.946609,
+            40.805,
+            4.2
+          ]
+        }
+      ]
+    },
+    "pMMPW": {
+      "time": "day",
+      "title": "ROW Mt Morris Park West, looking at the west-side houses",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.947331,
+            40.80583,
+            1.8
+          ],
+          "look": [
+            -73.947401,
+            40.805983,
+            4.4
+          ]
+        },
+        {
+          "p": [
+            -73.947321,
+            40.80584,
+            1.8
+          ],
+          "look": [
+            -73.947401,
+            40.805983,
+            4.4
+          ]
+        }
+      ]
+    },
+    "pLifeA": {
+      "time": "day",
+      "title": "LIFE 125th north sidewalk, building side (s 5.6) at 1.9 m, looking ESE",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.945934,
+            40.808109,
+            1.9
+          ],
+          "look": [
+            -73.945707,
+            40.807974,
+            1.3
+          ]
+        },
+        {
+          "p": [
+            -73.94592399999999,
+            40.808119000000005,
+            1.9
+          ],
+          "look": [
+            -73.945707,
+            40.807974,
+            1.3
+          ]
+        }
+      ]
+    },
+    "pLifeB": {
+      "time": "day",
+      "title": "LIFE 125th north sidewalk, edge of the walkers (s 6.4) at 2.3 m, looking ESE",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.945939,
+            40.808103,
+            2.3
+          ],
+          "look": [
+            -73.945707,
+            40.807974,
+            1.3
+          ]
+        },
+        {
+          "p": [
+            -73.94592899999999,
+            40.808113000000006,
+            2.3
+          ],
+          "look": [
+            -73.945707,
+            40.807974,
+            1.3
+          ]
+        }
+      ]
+    },
+    "pLifeC": {
+      "time": "day",
+      "title": "LIFE 125th south sidewalk, building side (s 32.4) at 1.9 m, looking ESE",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.946088,
+            40.807898,
+            1.9
+          ],
+          "look": [
+            -73.945817,
+            40.807823,
+            1.3
+          ]
+        },
+        {
+          "p": [
+            -73.946078,
+            40.807908000000005,
+            1.9
+          ],
+          "look": [
+            -73.945817,
+            40.807823,
+            1.3
+          ]
+        }
+      ]
+    },
+    "pBkBridge": {
+      "time": "golden",
+      "title": "REJECTED: Brooklyn Bridge deck at 30 m (camera beside a tower, blown river)",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -74.000368,
+            40.708996,
+            30
+          ],
+          "look": [
+            -73.99944,
+            40.70856,
+            50
+          ]
+        },
+        {
+          "p": [
+            -74.00035799999999,
+            40.709006,
+            30
+          ],
+          "look": [
+            -73.99944,
+            40.70856,
+            50
+          ]
+        }
+      ]
+    },
+    "pBkBridgeAlt": {
+      "time": "golden",
+      "title": "REJECTED: Brooklyn Bridge from the City Hall side at 40 m",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -74.000952,
+            40.709271,
+            40
+          ],
+          "look": [
+            -73.99944,
+            40.70856,
+            60
+          ]
+        },
+        {
+          "p": [
+            -74.000942,
+            40.709281000000004,
+            40
+          ],
+          "look": [
+            -73.99944,
+            40.70856,
+            60
+          ]
+        }
+      ]
+    },
+    "sTsqNightSt": {
+      "time": "night",
+      "title": "SURVEY Times Square at night from 46th St, 1.8 m, looking S at One Times Square",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.9853,
+            40.75845,
+            1.8
+          ],
+          "look": [
+            -73.9866,
+            40.7563,
+            38
+          ]
+        },
+        {
+          "p": [
+            -73.98528999999999,
+            40.75846000000001,
+            1.8
+          ],
+          "look": [
+            -73.9866,
+            40.7563,
+            38
+          ]
+        }
+      ]
+    },
+    "sTsqNightAir": {
+      "time": "night",
+      "title": "SURVEY Times Square at night from 60 m over 47th, looking S down the bowtie",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.984667,
+            40.759316,
+            60
+          ],
+          "look": [
+            -73.98637,
+            40.756615,
+            8
+          ]
+        },
+        {
+          "p": [
+            -73.984657,
+            40.759326,
+            60
+          ],
+          "look": [
+            -73.98637,
+            40.756615,
+            8
+          ]
+        }
+      ]
+    },
+    "sTsqDaySt": {
+      "time": "day",
+      "title": "SURVEY Times Square by day from 46th St, 1.8 m, looking S",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.9853,
+            40.75845,
+            1.8
+          ],
+          "look": [
+            -73.9866,
+            40.7563,
+            38
+          ]
+        },
+        {
+          "p": [
+            -73.98528999999999,
+            40.75846000000001,
+            1.8
+          ],
+          "look": [
+            -73.9866,
+            40.7563,
+            38
+          ]
+        }
+      ]
+    },
+    "sTsqDusk": {
+      "time": "dusk",
+      "title": "SURVEY Times Square at dusk from 12 m over 45th, looking N to Duffy Square",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.98591,
+            40.757244,
+            12
+          ],
+          "look": [
+            -73.984702,
+            40.758897,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.9859,
+            40.757254,
+            12
+          ],
+          "look": [
+            -73.984702,
+            40.758897,
+            6
+          ]
+        }
+      ]
+    },
+    "sBryantGold": {
+      "time": "golden",
+      "title": "SURVEY Bryant Park lawn from the 6th Ave end, 12 m, looking E to the library",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.985,
+            40.7541,
+            12
+          ],
+          "look": [
+            -73.9822,
+            40.7532,
+            12
+          ]
+        },
+        {
+          "p": [
+            -73.98499,
+            40.754110000000004,
+            12
+          ],
+          "look": [
+            -73.9822,
+            40.7532,
+            12
+          ]
+        }
+      ]
+    },
+    "sBryantLow": {
+      "time": "day",
+      "title": "SURVEY Bryant Park from the lawn edge at 1.7 m, looking E",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.984689,
+            40.753969,
+            1.7
+          ],
+          "look": [
+            -73.9822,
+            40.7532,
+            8
+          ]
+        },
+        {
+          "p": [
+            -73.984679,
+            40.753979,
+            1.7
+          ],
+          "look": [
+            -73.9822,
+            40.7532,
+            8
+          ]
+        }
+      ]
+    },
+    "sBryantAir": {
+      "time": "golden",
+      "title": "SURVEY Bryant Park from 90 m SW, looking NE over the park to Bank of America Tower",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.985226,
+            40.752518,
+            90
+          ],
+          "look": [
+            -73.9838,
+            40.7536,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.985216,
+            40.752528000000005,
+            90
+          ],
+          "look": [
+            -73.9838,
+            40.7536,
+            0
+          ]
+        }
+      ]
+    },
+    "sNyplFront": {
+      "time": "day",
+      "title": "SURVEY the library front on Fifth Ave at 41st, 2 m, looking at the entrance",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.98173,
+            40.752585,
+            2
+          ],
+          "look": [
+            -73.9815,
+            40.7529,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.98172,
+            40.75259500000001,
+            2
+          ],
+          "look": [
+            -73.9815,
+            40.7529,
+            10
+          ]
+        }
+      ]
+    },
+    "sGct42": {
+      "time": "golden",
+      "title": "SURVEY 42nd St looking E at Grand Central and the Chrysler Building, 3 m",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.978886,
+            40.753314,
+            3
+          ],
+          "look": [
+            -73.9755,
+            40.75162,
+            90
+          ]
+        },
+        {
+          "p": [
+            -73.978876,
+            40.753324000000006,
+            3
+          ],
+          "look": [
+            -73.9755,
+            40.75162,
+            90
+          ]
+        }
+      ]
+    },
+    "sFlatiron": {
+      "time": "day",
+      "title": "SURVEY the Flatiron from 25 m over Madison Square",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.988837,
+            40.742281,
+            25
+          ],
+          "look": [
+            -73.9897,
+            40.7411,
+            35
+          ]
+        },
+        {
+          "p": [
+            -73.988827,
+            40.742291,
+            25
+          ],
+          "look": [
+            -73.9897,
+            40.7411,
+            35
+          ]
+        }
+      ]
+    },
+    "sBryantTop": {
+      "time": "day",
+      "title": "SURVEY Bryant Park straight down from 230 m (layout: lawn, paths, trees, the library)",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.9838,
+            40.7536,
+            230
+          ],
+          "look": [
+            -73.983788,
+            40.753616,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.98379,
+            40.75361,
+            230
+          ],
+          "look": [
+            -73.983788,
+            40.753616,
+            0
+          ]
+        }
+      ]
+    },
+    "sTsqTop": {
+      "time": "day",
+      "title": "SURVEY Times Square straight down from 330 m (the bowtie: Broadway x Seventh Ave, 42nd-47th)",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.985277,
+            40.75811,
+            330
+          ],
+          "look": [
+            -73.985266,
+            40.758126,
+            0
+          ]
+        },
+        {
+          "p": [
+            -73.985267,
+            40.758120000000005,
+            330
+          ],
+          "look": [
+            -73.985266,
+            40.758126,
+            0
+          ]
+        }
+      ]
+    },
+    "sEsb": {
+      "time": "golden",
+      "title": "SURVEY the Empire State from Fifth Ave at 33rd, 3 m, looking up",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.98639,
+            40.747456,
+            3
+          ],
+          "look": [
+            -73.9857,
+            40.7484,
+            180
+          ]
+        },
+        {
+          "p": [
+            -73.98638,
+            40.747466,
+            3
+          ],
+          "look": [
+            -73.9857,
+            40.7484,
+            180
+          ]
+        }
+      ]
+    },
+    "sTsqPlaza": {
+      "time": "night",
+      "title": "SURVEY the Broadway plaza from 43rd at 1.8 m, looking N up the bowtie to Duffy Square",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.986001,
+            40.756825,
+            1.8
+          ],
+          "look": [
+            -73.985687,
+            40.757692,
+            6
+          ]
+        },
+        {
+          "p": [
+            -73.985991,
+            40.756835,
+            1.8
+          ],
+          "look": [
+            -73.985687,
+            40.757692,
+            6
+          ]
+        }
+      ]
+    },
+    "sTkts": {
+      "time": "night",
+      "title": "SURVEY the TKTS red steps from 30 m S of them at 1.8 m",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.98504,
+            40.75884,
+            1.8
+          ],
+          "look": [
+            -73.984913,
+            40.759092,
+            3.5
+          ]
+        },
+        {
+          "p": [
+            -73.98503,
+            40.75885,
+            1.8
+          ],
+          "look": [
+            -73.984913,
+            40.759092,
+            3.5
+          ]
+        }
+      ]
+    },
+    "sTkts2": {
+      "time": "dusk",
+      "title": "SURVEY the TKTS red steps from 14 m up, 45 m SSW, looking NNE",
+      "duration": 1,
+      "ease": 0,
+      "keys": [
+        {
+          "p": [
+            -73.98517,
+            40.75868,
+            14
+          ],
+          "look": [
+            -73.984913,
+            40.759092,
+            2.5
+          ]
+        },
+        {
+          "p": [
+            -73.98516,
+            40.75869,
+            14
+          ],
+          "look": [
+            -73.984913,
+            40.759092,
+            2.5
+          ]
+        }
+      ]
+    }
+  }
+}

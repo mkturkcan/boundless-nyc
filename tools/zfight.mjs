@@ -54,7 +54,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const bdir = path.join(root, 'boundlessjs');
-const FFMPEG = path.join(root, 'node_modules', 'ffmpeg-static', 'ffmpeg.exe');
+const FFMPEG = path.join(root, 'node_modules', 'ffmpeg-static', (process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'));
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : '1') : d; };
 const has = (n) => args.includes('--' + n);
@@ -105,6 +105,10 @@ const CLOSE = {
   lodEdge:     W(2128, -2765, 300, 2900, -3400, 0.0, 'day', 'near tiles -> macro ground at the seam'),
   lodEdge2:    W(0, 0, 420, 1400, 1900, 0.0, 'day', 'midtown, another LoD boundary bearing'),
   water:       W(-1500, 1200, 40, -2400, 1600, 0.0, 'day', 'Hudson bulkhead vs the water plane'),
+  // --- Central Park from the teaser 4 aerials' later keys (owner 2026-10-01: "z fighting heavily in aerial shots")
+  cpDiveMid:   W(-255, 1660, 150, -330, 1950, 50, 'day', 't4Dive key 1: the Pond and Central Park South from 150 m'),
+  cpOutMid:    W(70, 1220, 150, 60, 650, 0, 'golden', 't4Out key 1: the Lake and the Ramble from 150 m'),
+  cpOutTop:    W(110, 1400, 300, 100, 500, 0, 'golden', 't4Out key 2: the park to the Reservoir from 300 m'),
   // --- building bases at +0.28
   bldgBase:    W(2136, -2742, 1.2, 2160, -2737, 0.5, 'day', 'storefront sills / floor slabs on the walk'),
   bldgBaseRow: W(2046, -2429, 1.4, 2062, -2424, 0.6, 'day', 'brownstone row: bases + stoops + areaways'),
@@ -658,7 +662,7 @@ const browser = await chromium.launch({
   headless: true,
   args: SW
     ? ['--enable-unsafe-swiftshader', '--disable-gpu-vsync', '--disable-frame-rate-limit', `--window-size=${VW},${VH}`]
-    : ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit', `--window-size=${VW},${VH}`],
+    : [(process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan'), '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit', `--window-size=${VW},${VH}`],
 });
 
 const summary = [];

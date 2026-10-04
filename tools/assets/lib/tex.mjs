@@ -8,7 +8,8 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import sharp from 'sharp';
 
-export const BASISU = (process.env.ASSET_TOOLS || `${process.env.USERPROFILE || process.env.HOME}/.tools`) + '/basisu/basis_universal-1_60/bin/basisu.exe';
+// (2026-10-01: on the Linux server the tools live under /data0/projectnyc_aux/.tools and basisu is built there, no .exe)
+export const BASISU = (process.env.ASSET_TOOLS || (process.platform === 'win32' ? `${process.env.USERPROFILE || process.env.HOME}/.tools` : '/data0/projectnyc_aux/.tools')) + '/basisu/basis_universal-1_60/bin/basisu' + (process.platform === 'win32' ? '.exe' : '');
 export const CACHE = (process.env.ASSET_TOOLS || `${process.env.USERPROFILE || process.env.HOME}/.tools`) + '/texcache';
 fs.mkdirSync(CACHE, { recursive: true });
 

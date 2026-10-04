@@ -20,16 +20,47 @@ import { sweepOut } from '../core/shadowSweep.js';   // SV29
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 const BASE = 'models/fleet24/';
 const LODD = (QS.get('f24lod') || '24,75').split(',').map(Number);   // LOD0 < 24 m, LOD1 < 75 m, LOD2 beyond
+// FP37 (core/engine.js, the film policy): while recording, a vehicle's level changes only far out (LOD0 within 120 m, LOD1
+// within 300 m at least; the film's f24lod=60,180 switched a car's body and its shadow at 60 m)
+if (QS.get('record') === '1' && QS.get('fp37') !== '0') { LODD[0] = Math.max(LODD[0], 120); LODD[1] = Math.max(LODD[1], 300); }
 const LOD0_2 = LODD[0] * LODD[0], LOD1_2 = LODD[1] * LODD[1];
 const PAD_MAIN = 3, PAD_SHADOW = 12;
+// `?vclear=<m>` leaves out any vehicle, parked or moving, whose body comes within <m> metres of the lens (and whose roof
+// is not well below it). `vclear=3` there.
+const VCLEAR = Math.max(0, +(QS.get('vclear') || 0)) || 0;
+// `?vahead=<m>`: also leaves out a vehicle whose body overlaps the lane
+// straight ahead of the lens (1.6 m either side of the view line) within <m> metres: the camera car's own following gap,
+// empty. Off by default.
+const VAHEAD = Math.max(0, +(QS.get('vahead') || 0)) || 0;
+// `?f24art=<deg>` (look-dev, e.g. with the showroom): every articulated bus drawn at that articulation angle
+const ART_FORCE = QS.get('f24art') !== null && Number.isFinite(+QS.get('f24art')) ? (+QS.get('f24art') * Math.PI) / 180 : null;
 
+// NV34 (AR34 VEHICLES): New York's own vehicle kinds below; `?nv34=0` drops them and restores the bag they share
+const NV34 = QS.get('nv34') !== '0';
+// VH36 (AR34 vehicle models; owner 2026-10-02 ~12:05 on teaser 7's t7ArchTrack frame_00080: "The truck on the left ... is
+// too low poly for our simulator and too basic for us to include in teasers; we need more detailed higher quality
+// vehicles"): no kind below the bar of the CARLA 0.10 bodies (docs/notes/ar34-vehmodels.md has the judgement per kind).
+// A kind upgraded to the bar draws its VH36 model (VH36_FILE: its own GLB; VH36_BASE: an at-the-bar body it is derived
+// from, deriveKind as taxi2 is); a kind with no model at the bar yet is left out (VH36_OUT), its spawn share falling to the
+// kinds that remain (traffic.js skips a bag entry whose kind is not loaded). The kind names and the sim's body sizes stay
+// one: traffic.js takes every size from the drawn model (vehDims, carHalf), so VC36 / VN36 follow the new bodies.
+// `?vh36=0`: the fleet as it was.
+const VH36 = QS.get('vh36') !== '0';
+const VH36_FILE = VH36 ? { boxtruck26: 'boxtruck26_vh36' } : {};
+// (stepvan on the Sprinter too, and nypd on the Charger police car with its NYPD livery: 125th Street's delivery-van and
+// NYPD shares in traffic.js's MOVE125 / PARK125 bags stay where they were instead of falling to the box trucks)
+const VH36_BASE = VH36 ? { cargovan: 'van', stepvan: 'van', nypd: 'police' } : {};
+// (the NV34 kinds built from scratch, and the older CARLA cars of 15-21k triangles: judged on 125th Street at 3 and 10 m
+// against the 2024 bodies, boundlessjs/shots/ar34/vehmodels/judge/)
+const VH36_OUT = new Set(VH36 ? ['uspsllv', 'uspsngdv', 'dsny', 'schoolbus', 'foodtruck', 'icecream', 'impala', 'model3', 'auditt', 'mustang'] : []);
 // kind table. w: share of the MOVING spawn bag (of ~100), pw: parked share, cap: moving storage slots
 export const KIND24 = {
   taxi: { w: 3, pw: 1, cap: 30, palette: 'taxi' },        // the Crown Victoria cab (retired from NYC ~2018): a rare sight
   // TODAY'S CAB: most NYC yellow cabs are Toyota Camry / RAV4 / Sienna hybrids in the TLC "T" livery
   // (refs/pv2/c_New_York_City_yellow_taxicabs*.jpg). No CC-BY Toyota exists; the 2024 Lincoln MKZ body is a Camry-sized
   // sedan (4.89 m, 2.87 m wheelbase vs 4.88 / 2.83), so taxi2 = that body + taxi yellow + TLC livery + a roof light.
-  taxi2: { w: 13, pw: 3, cap: 120, palette: 'taxi', base: 'lincoln' },
+  // NV34: the NV200 cab (taxinv200, w 3) takes 3 of taxi2's 13, so the yellow cabs' share of the bag stays where it was
+  taxi2: { w: NV34 ? 10 : 13, pw: 3, cap: 120, palette: 'taxi', base: 'lincoln' },
   lincoln: { w: 12, pw: 4, cap: 100, palette: 'black' },
   suv: { w: 21, pw: 7, cap: 150, palette: 'car' },
   charger: { w: 8, pw: 3, cap: 80, palette: 'car' },
@@ -39,7 +70,8 @@ export const KIND24 = {
   mini: { w: 5, pw: 3, cap: 50, palette: 'car' },
   van: { w: 14, pw: 3, cap: 110, palette: 'van' },
   boxtruck: { w: 8, pw: 1, cap: 70, palette: 'truck' },
-  police: { w: 3, pw: 1, cap: 30, palette: 'livery' },
+  // NV34: the NYPD's Police Interceptor Utility (nypd, w 2) takes 2 of the Charger's 3 (the FPIU is the common patrol car)
+  police: { w: NV34 ? 1 : 3, pw: 1, cap: 30, palette: 'livery' },
   ambulance: { w: 1, pw: 0, cap: 12, palette: 'livery' },
   minibus: { w: 1, pw: 0, cap: 12, palette: 'truck' },    // a Japanese Fuso Rosa: rare shuttle duty only
   firetruck: { w: 1, pw: 0, cap: 8, palette: 'livery' },
@@ -53,6 +85,27 @@ export const KIND24 = {
   model3: { w: 6, pw: 2, cap: 60, palette: 'car', f27: true },
   auditt: { w: 1, pw: 0.5, cap: 12, palette: 'car', f27: true },
   mustang: { w: 0, pw: 0.5, cap: 4, palette: 'car', f27: true },
+  // NV34 (AR34 VEHICLES, 2026-10-01): New York's own vehicles, built from scratch by the AR34 modelling tracks
+  // (docs/notes/ar34-veh-*.md; first passes, refined under the same names). `?nv34=0` drops them all. pw stays 0 here:
+  // a new entry in the city's parked list would reshuffle every parked car's kind; they park through 125th Street's own
+  // mix (traffic.js PARK125) instead. MTA buses (w 0) run only as route buses (traffic.js BUS34: the M60 SBS on the
+  // articulated LFS or XD60, the M101 / M125 / M100 locals on the XD40 and the LFS). The moving shares are rules, not counts.
+  mtaxd60: { w: 0, pw: 0, cap: 12, palette: 'livery', nv34: true },
+  mtalfsa: { w: 0, pw: 0, cap: 12, palette: 'livery', nv34: true },   // Nova LFS Articulated, SBS livery
+  mtalfsal: { w: 0, pw: 0, cap: 12, palette: 'livery', nv34: true },  // the same in the white local livery (BUSES 00:08: M101 / M125 artics)
+  mtaxd40: { w: 0, pw: 0, cap: 12, palette: 'livery', nv34: true },
+  mtalfs: { w: 0, pw: 0, cap: 12, palette: 'livery', nv34: true },
+  taxinv200: { w: 3, pw: 0, cap: 30, palette: 'livery', nv34: true },   // the NV200 TLC cab
+  nypd: { w: 2, pw: 0, cap: 20, palette: 'livery', nv34: true },        // Ford Police Interceptor Utility, NYPD livery
+  uspsllv: { w: 1, pw: 0, cap: 12, palette: 'livery', nv34: true },
+  uspsngdv: { w: 1, pw: 0, cap: 12, palette: 'livery', nv34: true },
+  dsny: { w: 1, pw: 0, cap: 8, palette: 'livery', nv34: true },
+  schoolbus: { w: 1, pw: 0, cap: 8, palette: 'livery', nv34: true },
+  stepvan: { w: 2, pw: 0, cap: 20, palette: 'truck', nv34: true },
+  cargovan: { w: 3, pw: 0, cap: 30, palette: 'van', nv34: true },
+  boxtruck26: { w: 2, pw: 0, cap: 20, palette: 'truck', nv34: true },
+  foodtruck: { w: 0, pw: 0, cap: 4, palette: 'livery', nv34: true },
+  icecream: { w: 0, pw: 0, cap: 4, palette: 'livery', nv34: true },
 };
 const F27 = QS.get('fleet27');
 // RG32 (owner 2026-09-29: "a bug of tops of vehicles disappearing/looking broken sometimes", a red Model 3 from above,
@@ -79,7 +132,7 @@ attribute float _wheel;
 attribute vec4 aVeh;     // x spin (rad), y steer (rad), z lamp mask, w seed
 attribute vec4 aPaint;   // x metallic, y dirt, z roughness, w -
 attribute vec3 aCol;     // paint colour (linear)
-uniform vec4 uHub[4];    // xyz hub centre, w radius
+uniform vec4 uHub[8];    // xyz hub centre, w radius (_wheel 1..4 FL FR RL RR; 5..8 a third and fourth axle, L then R)
 varying vec4 vPaint;
 varying vec3 vCol;
 varying float vLampMask;
@@ -125,10 +178,12 @@ varying vec3 vObjPos;
 varying vec3 vObjN;
 `;
 
-function patch(mat, kind, { paint = false, lamp = false, glass = false, roof = false, hubs = null, sizeY = 1.5, decal = null, plate = false } = {}) {
+function patch(mat, kind, { paint = false, lamp = false, glass = false, roof = false, hubs = null, sizeY = 1.5, decal = null, plate = false, artic = null, signRows = 0, cabin = false } = {}) {
   const prev = mat.onBeforeCompile;
+  const rowsU = signRows ? { value: signRows } : null;
+  const pivU = artic ? { value: new THREE.Vector3(artic[0], artic[1], artic[2]) } : null;
   const sizeU = { value: sizeY };   // a uniform, not a literal: every kind shares its part programs (PF25 program census)
-  const hubU = { value: (hubs || []).concat([0, 0, 0, 0].map(() => ({ p: [0, -100, 0], r: 0 }))).slice(0, 4).map((h) => new THREE.Vector4(h.p[0], h.p[1], h.p[2], h.r)) };
+  const hubU = { value: (hubs || []).concat([0, 0, 0, 0, 0, 0, 0, 0].map(() => ({ p: [0, -100, 0], r: 0 }))).slice(0, 8).map((h) => new THREE.Vector4(h.p[0], h.p[1], h.p[2], h.r)) };
   mat.onBeforeCompile = (sh, r) => {
     sh.uniforms.uHub = hubU;
     sh.uniforms.f24SizeY = sizeU;
@@ -140,6 +195,20 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, roof = f
       .replace('#include <common>', '#include <common>\n' + WHEEL_VERT_PARS)
       .replace('#include <beginnormal_vertex>', WHEEL_VERT_NORMAL)
       .replace('#include <begin_vertex>', WHEEL_VERT_POS);
+    if (artic) {
+      // AR34 articulated bus: the joint (bellows) turns about the turntable pivot by the instance's articulation angle
+      // (aPaint.w = sign cell * 8 + angle + 2) times its per-vertex weight `_artic` (0 at the front body's ring, 1 at the rear's)
+      sh.uniforms.f24Pivot = pivU;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float _artic;\nuniform vec3 f24Pivot;')
+        .replace('vObjN = objectNormal;', `{ float f24a = (mod(aPaint.w, 8.0) - 2.0) * _artic, f24c = cos(f24a), f24s = sin(f24a);
+          objectNormal = vec3(f24c * objectNormal.x + f24s * objectNormal.z, objectNormal.y, -f24s * objectNormal.x + f24c * objectNormal.z); }
+        vObjN = objectNormal;`)
+        .replace('vPaint = aPaint;', `{ float f24a = (mod(aPaint.w, 8.0) - 2.0) * _artic, f24c = cos(f24a), f24s = sin(f24a);
+          vec3 f24q = transformed - f24Pivot;
+          transformed = vec3(f24c * f24q.x + f24s * f24q.z, f24q.y, -f24s * f24q.x + f24c * f24q.z) + f24Pivot; }
+        vPaint = aPaint;`);
+    }
     // PLATE ATLAS: each car shows its own plate — a cell of the 8 x 8 atlas picked from the instance seed (cabs: the TLC
     // row, others: the 56 NY rows)
     if (plate) sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
@@ -149,6 +218,19 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, roof = f
         vMapUv = (vMapUv + vec2(mod(pid, 8.0), floor(pid / 8.0))) / 8.0;
       }
       #endif`);
+    if (signRows) {
+      // AR34 route signs: each bus shows its own route and direction, a cell of the sign texture (rows of 1 / signRows in v,
+      // the sign meshes' UVs on cell 0) picked per instance: aPaint.w = cell * 8 + articulation + 2
+      sh.uniforms.f24SignRows = rowsU;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float f24SignRows;')
+        .replace('#include <uv_vertex>', `#include <uv_vertex>
+        #ifdef USE_EMISSIVEMAP
+          vEmissiveMapUv.y += floor(aPaint.w / 8.0) / f24SignRows;
+        #endif
+        #ifdef USE_MAP
+          vMapUv.y += floor(aPaint.w / 8.0) / f24SignRows;
+        #endif`);
+    }
     let fs = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FRAG_PARS + 'uniform float f24Time;\nuniform float f24SizeY;\n');
     fs = fs.replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
       #ifdef USE_ENVMAP
@@ -167,7 +249,9 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, roof = f
         if (abs(vObjN.x) > 0.25 && vObjPos.y < f24DecalBox.z) {
           float ds = (f24DecalBox.x - vObjPos.z) / f24DecalBox.y;
           float drow = vObjN.x > 0.0 ? 0.0 : 1.0;
-          vec2 duv = vec2(drow < 0.5 ? ds : 1.0 - ds, (drow + clamp(vObjPos.y / f24DecalBox.z, 0.0, 0.999)) * 0.5);
+          // (VH36: a sheet of N designs, f24DecalBox.w > 1, stacks them in pairs of rows; each instance shows one, by its seed)
+          float dN = max(f24DecalBox.w, 1.0), dk = dN > 1.5 ? floor(fract(vSeed * 7.131 + 0.37) * dN) : 0.0;
+          vec2 duv = vec2(drow < 0.5 ? ds : 1.0 - ds, (dk * 2.0 + drow + clamp(vObjPos.y / f24DecalBox.z, 0.0, 0.999)) / (2.0 * dN));
           vec4 dc = texture2D(f24Decal, duv);
           diffuseColor.rgb = mix(diffuseColor.rgb, dc.rgb, dc.a * smoothstep(0.25, 0.45, abs(vObjN.x)));
         }` : ''}
@@ -217,10 +301,13 @@ function patch(mat, kind, { paint = false, lamp = false, glass = false, roof = f
       vec3 f24Spec = reflectedLight.directSpecular + reflectedLight.indirectSpecular;
       gl_FragColor = vec4(f24Dif * diffuseColor.a + f24Spec + totalEmissiveRadiance, diffuseColor.a);`);
     }
+    // AR34 `cabin` (BUSES 00:23): a bus's ceiling, ceiling strips and upper linings glow after dusk only
+    if (cabin) fs = fs.replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      totalEmissiveRadiance *= f24Night;`);
     sh.fragmentShader = fs;
     prev?.call(mat, sh, r);
   };
-  const tag = `f24|${paint ? 'p' : ''}${lamp ? 'l' : ''}${glass ? 'g' : ''}${roof ? 'r' : ''}${decal ? 'd' : ''}${plate ? (/taxi/.test(kind) ? 'P' : 'q') : ''}`;
+  const tag = `f24|${paint ? 'p' : ''}${lamp ? 'l' : ''}${glass ? 'g' : ''}${roof ? 'r' : ''}${decal ? 'd' : ''}${plate ? (/taxi/.test(kind) ? 'P' : 'q') : ''}${artic ? 'a' : ''}${signRows ? 's' : ''}${cabin ? 'c' : ''}`;
   const prevKey = mat.customProgramCacheKey?.bind(mat);
   mat.customProgramCacheKey = () => tag + (prevKey ? '|' + prevKey() : '');
   mat.needsUpdate = true;
@@ -277,6 +364,54 @@ function tlcDecal(meta) {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
   const out = { tex, box: new THREE.Vector4(zF, L, TOP, 0) };
+  DECALS.set(key, out);
+  return out;
+}
+
+// VH36 BOX LIVERIES (boxtruck26): most 26 ft boxes on 125th Street carry an operator's name. Invented names and fictional 555-01xx numbers, drawn here; two of the five designs are blank (plain white
+// boxes), so a street shows a mix. Laid out on the box's sides only (meta.box: its front and rear z), both sides reading
+// front to rear as the TLC sheet does.
+function boxDecal(meta) {
+  if (typeof document === 'undefined' || !meta.box) return null;
+  const key = 'box|' + (meta.size || []).join(',');
+  if (DECALS.has(key)) return DECALS.get(key);
+  // (`?vh36boxk=<2..4>`, look-dev: every box shows that design)
+  const FK = QS.get('vh36boxk') !== null ? Math.max(0, Math.min(4, +QS.get('vh36boxk') | 0)) : -1;
+  const N = FK >= 0 ? 1 : 5, L = meta.size?.[2] || 9.84, zF = L / 2, TOP = meta.box.top || 3.85, W = 2048, H = FK >= 0 ? 1024 : 4096;
+  const zb0 = meta.box.y0, zb1 = meta.box.y1, zc = (zb0 + zb1) / 2, BL = zb0 - zb1;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  const X = (z, row) => (row % 2 === 0 ? (zF - z) / L : 1 - (zF - z) / L) * W;
+  const Y = (y, row) => H * (1 - (row + Math.min(y, TOP) / TOP) / (2 * N));
+  const hs = W / L, vs = H / (2 * N) / TOP;
+  const text = (str, z, y, capH, font, col, row, maxLen) => {
+    g.save(); g.translate(X(z, row), Y(y, row)); g.scale(hs / vs, 1);
+    g.font = font + ' ' + (capH * vs) / 0.72 + 'px Arial, Helvetica, sans-serif'; g.fillStyle = col; g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (maxLen) { const w = g.measureText(str).width; if (w > maxLen * vs) g.scale((maxLen * vs) / w, 1); }
+    g.fillText(str, 0, 0); g.restore();
+  };
+  const band = (z0, z1, y0, y1, col, row) => { g.fillStyle = col; const a = X(z0, row), b = X(z1, row); g.fillRect(Math.min(a, b), Y(y1, row), Math.abs(b - a), Y(y0, row) - Y(y1, row)); };
+  for (let k = FK >= 0 ? FK : 2; k < (FK >= 0 ? FK + 1 : N); k++) for (const side of [0, 1]) {
+    const row = (FK >= 0 ? 0 : k * 2) + side;
+    if (k < 2) continue;  // the blank designs
+    if (k === 2) {        // a moving company: navy name, red band, phone
+      band(zb0 - 0.15, zb1 + 0.15, 1.42, 1.56, '#b3202a', row);
+      text('HALVORSEN', zc, 2.86, 0.42, '900', '#1d2f5e', row, BL * 0.8);
+      text('MOVING & STORAGE', zc, 2.3, 0.2, 'bold', '#1d2f5e', row, BL * 0.7);
+      text('(212) 555-0147', zc, 1.85, 0.14, 'bold', '#1d2f5e', row);
+    } else if (k === 3) { // a produce wholesaler: green
+      band(zb0 - 0.15, zb1 + 0.15, 1.38, 1.62, '#2f7d32', row);
+      text('MARIGOLD PRODUCE', zc, 2.75, 0.34, '900', '#2f7d32', row, BL * 0.85);
+      text('WHOLESALE FRUIT AND VEGETABLES', zc, 2.25, 0.13, 'bold', '#3a3a3a', row, BL * 0.8);
+    } else {              // a freight carrier: black name over an orange stripe
+      band(zb0 - 0.15, zb1 + 0.15, 2.18, 2.34, '#e8731c', row);
+      text('CORVID FREIGHT', zc, 2.72, 0.36, '900', '#151515', row, BL * 0.8);
+      text('(718) 555-0193', zc, 1.9, 0.13, 'bold', '#151515', row);
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
+  const out = { tex, box: new THREE.Vector4(zF, L, TOP, N) };
   DECALS.set(key, out);
   return out;
 }
@@ -472,7 +607,7 @@ function nypdDecal(meta) {
 }
 
 // runtime material for a glTF part material
-function runtimeMaterial(kind, gm, meta) {
+function runtimeMaterial(kind, gm, meta, artic = null) {
   const cls = gm.userData?.cls || 'detail';
   const hubs = meta.hubs, sizeY = meta.size?.[1] || 1.5;
   let m;
@@ -482,23 +617,40 @@ function runtimeMaterial(kind, gm, meta) {
     return m;
   }
   if (cls === 'paint') {
-    const nypd = kind === 'police' ? nypdDecal(meta) : kind === 'taxi2' ? tlcDecal(meta) : null;
-    m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: nypd ? null : gm.map || null, roughness: 0.35, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.035, envMapIntensity: 1.0 });
+    // (VH36: the nypd kind drawn on the police car's body takes its NYPD livery too)
+    const nypd = kind === 'police' || (kind === 'nypd' && VH36_BASE.nypd) ? nypdDecal(meta) : kind === 'taxi2' ? tlcDecal(meta)
+      : kind === 'boxtruck26' && VH36_FILE.boxtruck26 && QS.get('vh36box') !== '0' ? boxDecal(meta) : null;   // VH36 (`?vh36box=0`: plain boxes)
+    // (AR34, BUSES 00:08: a bus's paint reads semi-gloss in the photographs; at clearcoat 1 / 0.035 the black window band
+    // and the blue roof band mirrored the sky grey-blue along a bus's side)
+    const busP = /^mta/.test(kind);
+    m = new THREE.MeshPhysicalMaterial({ color: 0xffffff, map: nypd ? null : gm.map || null, roughness: 0.35, metalness: 0, clearcoat: busP ? 0.6 : 1, clearcoatRoughness: busP ? 0.12 : 0.035, envMapIntensity: 1.0 });
     if (m.map) m.map.anisotropy = 8;
     // the cop body's AO sheet maps through the same broken UVs as its livery (jagged grey patches on white paint)
     if (gm.aoMap && !nypd) { m.aoMap = gm.aoMap; m.aoMapIntensity = 0.8; }
-    patch(applySnowCap(m), kind, { paint: true, hubs, sizeY, decal: nypd });
+    patch(applySnowCap(m), kind, { paint: true, hubs, sizeY, decal: nypd, artic });
     applySpecAA(m, { sigma2: 0.25, kappa: 0.2, clearcoat: true });
   } else if (cls === 'glass') {
-    m = patch(mkGlass(0x0a0d10, 0.62), kind, { glass: true, roof: RG32, hubs, sizeY });
+    // (AR34, BUSES 00:23: a bus's tinted side and windscreen glass reads near black by day in the photographs; the shared
+    // pane showed its cabin bright)
+    m = patch(/^mta/.test(kind) ? mkGlass(0x07090b, 0.76) : mkGlass(0x0a0d10, 0.62), kind, { glass: true, roof: RG32, hubs, sizeY, artic });
   } else if (cls === 'lens') {
-    m = patch(mkGlass(0xdfe4e8, 0.10, 0.02), kind, { glass: true, hubs, sizeY });
+    m = patch(mkGlass(0xdfe4e8, 0.10, 0.02), kind, { glass: true, hubs, sizeY, artic });
   } else if (cls === 'lamp' || cls === 'siren') {
     m = new THREE.MeshStandardMaterial({ color: 0xd8dade, roughness: 0.18, metalness: 0.55, emissive: 0x000000, envMapIntensity: 1.0 });
-    patch(m, kind, { lamp: true, hubs, sizeY });
+    patch(m, kind, { lamp: true, hubs, sizeY, artic });
+  } else if (cls === 'sign') {
+    // AR34: an LED destination / route sign (a bus's front, side and rear signs): its own texture, lit day and night
+    m = new THREE.MeshStandardMaterial({ color: 0x060606, roughness: 0.32, metalness: 0, emissive: 0xffffff, emissiveMap: gm.emissiveMap || gm.map || null, emissiveIntensity: 1.6 });
+    if (m.emissiveMap) m.emissiveMap.anisotropy = 8;
+    patch(m, kind, { hubs, sizeY, artic, signRows: meta.signs?.cells ? meta.signs.rows || 8 : 0 });
+  } else if (cls === 'cabin') {
+    // AR34 (BUSES 00:23): a bus's ceiling, ceiling strips and upper linings: the glTF surface by day, lit white-blue after dusk
+    // (a real bus's cabin glows at night: Commons "Night Bus (50089247341).jpg"); the GLB tags them with extras cls 'cabin'
+    m = new THREE.MeshStandardMaterial({ color: 0xffffff, map: gm.map || null, roughness: 0.6, metalness: 0, emissive: 0xdde6ff, emissiveMap: gm.map || null, emissiveIntensity: 1.2 });
+    patch(m, kind, { hubs, sizeY, artic, cabin: true });
   } else if (cls === 'lampInner') {
     m = new THREE.MeshStandardMaterial({ color: 0x0a0a0b, roughness: 0.22, metalness: 0.3 });
-    patch(m, kind, { hubs, sizeY });
+    patch(m, kind, { hubs, sizeY, artic });
   } else {
     m = gm.clone();
     m.color?.set?.(0xffffff);
@@ -507,10 +659,10 @@ function runtimeMaterial(kind, gm, meta) {
     if (m.aoMap) m.aoMapIntensity = 0.85;
     // UE's masked blend with Opacity = 1 is an opaque surface: never alpha-test the (zero) basecolor alpha
     m.transparent = false; m.alphaTest = 0; m.alphaMap = null;
-    patch(applySnowCap(m), kind, { hubs, sizeY });
+    patch(applySnowCap(m), kind, { hubs, sizeY, artic });
     applySpecAA(m, { sigma2: 0.25, kappa: 0.2 });
   }
-  m.envMapIntensity = { paint: 0.9, glass: 1.0, lens: 1.0, lamp: 1.0, siren: 1.0, lampInner: 0.8 }[cls] ?? 0.7;
+  m.envMapIntensity = { paint: 0.9, glass: 1.0, lens: 1.0, lamp: 1.0, siren: 1.0, lampInner: 0.8, sign: 0.3 }[cls] ?? 0.7;
   m.name = `f24:${kind}:${gm.name || cls}`;
   m.userData.cls = cls;
   return m;
@@ -531,6 +683,24 @@ function buildKind(kind, gltf) {
   gltf.scene.traverse((o) => { if (!root && o.userData && o.userData.hubs) root = o; });
   root = root || gltf.scene;
   const meta = root.userData || {};
+  // three r185's GLTFLoader reads a node's extras `pivot` as GLTFExporter's pivot container: it moves the node by -pivot,
+  // zeroes its first child's translation (an LOD's dequantisation offset) and drops the key (BUSES, 2026-10-01 23:57: the
+  // XD60 drawn shifted with its wheels in the windows). On a vehicle root it is an articulated bus's turntable, data: put
+  // the glTF transforms back and keep the value. Files from 23:55 name it `turntable`.
+  if (root.pivot) {
+    meta.turntable = meta.turntable || root.pivot.toArray();
+    root.pivot = null;
+    const nodes = gltf.parser?.json?.nodes || [], assoc = gltf.parser?.associations;
+    for (const o of [root, ...root.children]) {
+      const a = assoc && assoc.get(o), nd = a && a.nodes !== undefined ? nodes[a.nodes] : null;
+      if (!nd) continue;
+      if (nd.matrix) new THREE.Matrix4().fromArray(nd.matrix).decompose(o.position, o.quaternion, o.scale);
+      else { o.position.fromArray(nd.translation || [0, 0, 0]); o.quaternion.fromArray(nd.rotation || [0, 0, 0, 1]); o.scale.fromArray(nd.scale || [1, 1, 1]); }
+    }
+    gltf.scene.updateMatrixWorld(true);
+    console.warn('[fleet24]', kind + ': extras `pivot` undone (GLTFLoader pivot container); please name it `turntable`');
+  }
+  const PIV = meta.turntable || meta.pivot || null;
   // beltline = the bottom of the side glass (side decal sheets hang their stripes under it)
   if (meta.beltline == null) {
     let yb = 1e9;
@@ -552,7 +722,21 @@ function buildKind(kind, gltf) {
   for (let li = 0; li < 3; li++) {
     const node = root.getObjectByName('LOD' + li);
     const parts = [];
-    if (node) node.traverse((o) => {
+    // AR34 articulated bus (BUS60's mtaxd60): the LOD node holds LOD<n>_front, LOD<n>_rear and LOD<n>_joint (the bellows,
+    // weighted by `_artic`); a separate REAR_LOD<n> node is read as the rear body too
+    const rearNode = root.getObjectByName('REAR_LOD' + li);
+    // (GLTFLoader suffixes a node name its mesh already took, 'LOD0_rear' -> 'LOD0_rear_1': the glTF name is in userData.name)
+    const bodyOf = (o) => {
+      for (let q = o; q && q !== root; q = q.parent) {
+        for (const nm of [q.userData?.name, q.name]) {
+          const m = /^LOD\d_(front|rear|joint)(_\d+)?$/.exec(nm || '');
+          if (m) return m[1];
+          if (/^REAR_LOD\d(_\d+)?$/.test(nm || '')) return 'rear';
+        }
+      }
+      return 'front';
+    };
+    for (const nd of [node, rearNode]) if (nd) nd.traverse((o) => {
       if (!o.isMesh) return;
       // meshopt QUANTIZE put a dequantisation transform on the node: bake it (float attributes first)
       const g = new THREE.BufferGeometry();
@@ -561,27 +745,40 @@ function buildKind(kind, gltf) {
       g.applyMatrix4(o.matrixWorld);
       g.computeBoundingSphere();
       const gm = o.material;
-      const key = gm.name || gm.uuid;
-      if (!matCache.has(key)) matCache.set(key, runtimeMaterial(kind, gm, meta));
+      const body = bodyOf(o);
+      // the bellows bend by `_artic` about the pivot: their own copy of the material, patched for it
+      const joint = body === 'joint' && PIV && g.attributes._artic;
+      const key = (gm.name || gm.uuid) + (joint ? '|joint' : '');
+      if (!matCache.has(key)) matCache.set(key, runtimeMaterial(kind, gm, meta, joint ? PIV : null));
       const mat = matCache.get(key);
-      parts.push({ geometry: g, material: mat, cls: mat.userData.cls, gm, tris: (g.index ? g.index.count : g.attributes.position.count) / 3 });
+      parts.push({ geometry: g, material: mat, cls: mat.userData.cls, gm, body, tris: (g.index ? g.index.count : g.attributes.position.count) / 3 });
     });
     // opaque first, glass last (transparent sort within a set is by object, and every part shares the origin)
-    const order = { paint: 0, detail: 1, lampInner: 2, lamp: 3, siren: 3, lens: 4, glass: 5 };
+    const order = { paint: 0, detail: 1, sign: 1, lampInner: 2, lamp: 3, siren: 3, lens: 4, glass: 5 };
     parts.sort((a, b) => (order[a.cls] ?? 1) - (order[b.cls] ?? 1));
     lods.push(parts);
   }
   // NY plates on kinds that ship without plate geometry (the 2024 Lincoln / Charger / Patrol / Ford cab): the plate
   // material of the older kinds is named *LicensePlate*; everything else gets front + rear plate quads on its centre line
   const hasPlate = lods[0].some((p) => /plate/i.test(p.gm?.name || '') || /plate/i.test(p.material?.name || ''));
-  if (!hasPlate && !/firetruck|boxtruck|minibus/.test(kind)) {
+  // (USPS's LLV and NGDV carry no plates: their vehicle number is painted on, CITYTRUCKS' hand-over 2026-10-01)
+  if (!hasPlate && !/firetruck|boxtruck|minibus|usps/.test(kind)) {
     const plate = plateParts(kind, lods[0], meta);
     if (plate) for (const parts of lods) parts.splice(1, 0, plate);
   }
   const size = meta.size || [2, 1.5, 4.6];
-  // lamp anchors for carlights.js (night glow sprites): per role and side from the LOD0 lamp vertices
+  // lamp anchors for carlights.js (night glow sprites): per role and side from the LOD0 lamp vertices (an articulated
+  // bus's tail lamps are on its rear body: taken in the straight pose)
   const lamps = lampAnchors(lods[0]);
-  return { kind, meta, size, lods, lamps, radius: Math.hypot(size[0], size[1], size[2]) / 2 + 0.3 };
+  // the articulated bus's rear body: its own instanced sets (fleet24 tows it about the pivot), out of the front's
+  let rear = null;
+  if (PIV && lods[0].some((p) => p.body === 'rear')) {
+    const hz = (meta.hubs || []).filter((h) => h.id >= 5).map((h) => h.p[2]);
+    const axle = hz.length ? Math.min(...hz) : -(size[2] / 2 - 2.5);
+    rear = { lods: lods.map((parts) => parts.filter((p) => p.body === 'rear')), pivot: PIV, tow: Math.max(1, PIV[2] - axle) };
+    for (let li = 0; li < lods.length; li++) lods[li] = lods[li].filter((p) => p.body !== 'rear');
+  }
+  return { kind, meta, size, lods, lamps, rear, radius: Math.hypot(size[0], size[1], size[2]) / 2 + 0.3 };
 }
 
 function lampAnchors(parts) {
@@ -612,18 +809,23 @@ export async function loadFleet24(renderer) {
   const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
     import('three/addons/loaders/GLTFLoader.js'), import('three/addons/loaders/KTX2Loader.js'), import('three/addons/libs/meshopt_decoder.module.js'),
   ]);
-  const ktx2 = new KTX2Loader().setTranscoderPath('basis/').detectSupport(renderer);
+  const ktx2 = (await import('../city/mat/ktx2.js')).ktx2Loader(renderer);   // the app's one KTX2 loader (MATS 06:15)
   const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
   const only = QS.get('f24only') ? QS.get('f24only').split(',') : null;
   const kinds = {};
   const t0 = performance.now();
-  const wanted = Object.keys(KIND24).filter((k) => (!only || only.includes(k)) && !(KIND24[k].f27 && (F27 === '0' || (KIND24[k].f27 === 'qa' && F27 !== 'all'))));
-  const bases = new Set(wanted.map((k) => KIND24[k].base || k));
+  const wanted = Object.keys(KIND24).filter((k) => (!only || only.includes(k)) && !(KIND24[k].f27 && (F27 === '0' || (KIND24[k].f27 === 'qa' && F27 !== 'all'))) && !(KIND24[k].nv34 && !NV34) && !VH36_OUT.has(k));
+  const baseOf = (k) => VH36_BASE[k] || KIND24[k].base || null;   // VH36: a kind drawn on another kind's body
+  const bases = new Set(wanted.map((k) => baseOf(k) || k));
   await Promise.all([...bases].map(async (k) => {
-    try { kinds[k] = buildKind(k, await loader.loadAsync(BASE + k + '.glb')); }
+    try { kinds[k] = buildKind(k, await loader.loadAsync(BASE + (VH36_FILE[k] || k) + '.glb')); }
     catch (e) { console.warn('[fleet24] unavailable:', k, e?.message || e); }
   }));
-  for (const k of wanted) if (KIND24[k].base && kinds[KIND24[k].base]) kinds[k] = deriveKind(k, kinds[KIND24[k].base]);
+  // every texture of the fleet is transcoded by now: free the transcoder's workers and leave three's count of active KTX2
+  // loaders (it warns once per loader started while another is active; the lead's verify log had five such lines). One
+  // loader for the whole app is asked of MATS (ar34-req/MATS.md 2026-10-02).
+  // (the shared loader of city/mat/ktx2.js stays for the app's other .ktx2: never disposed here)
+  for (const k of wanted) if (baseOf(k) && kinds[baseOf(k)]) kinds[k] = deriveKind(k, kinds[baseOf(k)]);
   // a base loaded only for a derived kind (f24only=taxi2) is not itself in traffic
   for (const k of Object.keys(kinds)) if (!wanted.includes(k)) delete kinds[k];
   const names = Object.keys(KIND24).filter((k) => kinds[k]);
@@ -782,6 +984,7 @@ class SlotState {
   constructor(cap) {
     const f = () => new Float32Array(cap);
     this.x = f(); this.z = f(); this.yaw = f(); this.spin = f(); this.v = f(); this.steer = f(); this.brake = f(); this.blinkL = f(); this.blinkR = f();
+    this.rx = f(); this.rz = f();   // an articulated bus's rear axle (world x, z), towed by the turntable pivot
     this.ok = new Uint8Array(cap);
     this.cap = cap;
   }
@@ -834,6 +1037,7 @@ function paintFor(palette, r, g, b, seed, outCol, outPaint) {
 // renders the real surroundings (ground, buildings, trees, sky) into a small cube near the camera, ONE FACE PER
 // FRAME so the cost is spread, PMREM-filters it when the sixth face lands, and hands it to the fleet materials.
 // `?f24probe=0` falls back to scene.environment.
+const RP37 = QS.get('rp37') !== '0';
 class ReflectionProbe {
   constructor(engine, groundAt, size = 128, period = 1.2) {
     this.engine = engine;
@@ -847,39 +1051,60 @@ class ReflectionProbe {
     this.period = period;
     this.hide = [];           // meshes hidden during a face render (the fleet itself)
   }
-  update(dt, hideList) {
-    const e = this.engine, r = e.renderer, cam = e.camera;
-    if (this.face < 0) {
-      this.wait -= dt;
-      if (this.wait > 0) return null;
-      // street-level anchor under the camera: aerial views still get a street environment
-      const gy = this.groundAt ? this.groundAt(cam.position.x, cam.position.z) : null;
-      const y = gy != null && Number.isFinite(gy) ? Math.min(cam.position.y, gy + 2.2) : cam.position.y;
-      this.cam.position.set(cam.position.x, y, cam.position.z);
-      this.cam.updateMatrixWorld(true);
-      this.face = 0;
-    }
-    const cams = this.cam.children;
+  // street-level anchor under the camera: aerial views still get a street environment
+  place() {
+    const cam = this.engine.camera;
+    const gy = this.groundAt ? this.groundAt(cam.position.x, cam.position.z) : null;
+    const y = gy != null && Number.isFinite(gy) ? Math.min(cam.position.y, gy + 2.2) : cam.position.y;
+    this.cam.position.set(cam.position.x, y, cam.position.z);
+    this.cam.updateMatrixWorld(true);
+  }
+  renderFace(face, hideList) {
+    const e = this.engine, r = e.renderer;
     const prevRT = r.getRenderTarget(), prevXr = r.xr.enabled, auto = r.shadowMap.autoUpdate;
     r.xr.enabled = false;
     r.shadowMap.autoUpdate = false;
     for (const m of hideList) { if (m.visible) { m.visible = false; this.hide.push(m); } }
-    r.setRenderTarget(this.rt, this.face);
-    r.render(e.scene, cams[this.face]);
+    r.setRenderTarget(this.rt, face);
+    r.render(e.scene, this.cam.children[face]);
     for (const m of this.hide) m.visible = true;
     this.hide.length = 0;
     r.setRenderTarget(prevRT);
     r.xr.enabled = prevXr;
     r.shadowMap.autoUpdate = auto;
-    this.face++;
-    if (this.face < 6) return null;
-    this.face = -1;
-    this.wait = this.period;
+  }
+  filter() {
+    this.captures = (this.captures || 0) + 1;   // QA37 events (main.js __REC_FRAME `f24`)
     const next = this.pmrem.fromCubemap(this.rt.texture);
     const old = this.env;
     this.env = next;
     if (old) old.dispose();
     return next.texture;
+  }
+  update(dt, hideList) {
+    const e = this.engine;
+    // RP37 (the Central Park explainer, 2026-10-03): while recording, a stepped frame that is drawn captures all six faces
+    // and filters them at once, so the cars' reflections follow the lens frame by frame instead of stepping every 1.2 s
+    // (36 frames); the accumulation samples (dt = 0) and the warm-up's undrawn steps keep the last. `?rp37=0` restores.
+    if (RP37 && e.recordMode) {
+      if (!(dt > 0) || e.skipDraw || e.holdDraw) return null;
+      this.face = -1;
+      this.place();
+      for (let f = 0; f < 6; f++) this.renderFace(f, hideList);
+      return this.filter();
+    }
+    if (this.face < 0) {
+      this.wait -= dt;
+      if (this.wait > 0) return null;
+      this.place();
+      this.face = 0;
+    }
+    this.renderFace(this.face, hideList);
+    this.face++;
+    if (this.face < 6) return null;
+    this.face = -1;
+    this.wait = this.period;
+    return this.filter();
   }
 }
 
@@ -895,13 +1120,18 @@ export function installFleet24(traffic, engine, kinds) {
       // shadow casters use the SAME LOD the car is drawn with: a coarser caster pokes through the drawn surface and
       // self-shadows it in speckles (seen on the 125th St plates, docs/notes/peds-veh-v2.md)
       const shadow = K.lods.map((parts, li) => new RenderSet(scene, parts, `${tag}:lod${li}`, true));
+      // AR34: an articulated bus's rear body, its own sets (instance matrices towed about the pivot)
+      const rsets = K.rear ? K.rear.lods.map((parts, li) => new RenderSet(scene, parts, `${tag}:rear${li}`, false)) : [];
+      const rshadow = K.rear ? K.rear.lods.map((parts, li) => new RenderSet(scene, parts, `${tag}:rear${li}`, true)) : [];
       for (const s of [P.mb, P.md, ...(P.mx || []), P.shell]) if (s) { s.visible = false; s.castShadow = false; }
-      groups.push({ kind: k, K, P, moving, tag, sets, shadow, state: moving ? new SlotState(P.cap) : null, storeMat: P.mb.material, palette: KIND24[k]?.palette || 'car' });
+      const cells = moving && K.meta.signs && K.meta.signs.cells ? K.meta.signs.cells : null;
+      groups.push({ kind: k, K, P, moving, tag, sets, shadow, rsets, rshadow, state: moving ? new SlotState(P.cap) : null, storeMat: P.mb.material, palette: KIND24[k]?.palette || 'car',
+        cells, cell: cells ? new Float32Array(P.cap) : null });
     }
   };
   add(traffic.pools, true);
   add(traffic.parked, false);
-  const _rm = () => { const o = []; for (const G of groups) for (const s2 of [...G.sets, ...G.shadow]) o.push(...s2.meshes); return o; };
+  const _rm = () => { const o = []; for (const G of groups) for (const s2 of [...G.sets, ...G.shadow, ...G.rsets, ...G.rshadow]) o.push(...s2.meshes); return o; };
   // contact-shadow blobs (city/contactShadow.js csVehicles): pseudo-groups per LOD main set
   const csGroups = [];
   for (const G of groups) for (const s of G.sets) {
@@ -914,12 +1144,16 @@ export function installFleet24(traffic, engine, kinds) {
   let shBoxV = -1;
   const stats = { main: 0, shadow: 0, ms: 0, lod: [0, 0, 0] };
   const veh = new Float32Array(4), paint = new Float32Array(4), col = new Float32Array(3), idc = new Float32Array(3);
+  const RM = new Float32Array(16);   // an articulated bus's rear-body matrix
   let clock = 0;
   const allMats = new Set();
   for (const K of Object.values(kinds)) for (const parts of K.lods) for (const p of parts) allMats.add(p.material);
   let lastEnv;
   const probe = QS.get('f24probe') !== '0' ? new ReflectionProbe(engine, traffic.streamer?.surfaceAt ? (x, z) => traffic.streamer.surfaceAt(x, z) : null) : null;
+  if (typeof window !== 'undefined') window.__F24PROBE = probe;   // harness access
   const renderMeshes = _rm();
+  const signGroups = {};
+  for (const G of groups) if (G.cell) signGroups[G.kind] = G;
   const cull = (dt) => {
     const t0 = performance.now();
     // RECORD MODE renders many dt = 0 frames between fixed sim steps (settling, the re-render before each capture): the
@@ -953,7 +1187,17 @@ export function installFleet24(traffic, engine, kinds) {
       }
     }
     const night = ENV.night.value;
-    const cx = cam.position.x, cz = cam.position.z;
+    const cx = cam.position.x, cz = cam.position.z, cy = cam.position.y;
+    let afx = 0, afz = 0;
+    if (VAHEAD > 0) { const e = cam.matrixWorld.elements, l = Math.hypot(e[8], e[10]) || 1; afx = -e[8] / l; afz = -e[10] / l; }
+    // AR34: each route bus's sign cell, from its route and its direction of travel (extras signs.cells: BUSES 23:57)
+    for (const G of groups) if (G.cell) G.cell.fill(0);
+    for (const c of traffic.cars) {
+      if (!c.route || !c._pose) continue;
+      const G = signGroups[c.kind];
+      if (!G || c.idx >= G.cell.length) continue;
+      G.cell[c.idx] = G.cells[c.route + ' ' + (Math.sin(c._pose[3]) >= 0 ? 'E' : 'W')] ?? 0;
+    }
     let nMain = 0, nSh = 0;
     stats.lod[0] = stats.lod[1] = stats.lod[2] = 0;
     for (const G of groups) {
@@ -964,13 +1208,29 @@ export function installFleet24(traffic, engine, kinds) {
       const S = G.state, K = G.K, hubR = K.meta.hubs?.[0]?.r || 0.34, wb = K.meta.wheelbase || 2.8;
       for (const s of G.sets) s.begin();
       for (const s of G.shadow) s.begin();
+      for (const s of G.rsets) s.begin();
+      for (const s of G.rshadow) s.begin();
+      const R = K.rear;
       const rMain = K.radius + PAD_MAIN, rSh = K.radius + PAD_SHADOW;
       for (let i = 0; i < n; i++) {
         const o = i * 16;
         if (A[o] === 0 && A[o + 5] === 0 && A[o + 10] === 0) continue;
         const x = A[o + 12], y = A[o + 13], z = A[o + 14];
+        if (VAHEAD > 0) {
+          // the view line's lane: along the camera's horizontal forward, 1.6 m either side, from the lens to VAHEAD m
+          const ex = x - cx, ez = z - cz, al = ex * afx + ez * afz, lat = Math.abs(ex * afz - ez * afx);
+          const r = Math.max(K.size[0], K.size[2]) / 2;
+          if (al > -r && al < VAHEAD + r && lat < 1.6 + K.size[0] / 2 && cy < y + K.size[1] + 2) continue;
+        }
+        if (VCLEAR > 0) {
+          const ex = x - cx, ez = z - cz;
+          if (Math.abs(ex) < 14 && Math.abs(ez) < 14 && cy < y + K.size[1] + VCLEAR) {
+            const fl = Math.hypot(A[o + 8], A[o + 10]) || 1, fx = A[o + 8] / fl, fz = A[o + 10] / fl;
+            if (Math.abs(ex * fz - ez * fx) < K.size[0] / 2 + VCLEAR && Math.abs(ex * fx + ez * fz) < K.size[2] / 2 + VCLEAR) continue;
+          }
+        }
         // motion state (moving pools): spin from distance, steer from yaw rate, brake from deceleration / standstill
-        let lampMask = 0;
+        let lampMask = 0, art = 0;
         const seed = G.moving ? hash(i, G.kind.length * 131 + 7) : hash(Math.round(x * 10), Math.round(z * 10));
         if (S && i < S.cap) {
           const yaw = Math.atan2(A[o + 8], A[o + 10]);
@@ -992,19 +1252,47 @@ export function installFleet24(traffic, engine, kinds) {
               if (S.steer[i] < -0.12) S.blinkR[i] = 1.2; else S.blinkR[i] = Math.max(0, S.blinkR[i] - dt);
             }
           }
-          if (!S.ok[i]) { S.ok[i] = 1; S.v[i] = 0; S.steer[i] = 0; S.brake[i] = 0; S.blinkL[i] = S.blinkR[i] = 0; S.spin[i] = seed * 6.28; }
+          let fresh = false;
+          if (!S.ok[i]) { S.ok[i] = 1; S.v[i] = 0; S.steer[i] = 0; S.brake[i] = 0; S.blinkL[i] = S.blinkR[i] = 0; S.spin[i] = seed * 6.28; fresh = true; }
           S.x[i] = x; S.z[i] = z; S.yaw[i] = yaw;
+          if (R) {
+            // the rear axle is towed by the pivot like a trailer's (pulled along, never pushed); the articulation angle is
+            // its heading against the front body's, at most 0.75 rad (~43 deg)
+            const fl = Math.hypot(A[o + 8], A[o + 10]) || 1, fx = A[o + 8] / fl, fz = A[o + 10] / fl;
+            const hx = x + fx * R.pivot[2], hz = z + fz * R.pivot[2];
+            if (fresh) { S.rx[i] = hx - fx * R.tow; S.rz[i] = hz - fz * R.tow; }
+            else if (!still) {
+              const ddx = hx - S.rx[i], ddz = hz - S.rz[i], dd = Math.hypot(ddx, ddz);
+              if (dd > 1e-6) { S.rx[i] = hx - (ddx / dd) * R.tow; S.rz[i] = hz - (ddz / dd) * R.tow; }
+            }
+            let da = Math.atan2(hx - S.rx[i], hz - S.rz[i]) - yaw;
+            da -= Math.round(da / (Math.PI * 2)) * Math.PI * 2;
+            art = Math.max(-0.75, Math.min(0.75, da));
+            if (Math.abs(da) > 0.75) { S.rx[i] = hx - Math.sin(yaw + art) * R.tow; S.rz[i] = hz - Math.cos(yaw + art) * R.tow; }
+          }
           if (night > 0.35) lampMask |= L_HEAD | L_TAIL;
           if (S.brake[i] > 0) lampMask |= L_BRAKE;
           if (S.blinkL[i] > 0) lampMask |= L_BLINKL;
           if (S.blinkR[i] > 0) lampMask |= L_BLINKR;
-          if ((G.kind === 'police' || G.kind === 'ambulance' || G.kind === 'firetruck') && seed < 0.18) lampMask |= L_SIREN;
+          if ((G.kind === 'police' || G.kind === 'nypd' || G.kind === 'ambulance' || G.kind === 'firetruck') && seed < 0.18) lampMask |= L_SIREN;
           veh[0] = S.spin[i]; veh[1] = S.steer[i];
         } else { veh[0] = seed * 6.28; veh[1] = 0; }
         veh[2] = lampMask; veh[3] = seed;
         const r = C ? C[i * 3] : 0.5, g = C ? C[i * 3 + 1] : 0.5, b = C ? C[i * 3 + 2] : 0.5;
         paintFor(G.palette, r, g, b, seed, col, paint);
+        if (R && ART_FORCE !== null) art = Math.max(-0.75, Math.min(0.75, ART_FORCE));
+        paint[3] = (G.cell && i < G.cell.length ? G.cell[i] * 8 : 0) + art + 2;   // sign cell * 8 + the bellows' bend + 2 (patch)
         if (idMode) { idc[0] = r; idc[1] = g; idc[2] = b; }
+        if (R) {
+          // rear body = front matrix x T(pivot) Ry(art) T(-pivot)
+          const c = Math.cos(art), sn = Math.sin(art), pz = R.pivot[2], px = R.pivot[0];
+          for (let q = 0; q < 3; q++) {
+            const c0 = A[o + q], c2 = A[o + 8 + q];
+            RM[q] = c * c0 - sn * c2; RM[4 + q] = A[o + 4 + q]; RM[8 + q] = sn * c0 + c * c2;
+            RM[12 + q] = A[o + 12 + q] + c0 * (px - c * px - sn * pz) + c2 * (pz + sn * px - c * pz);
+          }
+          RM[3] = RM[7] = RM[11] = 0; RM[15] = 1;
+        }
         const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
         // main view
         let inMain = true;
@@ -1012,6 +1300,7 @@ export function installFleet24(traffic, engine, kinds) {
         if (inMain) {
           const li = d2 < LOD0_2 ? 0 : d2 < LOD1_2 ? 1 : 2;
           G.sets[li].push(A, o, veh, paint, col, idMode ? idc : null);
+          if (R) G.rsets[li].push(RM, 0, veh, paint, col, idMode ? idc : null);
           stats.lod[li]++;
           nMain++;
         }
@@ -1019,11 +1308,18 @@ export function installFleet24(traffic, engine, kinds) {
           let inSh = true;
           for (let q = 0; q < 24; q += 4) if (_pl2[q] * x + _pl2[q + 1] * y + _pl2[q + 2] * z + _pl2[q + 3] < -rSh) { inSh = false; break; }
           if (inSh && sweepOut(x, y, z, K.radius + 1)) inSh = false;   // SV29: its shadow cannot reach the view
-          if (inSh) { G.shadow[d2 < LOD0_2 ? 0 : d2 < LOD1_2 ? 1 : 2].push(A, o, veh, paint, col, null); nSh++; }
+          if (inSh) {
+            const ls = d2 < LOD0_2 ? 0 : d2 < LOD1_2 ? 1 : 2;
+            G.shadow[ls].push(A, o, veh, paint, col, null);
+            if (R) G.rshadow[ls].push(RM, 0, veh, paint, col, null);
+            nSh++;
+          }
         }
       }
       for (const s of G.sets) s.finish(idMode, idMat);
       for (const s of G.shadow) s.finish(false, null);
+      for (const s of G.rsets) s.finish(idMode, idMat);
+      for (const s of G.rshadow) s.finish(false, null);
     }
     for (const cg of csGroups) cg.main[0] = cg._set.meshes[0] || { count: 0 };
     csVehicles(scene, csGroups);
@@ -1032,7 +1328,7 @@ export function installFleet24(traffic, engine, kinds) {
   const orig = traffic.update.bind(traffic);
   traffic.update = (dt, px, pz) => { orig(dt, px, pz); cull(dt); };
   const shadowMeshes = [];
-  for (const G of groups) for (const s of G.shadow) shadowMeshes.push(...s.meshes);
+  for (const G of groups) for (const s of [...G.shadow, ...G.rshadow]) shadowMeshes.push(...s.meshes);
   engine.addShadowListener?.((phase) => {
     if (phase === 'nearBegin') { const on = Instancer.shadowSets; for (const m of shadowMeshes) m.visible = on && m.count > 0; }
     else if (phase === 'nearEnd') { for (const m of shadowMeshes) m.visible = false; }

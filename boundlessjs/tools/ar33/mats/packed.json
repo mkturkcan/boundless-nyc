@@ -1,0 +1,919 @@
+{
+ "brick_red": {
+  "name": "brick_red",
+  "src": "ph",
+  "id": "red_brick",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/red_brick",
+  "courses": 20,
+  "bricks": 6,
+  "halfBricks": false,
+  "aniso": 0.9,
+  "size": [
+   1.2192,
+   1.354
+  ],
+  "roughMean": 0.783,
+  "mean": [
+   0.2699,
+   0.0685,
+   0.0369
+  ],
+  "meanHex": "#8e4a36",
+  "res": [
+   2048,
+   2048
+  ],
+  "alpha": "height",
+  "bytes": 14147784,
+  "built": "2026-09-30T17:19:55.264Z"
+ },
+ "brick_tan": {
+  "name": "brick_tan",
+  "src": "acg",
+  "id": "Bricks105",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Bricks105",
+  "courses": 16,
+  "bricks": 21,
+  "halfBricks": true,
+  "aniso": 0.985,
+  "size": [
+   2.1336,
+   1.0832
+  ],
+  "roughMean": 0.765,
+  "mean": [
+   0.4508,
+   0.3001,
+   0.1683
+  ],
+  "meanHex": "#b39572",
+  "res": [
+   2048,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 7276091,
+  "built": "2026-09-30T17:21:00.349Z"
+ },
+ "stone_lime": {
+  "name": "stone_lime",
+  "src": "ph",
+  "id": "sandstone_blocks_08",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/sandstone_blocks_08",
+  "size": [
+   3,
+   3
+  ],
+  "roughMean": 0.653,
+  "mean": [
+   0.5841,
+   0.5271,
+   0.4233
+  ],
+  "meanHex": "#c9c0ae",
+  "res": [
+   2048,
+   2048
+  ],
+  "alpha": "height",
+  "bytes": 10423426,
+  "built": "2026-09-30T17:22:24.783Z"
+ },
+ "granite": {
+  "name": "granite",
+  "src": "acg",
+  "id": "Granite002A",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Granite002A",
+  "size": [
+   1,
+   1
+  ],
+  "roughMean": 0.109,
+  "mean": [
+   0.2541,
+   0.2542,
+   0.2462
+  ],
+  "meanHex": "#8a8a88",
+  "res": [
+   2048,
+   2048
+  ],
+  "alpha": "none",
+  "bytes": 10333596,
+  "built": "2026-09-30T17:24:39.649Z"
+ },
+ "concrete_precast": {
+  "name": "concrete_precast",
+  "src": "acg",
+  "id": "Concrete034",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Concrete034",
+  "size": [
+   2.2,
+   1.1
+  ],
+  "roughMean": 0.765,
+  "mean": [
+   0.4508,
+   0.4286,
+   0.3813
+  ],
+  "meanHex": "#b3afa6",
+  "res": [
+   2048,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 5822105,
+  "built": "2026-09-30T17:25:35.849Z"
+ },
+ "paint_steel": {
+  "name": "paint_steel",
+  "src": "acg",
+  "id": "PaintedMetal006",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/PaintedMetal006",
+  "size": [
+   1,
+   1
+  ],
+  "paintCover": 0.727,
+  "paintMean": [
+   0.0332,
+   0.2013,
+   0.1172
+  ],
+  "chipMean": [
+   0.1183,
+   0.047,
+   0.0199
+  ],
+  "roughMean": 0.497,
+  "mean": [
+   0.0559,
+   0.1603,
+   0.0914
+  ],
+  "meanHex": "#436f55",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "paint",
+  "bytes": 3903708,
+  "built": "2026-09-30T17:25:59.791Z"
+ },
+ "alu_brushed": {
+  "name": "alu_brushed",
+  "src": "acg",
+  "id": "Metal009",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Metal009",
+  "size": [
+   1,
+   1
+  ],
+  "roughMean": 0.314,
+  "mean": [
+   0.5842,
+   0.6034,
+   0.6173
+  ],
+  "meanHex": "#c9ccce",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "none",
+  "bytes": 1891247,
+  "built": "2026-09-30T17:26:20.376Z"
+ },
+ "brick_brown": {
+  "name": "brick_brown",
+  "src": "ph",
+  "id": "red_brick_03",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/red_brick_03",
+  "courses": 14,
+  "bricks": 5,
+  "halfBricks": false,
+  "aniso": 1.072,
+  "size": [
+   1.016,
+   0.9478
+  ],
+  "roughMean": 0.698,
+  "mean": [
+   0.147,
+   0.0595,
+   0.0369
+  ],
+  "meanHex": "#6b4536",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3746992,
+  "built": "2026-09-30T19:07:34.621Z"
+ },
+ "brick_glazed": {
+  "name": "brick_glazed",
+  "src": "acg",
+  "id": "Bricks072",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Bricks072",
+  "courses": 8,
+  "bricks": 7,
+  "halfBricks": false,
+  "aniso": 1.313,
+  "size": [
+   1.4224,
+   0.5416
+  ],
+  "roughMean": 0.343,
+  "mean": [
+   0.7155,
+   0.701,
+   0.6443
+  ],
+  "meanHex": "#dcdad2",
+  "res": [
+   1024,
+   512
+  ],
+  "alpha": "height",
+  "bytes": 1229469,
+  "built": "2026-09-30T19:17:44.172Z"
+ },
+ "brick_painted": {
+  "name": "brick_painted",
+  "src": "ph",
+  "id": "painted_worn_brick",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/painted_worn_brick",
+  "courses": 20,
+  "bricks": 7,
+  "halfBricks": false,
+  "aniso": 1.051,
+  "size": [
+   1.4224,
+   1.354
+  ],
+  "roughMean": 0.66,
+  "mean": [
+   0.6723,
+   0.6307,
+   0.5395
+  ],
+  "meanHex": "#d6d0c2",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3701309,
+  "built": "2026-09-30T19:08:27.556Z"
+ },
+ "stone_rustic": {
+  "name": "stone_rustic",
+  "src": "ph",
+  "id": "red_sandstone_wall",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/red_sandstone_wall",
+  "size": [
+   2,
+   2
+  ],
+  "roughMean": 0.794,
+  "mean": [
+   0.5456,
+   0.491,
+   0.3916
+  ],
+  "meanHex": "#c3baa8",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3736833,
+  "built": "2026-09-30T19:08:50.700Z"
+ },
+ "brownstone": {
+  "name": "brownstone",
+  "src": "ph",
+  "id": "grey_plaster",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/grey_plaster",
+  "size": [
+   1.4,
+   1.4
+  ],
+  "roughMean": 0.768,
+  "mean": [
+   0.1119,
+   0.0561,
+   0.0369
+  ],
+  "meanHex": "#5e4336",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3360070,
+  "built": "2026-09-30T19:09:12.702Z"
+ },
+ "granite_pink": {
+  "name": "granite_pink",
+  "src": "acg",
+  "id": "Granite003A",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Granite003A",
+  "size": [
+   1,
+   1
+  ],
+  "roughMean": 0.116,
+  "mean": [
+   0.3916,
+   0.2664,
+   0.2232
+  ],
+  "meanHex": "#a88d82",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "none",
+  "bytes": 2747361,
+  "built": "2026-09-30T19:09:35.562Z"
+ },
+ "stucco": {
+  "name": "stucco",
+  "src": "acg",
+  "id": "Plaster001",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Plaster001",
+  "size": [
+   1.5,
+   1.5
+  ],
+  "roughMean": 0.849,
+  "mean": [
+   0.6239,
+   0.5777,
+   0.4793
+  ],
+  "meanHex": "#cfc8b8",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3173219,
+  "built": "2026-09-30T19:10:02.667Z"
+ },
+ "concrete_board": {
+  "name": "concrete_board",
+  "src": "ph",
+  "id": "concrete_wall_007",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/concrete_wall_007",
+  "size": [
+   2.16,
+   2.16
+  ],
+  "roughMean": 0.804,
+  "mean": [
+   0.3372,
+   0.3279,
+   0.3006
+  ],
+  "meanHex": "#9d9b95",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3020334,
+  "built": "2026-09-30T19:10:40.634Z"
+ },
+ "sidewalk": {
+  "name": "sidewalk",
+  "src": "ph",
+  "id": "concrete_floor_worn_001",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/concrete_floor_worn_001",
+  "size": [
+   3,
+   3
+  ],
+  "roughMean": 0.8,
+  "mean": [
+   0.3864,
+   0.3713,
+   0.3324
+  ],
+  "meanHex": "#a7a49c",
+  "res": [
+   2048,
+   2048
+  ],
+  "alpha": "height",
+  "bytes": 12325721,
+  "built": "2026-09-30T19:13:10.467Z"
+ },
+ "asphalt": {
+  "name": "asphalt",
+  "src": "ph",
+  "id": "asphalt_02",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/asphalt_02",
+  "size": [
+   3,
+   3
+  ],
+  "roughMean": 0.877,
+  "mean": [
+   0.0685,
+   0.0666,
+   0.0612
+  ],
+  "meanHex": "#4a4946",
+  "res": [
+   2048,
+   2048
+  ],
+  "alpha": "height",
+  "bytes": 15406426,
+  "built": "2026-09-30T19:14:47.740Z"
+ },
+ "asphalt_patch": {
+  "name": "asphalt_patch",
+  "src": "ph",
+  "id": "asphalt_05",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/asphalt_05",
+  "size": [
+   2,
+   2
+  ],
+  "roughMean": 0.838,
+  "mean": [
+   0.0356,
+   0.0356,
+   0.0333
+  ],
+  "meanHex": "#353533",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3806530,
+  "built": "2026-09-30T19:15:31.228Z"
+ },
+ "terracotta": {
+  "name": "terracotta",
+  "src": "proc",
+  "id": null,
+  "licence": "CC0 1.0",
+  "url": "procedural (tools/ar33/mats/proc.mjs)",
+  "size": [
+   1.22,
+   0.61
+  ],
+  "roughMean": 0.366,
+  "mean": [
+   0.6769,
+   0.6352,
+   0.531
+  ],
+  "meanHex": "#d7d1c1",
+  "res": [
+   1024,
+   512
+  ],
+  "alpha": "height",
+  "bytes": 753838,
+  "built": "2026-09-30T19:16:13.487Z"
+ },
+ "tactile": {
+  "name": "tactile",
+  "src": "proc",
+  "id": null,
+  "licence": "CC0 1.0",
+  "url": "procedural (tools/ar33/mats/proc.mjs)",
+  "size": [
+   0.61,
+   0.61
+  ],
+  "roughMean": 0.728,
+  "mean": [
+   0.5537,
+   0.4661,
+   0.2805
+  ],
+  "meanHex": "#c4b690",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 1263678,
+  "built": "2026-09-30T19:16:58.970Z"
+ },
+ "roof_tpo": {
+  "name": "roof_tpo",
+  "src": "proc",
+  "id": null,
+  "licence": "CC0 1.0",
+  "url": "procedural (tools/ar33/mats/proc.mjs)",
+  "size": [
+   3.05,
+   3.05
+  ],
+  "roughMean": 0.689,
+  "mean": [
+   0.6219,
+   0.6219,
+   0.5894
+  ],
+  "meanHex": "#cfcfca",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 912810,
+  "built": "2026-09-30T19:31:43.797Z"
+ },
+ "wood_paint": {
+  "name": "wood_paint",
+  "src": "acg",
+  "id": "WoodSiding009",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/WoodSiding009",
+  "size": [
+   1.2,
+   1.2
+  ],
+  "roughMean": 0.594,
+  "mean": [
+   0.7454,
+   0.7157,
+   0.6239
+  ],
+  "meanHex": "#e0dccf",
+  "res": [
+   1024,
+   512
+  ],
+  "alpha": "height",
+  "bytes": 1537836,
+  "built": "2026-09-30T19:31:58.459Z"
+ },
+ "panel_paint": {
+  "name": "panel_paint",
+  "src": "acg",
+  "id": "Metal027",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Metal027",
+  "size": [
+   1,
+   1
+  ],
+  "roughMean": 0.445,
+  "mean": [
+   0.1591,
+   0.1715,
+   0.1857
+  ],
+  "meanHex": "#6f7377",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "none",
+  "bytes": 3172240,
+  "built": "2026-09-30T19:32:25.243Z"
+ },
+ "steel_rust": {
+  "name": "steel_rust",
+  "src": "ph",
+  "id": "rust_coarse_01",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/rust_coarse_01",
+  "size": [
+   1,
+   1
+  ],
+  "roughMean": 0.839,
+  "mean": [
+   0.1441,
+   0.0424,
+   0.016
+  ],
+  "meanHex": "#6a3a22",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3557168,
+  "built": "2026-09-30T19:33:01.540Z"
+ },
+ "steel_galv": {
+  "name": "steel_galv",
+  "src": "acg",
+  "id": "Metal055A",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Metal055A",
+  "size": [
+   1,
+   1
+  ],
+  "roughMean": 0.42,
+  "mean": [
+   0.3324,
+   0.3467,
+   0.3564
+  ],
+  "meanHex": "#9c9fa1",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "none",
+  "bytes": 2358705,
+  "built": "2026-09-30T19:33:28.838Z"
+ },
+ "concrete_smooth": {
+  "name": "concrete_smooth",
+  "src": "acg",
+  "id": "Concrete046",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Concrete046",
+  "size": [
+   2.4,
+   2.4
+  ],
+  "roughMean": 0.819,
+  "mean": [
+   0.402,
+   0.3865,
+   0.3467
+  ],
+  "meanHex": "#aaa79f",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 2773360,
+  "built": "2026-09-30T19:33:58.153Z"
+ },
+ "roof_gravel": {
+  "name": "roof_gravel",
+  "src": "ph",
+  "id": "gravel_floor_02",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/gravel_floor_02",
+  "size": [
+   2,
+   2
+  ],
+  "roughMean": 0.861,
+  "mean": [
+   0.2747,
+   0.2542,
+   0.2159
+  ],
+  "meanHex": "#8f8a80",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3949403,
+  "built": "2026-09-30T19:34:27.674Z"
+ },
+ "paving_brick": {
+  "name": "paving_brick",
+  "src": "ph",
+  "id": "red_brick_pavers",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/red_brick_pavers",
+  "size": [
+   1.8,
+   1.8
+  ],
+  "roughMean": 0.768,
+  "mean": [
+   0.2086,
+   0.0685,
+   0.0422
+  ],
+  "meanHex": "#7e4a3a",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 2535575,
+  "built": "2026-09-30T19:34:53.373Z"
+ },
+ "cobble": {
+  "name": "cobble",
+  "src": "ph",
+  "id": "cobblestone_03",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/cobblestone_03",
+  "size": [
+   2,
+   2
+  ],
+  "roughMean": 0.78,
+  "mean": [
+   0.1529,
+   0.1442,
+   0.1329
+  ],
+  "meanHex": "#6d6a66",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3910525,
+  "built": "2026-09-30T19:35:20.932Z"
+ },
+ "mulch": {
+  "name": "mulch",
+  "src": "ph",
+  "id": "wood_chips",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/wood_chips",
+  "size": [
+   2,
+   2
+  ],
+  "roughMean": 0.901,
+  "mean": [
+   0.0685,
+   0.0356,
+   0.0194
+  ],
+  "meanHex": "#4a3526",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3961020,
+  "built": "2026-09-30T19:35:47.448Z"
+ },
+ "stone_plain": {
+  "name": "stone_plain",
+  "src": "acg",
+  "id": "Rock054",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Rock054",
+  "size": [
+   1.4,
+   1.4
+  ],
+  "roughMean": 0.695,
+  "mean": [
+   0.5972,
+   0.5395,
+   0.4341
+  ],
+  "meanHex": "#cbc2b0",
+  "res": [
+   2048,
+   2048
+  ],
+  "alpha": "height",
+  "bytes": 13548546,
+  "built": "2026-10-01T23:19:01.746Z"
+ },
+ "brick_basket": {
+  "name": "brick_basket",
+  "src": "proc",
+  "id": null,
+  "licence": "CC0 1.0",
+  "url": "procedural (tools/ar33/mats/proc.mjs)",
+  "size": [
+   0.8128,
+   0.8128
+  ],
+  "roughMean": 0.806,
+  "mean": [
+   0.3229,
+   0.1707,
+   0.1342
+  ],
+  "meanHex": "#9a7366",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 1228209,
+  "built": "2026-09-30T19:59:04.422Z"
+ },
+ "plywood": {
+  "name": "plywood",
+  "src": "ph",
+  "id": "plywood",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/plywood",
+  "size": [
+   0.5,
+   0.5
+  ],
+  "roughMean": 0.75,
+  "mean": [
+   0.5519,
+   0.4072,
+   0.2384
+  ],
+  "meanHex": "#c4ab86",
+  "res": [
+   1024,
+   1024
+  ],
+  "alpha": "height",
+  "bytes": 3545133,
+  "built": "2026-10-01T23:05:52.329Z"
+ },
+ "brick_glazed_cream": {
+  "name": "brick_glazed_cream",
+  "src": "acg",
+  "id": "Bricks072",
+  "licence": "CC0 1.0",
+  "url": "https://ambientcg.com/a/Bricks072",
+  "courses": 8,
+  "bricks": 7,
+  "halfBricks": false,
+  "aniso": 1.313,
+  "size": [
+   1.4224,
+   0.5416
+  ],
+  "roughMean": 0.286,
+  "units": 156,
+  "jointShare": 0.157,
+  "mean": [
+   0.7159,
+   0.6867,
+   0.6038
+  ],
+  "meanHex": "#dcd8cc",
+  "res": [
+   1024,
+   512
+  ],
+  "alpha": "height",
+  "bytes": 1373347,
+  "built": "2026-10-02T04:51:50.004Z"
+ },
+ "brick_red_sooted": {
+  "name": "brick_red_sooted",
+  "src": "ph",
+  "id": "red_brick",
+  "licence": "CC0 1.0",
+  "url": "https://polyhaven.com/a/red_brick",
+  "courses": 20,
+  "bricks": 6,
+  "halfBricks": false,
+  "aniso": 0.9,
+  "size": [
+   1.2192,
+   1.354
+  ],
+  "roughMean": 0.783,
+  "jointShare": 0.313,
+  "mean": [
+   0.2705,
+   0.0684,
+   0.0371
+  ],
+  "meanHex": "#8e4a36",
+  "res": [
+   2048,
+   2048
+  ],
+  "alpha": "height",
+  "bytes": 14071084,
+  "built": "2026-10-02T05:15:22.472Z"
+ }
+}

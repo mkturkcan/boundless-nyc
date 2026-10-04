@@ -9,8 +9,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { ENV, applyLightTrim, applySkyGlass } from '../world/materials.js';
-import { DINO, RSD, MVV, COLUMBIA, COTTON } from './w125wData.js';
+import { DINO, RSD, MVV, COLUMBIA, COTTON, FENCE23, SETTS } from './w125wData.js';
 import { COLLIDERS } from './colliders.js';
+import { pbrMaterial } from './mat/pbrLib.js';
 
 // ---------------------------------------------------------------- materials
 const NIGHT_GLSL = (d, n) => `#include <emissivemap_fragment>\n  totalEmissiveRadiance *= mix(${d.toFixed(3)}, ${n.toFixed(3)}, kNightW);`;
@@ -167,7 +168,8 @@ class Bins {
         for (const x of set) x.dispose();
         if (!g) continue;
         const m = new THREE.Mesh(g, mat);
-        m.name = 'ar32w:' + name; m.castShadow = shadow && mat !== _M.sign && mat !== _M.cotton && mat !== _M.shop && mat !== _M.glass && mat !== _M.paint && mat !== _M.bulb; m.receiveShadow = true;
+        // (a part with its own materials, the 2023 hoarding, may flush before mats() ever ran in the page: `_M` null)
+        m.name = 'ar32w:' + name; m.castShadow = shadow && !(_M && (mat === _M.sign || mat === _M.cotton || mat === _M.shop || mat === _M.glass || mat === _M.paint || mat === _M.bulb)); m.receiveShadow = true;
         m.matrixAutoUpdate = false; m.updateMatrix();
         m.layers.enable(3);
         group.add(m);
@@ -445,23 +447,32 @@ export function mvvBuild(group, gy) {
 
 // ---------------------------------------------------------------- Columbia's curtain walls, the Cotton Club's sign
 export function glassBuild(group, b, gy, h) {
-  const M = mats(), B = new Bins(), R = b.ring, n = R.length, H = h || b.h, fl = H / b.floors;
+  const M = mats(), B = new Bins(), R = b.ring, n = R.length, H = b.hReal || h || b.h, fl = H / b.floors;
+  // AR34 w2b3: the curtain glass as MATS's vision glass (offices and shades behind it, the street and the sky in it): the old
+  // sky glass read as dark slabs from 125th (forum26nw: David Geffen Hall light blue-grey glass between white bands)
+  const VG = pbrMaterial('glass_vision', { tint: '#b9cbd8', storey: [fl, 0], bay: 1.5, blinds: b.blinds ?? 0.3, trans: 0.55, seed: 77 });
   let gx = 0, gz = 0; for (const p of R) { gx += p[0] / n; gz += p[1] / n; }
   for (let i = 0; i < n; i++) {
     const a = R[i], c = R[(i + 1) % n], dx = c[0] - a[0], dz = c[1] - a[1], L = Math.hypot(dx, dz);
     if (L < 0.5) continue;
     const ux = dx / L, uz = dz / L; let nx = -uz, nz = ux;
     if (nx * ((a[0] + c[0]) / 2 - gx) + nz * ((a[1] + c[1]) / 2 - gz) < 0) { nx = -nx; nz = -nz; }
-    B.quad(M.glass, a, c, gy - 0.2, H + 0.2, 0, 0, [nx, nz]);
+    B.quad(VG, a, c, gy - 0.2, H + 0.2, 0, 0, [nx, nz]);
     // white floor bands (the slab edges), a deeper band at the roof, white fins or mullions
     for (let k = 1; k <= b.floors; k++) {
-      const y = gy + fl * k - 0.2, d = k === b.floors ? 0.5 : 0.28, t = k === b.floors ? 0.9 : 0.42;
+      const y = gy + fl * k - 0.2, d = k === b.floors ? 0.5 : (b.bandD ?? 0.28), t = k === b.floors ? 0.9 : (b.band ?? 0.42);
       B.seg(M.fin, [a[0] + nx * d / 2, y, a[1] + nz * d / 2], [c[0] + nx * d / 2, y, c[1] + nz * d / 2], d, t, [nx, nz]);
     }
-    const nf = Math.max(1, Math.round(L / b.fins)), deep = b.fins < 2 ? 0.55 : 0.12;
-    for (let k = 0; k <= nf; k++) {
-      const t = L * k / nf, x = a[0] + ux * t + nx * deep / 2, z = a[1] + uz * t + nz * deep / 2;
-      B.seg(M.fin, [x, gy + (b.fins < 2 ? 4.0 : 0), z], [x, gy + H, z], b.fins < 2 ? 0.1 : 0.08, deep, [nx, nz]);
+    if (b.mullion) {
+      // fine mullions (a thin cap on the glass) in place of fins
+      const nm = Math.max(1, Math.round(L / b.mullion));
+      for (let k = 1; k < nm; k++) { const t = L * k / nm, x = a[0] + ux * t + nx * 0.03, z = a[1] + uz * t + nz * 0.03; B.seg(M.fin, [x, gy, z], [x, gy + H, z], 0.05, 0.06, [nx, nz]); }
+    } else {
+      const nf = Math.max(1, Math.round(L / b.fins)), deep = b.fins < 2 ? 0.55 : 0.12;
+      for (let k = 0; k <= nf; k++) {
+        const t = L * k / nf, x = a[0] + ux * t + nx * deep / 2, z = a[1] + uz * t + nz * deep / 2;
+        B.seg(M.fin, [x, gy + (b.fins < 2 ? 4.0 : 0), z], [x, gy + H, z], b.fins < 2 ? 0.1 : 0.08, deep, [nx, nz]);
+      }
     }
   }
   { const sh = new THREE.Shape(R.map(([x, z]) => new THREE.Vector2(x, -z))); const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); g.translate(0, gy + H - 0.05, 0); B.put(M.roof, g.toNonIndexed()); }
@@ -496,8 +507,117 @@ export function w125wColliders(which, gy) {
       const big = Math.abs(u - s0) < 0.5 || Math.abs(u - s1) < 0.5;
       for (const l of RSD.cols) { const p = fr.p(u, l + RSD.lc, 0); add(p[0], gy + 2.6, p[2], big ? 1.6 : 0.85, 2.9, big ? 1.3 : 0.85, fr.a[0], fr.a[1]); }
     }
+  } else if (which === 'fence23') {
+    // the 2023 hoarding and its barriers (FENCE23): one box from the barriers' west end to the fence's east end
+    const Fz = FENCE23, tm = (Fz.b0 + Fz.t1) / 2, lm = 0.4;
+    add(Fz.o[0] + Fz.d[0] * tm + Fz.n[0] * lm, gy + 1.2, Fz.o[1] + Fz.d[1] * tm + Fz.n[1] * lm, (Fz.t1 - Fz.b0) / 2, 1.3, 0.5, Fz.d[0], Fz.d[1]);
   } else if (which === 'mvv') {
     const fr = F(MVV.C, MVV.dir), h = MVV.span / 2;
     for (const su of [-1, 1]) for (const sl of [-1, 1]) { const p = fr.p(su * (h + 0.6), sl * MVV.rib, 0); add(p[0], gy + 1.2, p[2], 1.3, 1.3, 1.8, fr.a[0], fr.a[1]); }
   }
+}
+
+// ---------------------------------------------------------------- the 2023 construction hoarding (w125wData.js FENCE23)
+// Painted plywood sheets (green, a vertical joint every 2.44 m, scuffs, a grime band at the foot, two diamond viewing
+// panels), a timber cap, the taller gate run, and white concrete barriers with orange diagonal stripes standing in front
+// (scuffed, chipped, dirty at the foot). Every texture is drawn here.
+function plyTex() {
+  const t = canvas(512, 512, (g, w, h) => {
+    const r = (() => { let s = 7; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
+    g.fillStyle = '#48695a'; g.fillRect(0, 0, w, h);
+    for (let k = 0; k < 900; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '20,40,30' : '90,120,100'},${0.03 + r() * 0.05})`; g.fillRect(r() * w, r() * h, 2 + r() * 30, 1 + r() * 4); }
+    for (let k = 0; k < 40; k++) { g.fillStyle = `rgba(${r() < 0.5 ? '210,215,200' : '30,32,30'},${0.08 + r() * 0.12})`; const x = r() * w, y = h * (0.5 + r() * 0.5); g.fillRect(x, y, 4 + r() * 40, 1 + r() * 3); }
+    const gr = g.createLinearGradient(0, h * 0.82, 0, h); gr.addColorStop(0, 'rgba(40,34,26,0)'); gr.addColorStop(1, 'rgba(40,34,26,0.45)');
+    g.fillStyle = gr; g.fillRect(0, h * 0.82, w, h * 0.18);
+    g.fillStyle = 'rgba(18,26,20,0.85)'; g.fillRect(0, 0, 3, h);
+    g.fillStyle = 'rgba(120,150,130,0.35)'; g.fillRect(3, 0, 2, h);
+    for (let k = 0; k < 6; k++) { g.fillStyle = 'rgba(25,30,26,0.6)'; g.beginPath(); g.arc(12 + r() * 6, 30 + k * 90 + r() * 10, 3, 0, 7); g.fill(); }
+  });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+function barrierTex() {
+  return canvas(768, 208, (g, w, h) => {
+    const r = (() => { let s = 11; return () => { s = (s * 16807) % 2147483647; return s / 2147483647; }; })();
+    g.fillStyle = '#d6d2c9'; g.fillRect(0, 0, w, h);
+    g.save(); g.fillStyle = '#d9572a';
+    for (let x = -h; x < w + h; x += 150) { g.beginPath(); g.moveTo(x, h); g.lineTo(x + 48, h); g.lineTo(x + 48 + h * 0.75, 0); g.lineTo(x + h * 0.75, 0); g.closePath(); g.fill(); }
+    g.restore();
+    for (let k = 0; k < 260; k++) { g.fillStyle = `rgba(${r() < 0.6 ? '120,112,100' : '235,232,225'},${0.08 + r() * 0.2})`; g.fillRect(r() * w, r() * h, 2 + r() * 14, 1 + r() * 5); }
+    for (let k = 0; k < 30; k++) { g.fillStyle = 'rgba(150,146,138,0.7)'; g.beginPath(); g.ellipse(r() * w, r() * h, 3 + r() * 10, 2 + r() * 6, r() * 3, 0, 7); g.fill(); }
+    const gr = g.createLinearGradient(0, h * 0.62, 0, h); gr.addColorStop(0, 'rgba(70,60,48,0)'); gr.addColorStop(1, 'rgba(70,60,48,0.6)');
+    g.fillStyle = gr; g.fillRect(0, h * 0.62, w, h * 0.38);
+  });
+}
+function diamondTex() {
+  return canvas(128, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.save(); g.translate(w / 2, h / 2); g.rotate(Math.PI / 4);
+    g.fillStyle = '#d8d6cf'; g.fillRect(-40, -40, 80, 80);
+    g.fillStyle = '#1d211f'; g.fillRect(-32, -32, 64, 64);
+    g.strokeStyle = 'rgba(160,170,165,0.5)'; g.lineWidth = 1.5;
+    for (let k = -32; k <= 32; k += 8) { g.beginPath(); g.moveTo(k, -32); g.lineTo(k, 32); g.stroke(); g.beginPath(); g.moveTo(-32, k); g.lineTo(32, k); g.stroke(); }
+    g.restore();
+  });
+}
+let _FM = null;
+export function fenceBuild(group, yAt) {
+  const Fz = FENCE23, d = Fz.d, n = Fz.n, B = new Bins();
+  if (!_FM) {
+    _FM = {
+      ply: applyLightTrim(new THREE.MeshStandardMaterial({ map: plyTex(), roughness: 0.82, metalness: 0 })),
+      bar: applyLightTrim(new THREE.MeshStandardMaterial({ map: barrierTex(), roughness: 0.88, metalness: 0 })),
+      conc: applyLightTrim(new THREE.MeshStandardMaterial({ color: 0xc9c5bc, roughness: 0.9, metalness: 0 })),
+      cap: applyLightTrim(new THREE.MeshStandardMaterial({ color: 0x2f4637, roughness: 0.8, metalness: 0 })),
+      dia: applyLightTrim(new THREE.MeshStandardMaterial({ map: diamondTex(), roughness: 0.5, metalness: 0, transparent: false, alphaTest: 0.5 })),
+    };
+  }
+  const M = _FM, P = (t, l) => [Fz.o[0] + d[0] * t + n[0] * l, Fz.o[1] + d[1] * t + n[1] * l];
+  const nn = [n[0], n[1]];
+  // the plywood in runs (the gate run taller), sheets 2.44 m; the cap and the posts behind
+  const runs = [];
+  let tc = Fz.t0;
+  for (const [g0, g1] of Fz.gates) { if (g0 > tc) runs.push([tc, g0, Fz.h]); runs.push([g0, g1, Fz.hg]); tc = g1; }
+  if (Fz.t1 > tc) runs.push([tc, Fz.t1, Fz.h]);
+  for (const [ta, tb, H] of runs) {
+    for (let t = ta; t < tb - 0.05; t += 2.44) {
+      const t2 = Math.min(tb, t + 2.44), a = P(t, 0), b = P(t2, 0), y = yAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) - 0.05;
+      B.quad(M.ply, a, b, y, H, 2.44, 0, nn);
+      B.seg(M.cap, [a[0] - n[0] * 0.03, y + H + 0.03, a[1] - n[1] * 0.03], [b[0] - n[0] * 0.03, y + H + 0.03, b[1] - n[1] * 0.03], 0.09, 0.06, nn);
+      const q = P(t + 0.02, -0.12); B.seg(M.cap, [q[0], y, q[1]], [q[0], y + H, q[1]], 0.09, 0.09, nn);
+    }
+  }
+  for (const t of Fz.diamonds) { const a = P(t - 0.26, 0), b = P(t + 0.26, 0), y = yAt(a[0], a[1]); B.quad(M.dia, a, b, y + Fz.dy - 0.26, 0.52, 0, 0.006, nn); }
+  // the barriers: 3.0 m units with 5 cm gaps, a 0.45 x 0.81 m body, the striped face to the street, a wider foot
+  for (let t = Fz.b0; t < Fz.b1 - 0.5; t += 3.05) {
+    const t2 = Math.min(Fz.b1, t + 3.0), a = P(t, 0.55), b = P(t2, 0.55), y = yAt((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+    B.seg(M.conc, [a[0], y + 0.4, a[1]], [b[0], y + 0.4, b[1]], 0.36, 0.8, nn);
+    B.seg(M.conc, [a[0], y + 0.11, a[1]], [b[0], y + 0.11, b[1]], 0.6, 0.22, nn);
+    B.quad(M.bar, a, b, y + 0.22, 0.58, 0, 0.185, nn);
+  }
+  return B.flush(group, 'fence23');
+}
+
+// AR34 w2 s3: the granite setts band across the Twelfth Avenue plaza (SETTS in w125wData.js): one strip mesh over the
+// compiled tile's terrain-only rows at the paving's height, UVs in metres for MATS's cobble set; the polygon offset keeps
+// the compiled paving in front where the widened rows run under it
+let _SM = null;
+export function settsBuild(group) {
+  const R = SETTS.rows, y = SETTS.y, pos = [], uv = [], idx = [];
+  for (const [z, x0, x1] of R) { pos.push(x0, y, z, x1, y, z); uv.push(x0, -z, x1, -z); }
+  for (let i = 0; i + 1 < R.length; i++) { const a = 2 * i, b = a + 1, c = a + 2, d = a + 3; idx.push(a, c, b, b, c, d); }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(pos.length).fill(0).map((_, i) => (i % 3 === 1 ? 1 : 0)), 3));
+  g.setIndex(idx);
+  if (!_SM) {
+    // (its own option set (tint, seed 7): the cached material is this strip's alone, so the offset is set on it)
+    _SM = pbrMaterial('cobble_belgian', { tint: '#6c6b67', dirt: 0.3, seed: 7 });
+    _SM.polygonOffset = true; _SM.polygonOffsetFactor = 1; _SM.polygonOffsetUnits = 2;
+  }
+  const m = new THREE.Mesh(g, _SM);
+  m.name = 'w33 plaza setts'; m.receiveShadow = true; m.castShadow = false; m.matrixAutoUpdate = false; m.updateMatrix();
+  group.add(m);
+  return idx.length / 3;
 }

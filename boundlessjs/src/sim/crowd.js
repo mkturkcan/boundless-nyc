@@ -29,6 +29,9 @@ const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search
 const BASE = 'models/peds24/';
 const MAXI = 1024;                                  // pose rows per skeleton (visible + shadow walkers)
 const LODD = (QS.get('crowdlod') || '9,26').split(',').map(Number);
+// FP37 (core/engine.js, the film policy): while recording, a walker's level changes only where it is a few pixels tall (LOD0
+// within 45 m, LOD1 within 140 m at least), so no level switch shows in a take (the film's crowdlod=20,60 switched at 20 m)
+if (QS.get('record') === '1' && QS.get('fp37') !== '0') { LODD[0] = Math.max(LODD[0], 45); LODD[1] = Math.max(LODD[1], 140); }
 const LOD0_2 = LODD[0] * LODD[0], LOD1_2 = LODD[1] * LODD[1];
 const FADE = 0.28;                                   // clip crossfade, seconds
 // PL31 (owner 2026-09-28: "The people look rather low quality and undetailed"; notes docs/notes/crowd-looks.md): skin,
@@ -109,7 +112,7 @@ export async function loadCrowd(renderer) {
   // RB27 (tools/assets/build_rocketbox.mjs): Microsoft Rocketbox avatars (MIT) re-bound to the GEN2 skeleton, so they play
   // the same clips; they carry their own texture arrays (arraysX[set]). `?rb27=0` leaves them out.
   const extra = QS.get('rb27') === '0' ? null : await fetch(BASE + 'rb27/manifest.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  const ktx2 = new KTX2Loader().setTranscoderPath('basis/').detectSupport(renderer);
+  const ktx2 = (await import('../city/mat/ktx2.js')).ktx2Loader(renderer);   // the app's one KTX2 loader (MATS 06:15)
   const loader = new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder);
   const arrays = {}, arraysX = {};
   const loadArrays = (list, into) => Promise.all(Object.entries(list).map(async ([k, a]) => {
@@ -1557,6 +1560,7 @@ export class Crowd {
         C.mat.uniforms.uT.value = P.rt.textures[a];
         r.setRenderTarget(C.rt);
         r.render(C.scene, C.cam);
+        { const gl = r.getContext(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); }   // FR35: three's async reads leave a pack buffer bound
         r.readRenderTargetPixels(C.rt, 0, 0, nb, n, buf[a]);
       }
       for (let row = 0; row < n; row++) {

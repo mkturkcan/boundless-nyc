@@ -12,7 +12,7 @@ const kinds = opt('sensors', 'rgb,semantic_segmentation,instance_segmentation').
 const amodal = Number(opt('amodal', '0'));
 const [W, H] = opt('size', '1280x720').split('x').map(Number);
 
-const browser = await chromium.launch({ args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit', `--window-size=${W},${H}`] });
+const browser = await chromium.launch({ args: [(process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan'), '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit', `--window-size=${W},${H}`] });
 try {
   const page = await browser.newPage({ viewport: { width: W, height: H } });
   page.on('pageerror', (e) => console.log('PAGEERROR', String(e).slice(0, 300)));

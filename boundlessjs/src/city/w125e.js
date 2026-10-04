@@ -16,6 +16,9 @@ import { mkConvex, tpSplit } from './tsqPlaza.js';
 import { buildingsOf } from '../world/tiledata.js';
 import { Bag, mats, COL, toUV, toXZ } from './w125eKit.js';
 import { TRACKS, PLATFORMS, STATION, LEX, RAMPS } from './w125eData.js';
+// AR34 BRIDGES: the RFK Bridge's Harlem River crossing and its Manhattan ramps, rebuilt (city/rfkHarlem.js; `?rfk34=0` = the AR32
+// pieces below, rfkBuild)
+import { RFK34, apply as rfkApply, build as rfkBuild34 } from './rfkHarlem.js';
 
 export const AR32E = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ar32e') === '0');
 const TILE = 512;
@@ -432,10 +435,15 @@ function lexBuild(B, ctx) {
 export function apply(tile, ox, oz) {
   if (!AR32E) return;
   try { const n = lexApply(tile, ox, oz); if (n) console.log(`[ar32] w125e: ${n} sidewalk triangles cut for the Lexington Avenue stairs`); } catch (e) { console.warn('[ar32] w125e lex apply', e); }
+  try { rfkApply(tile, ox, oz); } catch (e) { console.warn('[rfk34] apply', e); }
 }
-// compiled street furniture standing in a stair's well
-export function dropFurniture(wx, wz) {
+// site's shed
+const GONE_TREES = [[2875.12, -2336.81], [2883.80, -2333.02], [2892.04, -2328.45], [2899.81, -2323.04], [2907.95, -2319.62], [2915.13, -2314.49],
+  [2923.06, -2310.07], [2930.51, -2305.92]];
+// compiled street furniture standing in a stair's well, and those trees
+export function dropFurniture(wx, wz, f) {
   if (!AR32E) return false;
+  if (f && f.k === 1 && GONE_TREES.some(([x, z]) => Math.abs(wx - x) < 0.8 && Math.abs(wz - z) < 0.8)) return true;
   for (const e of LEX) {
     if (Math.abs(wx - e.p[0]) > 9 || Math.abs(wz - e.p[1]) > 9) continue;
     const r = lexRect(e), [u, v] = toUV(wx, wz);
@@ -446,8 +454,12 @@ export function dropFurniture(wx, wz) {
 // and the compiled footprints under the viaduct's deck that stand through it (La Marqueta's market halls, 111th-116th
 // St, compiled 11-12.2 m: their heightroof is the viaduct over them): built under the girders (underBuild)
 const underDeck = (u, v) => v > V_S && v < V_N && u > tU(0, v) - EDGE - 0.5 && u < tU(3, v) + EDGE + 0.5;
+// AR34 BRIDGES: the compiled 14.3 m CIVIC_STONE footprint at First Avenue and 125th St's north-east corner (centroid 3395.5,
+// the RFK approach's steel bents, and the rebuilt ramps pass over it at 10-17 m: it is left out
+const GONE_BLDG = [[3395.5, -2052.5]];
 export function skipBuilding(cx, cz, h) {
   if (!AR32E) return false;
+  if (RFK34 && GONE_BLDG.some(([x, z]) => Math.abs(cx - x) < 2 && Math.abs(cz - z) < 2)) return true;
   const [u, v] = toUV(cx, cz);
   return inHouse(u, v, 0.5) || (underDeck(u, v) && 3.52 + (h || 0) > GIRD_B - 0.3);
 }
@@ -473,15 +485,21 @@ function underBuild(B, ctx) {
   }
   return n;
 }
+// AR33: the structures the viaduct part (vk/viaducts.js) has taken over ('park': the viaduct, its platforms and the
+// station house) are left to it
+const vkHas = (k) => !!(globalThis.__AR33VK && globalThis.__AR33VK.has(k));
 export function build(group, ctx) {
   if (!AR32E) return;
   const B = new Bag();
   const parts = [];
-  try { parts.push(['viaduct', viaductBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e viaduct', e); }
-  try { parts.push(['platforms', platformsBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e platforms', e); }
-  try { parts.push(['house', houseBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e station house', e); }
+  if (!vkHas('park')) {
+    try { parts.push(['viaduct', viaductBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e viaduct', e); }
+    try { parts.push(['platforms', platformsBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e platforms', e); }
+    try { parts.push(['house', houseBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e station house', e); }
+  }
   try { parts.push(['under', underBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e under the viaduct', e); }
-  try { parts.push(['rfk', rfkBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e RFK', e); }
+  if (!RFK34) try { parts.push(['rfk', rfkBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e RFK', e); }
+  try { rfkBuild34(group, ctx); } catch (e) { console.warn('[rfk34] build', e); }
   try { parts.push(['lex', lexBuild(B, ctx)]); } catch (e) { console.warn('[ar32] w125e Lexington stairs', e); }
   const r = B.flush(group, ctx.key);
   if (r.meshes) console.log(`[ar32] w125e tile ${ctx.key}: ${parts.filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(', ')}; ${r.meshes} meshes, ${r.tris | 0} triangles`);

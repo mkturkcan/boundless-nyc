@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Sky as SkyMesh } from 'three/addons/objects/Sky.js';
-import { ENV, applyLB14Ground, FS26, FOG_SKY } from './materials.js';   // LB14 — day-only ground/roof calibration
+import { ENV, applyLB14Ground, FS26, FOG_SKY, CS34, ST34 } from './materials.js';   // LB14 — day-only ground/roof calibration
 import { GFX } from './weather.js';
 // N11 — night ambient (docs/notes/night-r11.md). `?n11=0` restores the round-10 rig.
 import {
@@ -24,6 +24,40 @@ import {
 //   bnc: engine.bounce, the warm inter-reflected half of a canyon's ambient
 const GH25 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gh25') === '0');
 const GH26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gh26') === '0');
+const CS36 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cs36') === '0');   // the clouds' integer hash (`?cs36=0`: the sin hash)
+// EC34 (LOOK, AR34 wave 2; BID4's request: dark paint and metal read navy in shade). three's SkyMesh continues the
+// horizon's radiance down to the nadir, so the environment bake had a bright hazy horizon colour over the whole lower
+// hemisphere: every vertical paint, metal panel and pane mirrored it, and every soffit and sill underside was filled by it.
+// `?envcity=1` multiplies the bake's lower hemisphere (fading out 8 deg over the horizon) by a warm masonry-and-asphalt
+// reflectance, so the bake's lower half is the sky's own horizon light thrown back by a city. Opt-in until it is A/B'd at
+// dusk, at night and in Central Park.
+const EC34 = typeof location !== 'undefined' && new URLSearchParams(location.search).get('envcity') === '1';
+// CS34 levels (materials.js applyCityAO): the city's share of the reflection lobe under the skyline, of the environment's
+// diffuse, and how much paler the sky over the canyon reads (MATS's pbCity uses 0.35)
+const CS34_SPEC = 1.0, CS34_DIFF = 1.0, CS34_PALE = 0.35;
+const ST34_DAY = 0.5;   // VIADUCTS's own steel trim measured best at 0.32-0.45 (vk/vkMats.js vkSpecK)
+// AE35. LB14 pinned the day meter at its 0.70 floor on purpose, at a 0.65 strength, so every sunlit frame took the
+// them, with white trucks or a pale facade in frame worst. so does the
+// day rig now: the floor 0.35, full strength, and a faster settle (a quarter of the gap per reading, ~2 s) so a plate taken
+// after a jump is settled. The target stays LB14's (0.20 x expoK 0.58). Not under `clean=1` (the films and teasers keep their
+// exposure) and not at golden, dusk or night. `?ae35=0` off.
+const AE35 = !(typeof location !== 'undefined' && (new URLSearchParams(location.search).get('ae35') === '0' || new URLSearchParams(location.search).get('clean') === '1'));
+const AE35_DAY = { aeMin: 0.35, aeK: 1.0, aeRate: 0.25 };
+// SH35. Day preset `skyHz`: the visible dome's colour pulled toward a pale
+// blue-white of its own luminance, and `skyGain` with it. The env bake keeps its sky (the ambient is unchanged). Cumulus as
+// Not under `clean=1` (the films keep their sky). `?sh35=0` off.
+const SH35 = !(typeof location !== 'undefined' && (new URLSearchParams(location.search).get('sh35') === '0' || new URLSearchParams(location.search).get('clean') === '1'));
+// measured in one page (shots/ar34/look/x6, four QA pairs; top-of-sky medians): toward the sun the hue
+// moves' (G-R +27 -> +18 against +11..+17) at the same value; away from it the deep blue the
+const SH35_DAY = { skyHz: 0.35, skyGain: 0.65 };
+// TW36 (lead 2026-10-02: "the dusk preset's sky is near black, so the teasers' dusk takes read as night"): the dusk preset
+// puts the sun 3 deg under the horizon, and three's Sky (Preetham) ends all scattering at a solar zenith angle of pi / 1.95
+// (92.3 deg: elevation -2.3 deg), so at dusk the analytic dome was exactly black and the sky was the N11 city glow alone, a
+// brown-grey sRGB (20, 20, 25) overhead (t7StreetGlide frame 54) where a Harlem dusk photograph reads a slate blue (refs/INDEX:
+// corner-retail-125th-corner-01, ~#2E4A6B). A twilight dome is added under the clouds at dusk only (preset `tw36`): a deep
+// blue zenith, a paler band round the horizon and the afterglow under the set sun, on the visible dome and the env bake.
+// Day, golden and night have no `tw36` and render as before. `?tw36=0` restores.
+const TW36 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('tw36') === '0');
 const PRESETS = {
   // LB13 — THE SHADOW BUDGET (docs/notes/light-r13.md). `?lb13=0` restores the row below verbatim
   // (DAY_R12). Four changes, all day-only, so golden/dusk/night are bit-identical:
@@ -90,7 +124,7 @@ const PRESETS = {
   // horizon/zenith gradient and the hue are under control. Dusk keeps its real
   // twilight sky (nSkyG 1) and takes the glow on top.
   dusk:   { elev: -3, azim: 262, expo: 0.74, fog: 0x39394e, fogD: 0.00014, night: 0.55, env: 0.16, sun: 1.0, bnc: 1.0, skyGain: 0.9,
-            nAmb: 0.34, nGlow: 0.45, nFog: 0x3c3a44, nSkyG: 1.0 },
+            nAmb: 0.34, nGlow: 0.45, nFog: 0x3c3a44, nSkyG: 1.0, tw36: 1.0 },
   night:  { elev: -14, azim: 280, expo: 0.95, fog: 0x07090f, fogD: 0.00012, night: 1, env: 0.08, sun: 1.0, bnc: 0, skyGain: 1.0,
             nAmb: 1.0, nGlow: 1.0, nFog: 0x241d17, nEnv: 1.0, nSkyG: 0.12 },
 };
@@ -157,18 +191,22 @@ if (!LB13) Object.assign(PRESETS.day, DAY_R12);
 //     carriageway's linear B/R to 7.22 against the reference's 2.77.
 export const DAY_LB14 = {
   // LB14b (lead, 2026-09-22, verify_r14/street): with bnc 0.8 / coolSh -0.028 / hemiC 0x8fb6e4 the shaded Amsterdam
-  // carriageway read 54,84,115 (B-R +61) against the pano's 58,79,96 (+38) and v19's +32, the shaded walk 75,105,127, and
-  // every shaded leaf went grey-teal (51,66,71 vs the pano's 118,142,116). The sunlit 125th plate was right (R>B, paint
+  // every shaded leaf went grey-teal. The sunlit 125th plate was right (R>B, paint
   // bright). So the shade overshot: bounce back up, the cool grade term halved, the hemi colour half-way back.
   // LB14c (lead, 2026-09-22, shots/lb14/sweep4.txt — 12 rows in one page at amst120N, reference shaded road 58,79,96):
-  //   LB14b row: road 63,90,118 (B-R +55) walk 71,97,116 (+45)  |  satFloor 0: +49  |  coolSh 0: +50  |  hemiC r13: +53
-  //   hemi 1.2 + bnc 1.5: +51  |  probeK .42 giK .7: +54  |  walk neutral: walk +33  |  LB14 light + r13 ground: road +48
-  //   r13 light + LB14 ground: road +33 walk +26  => the blue was the LIGHT (satFloor/coolSh/hemiC/fill mix together), the
-  //   ground row only sets the walk. Row D = all of those back at r13 with the r13 fill colour and road hue, walk neutral:
-  //   road 68,86,105 (+37, reference +38), walk 81,96,104 (+23), paint - asphalt +56 (target 55-65), frame L<80 30 %
-  //   (r13 band 24-49), sunlit wall 79,73,73 R>B. The key (sun 5.0, expoK 0.58, conFloor 0.34) is what makes the top end;
-  //   the hue levers were fighting the tonemapper and are gone.
-  sun: 5.0, hemi: 1.3, bnc: 1.5, env: 0.22, probeK: 0.34, giK: 1.0, expoK: 0.58,
+  // LB14b row: road 63,90,118 (B-R +55) walk 71,97,116 (+45) | satFloor 0: +49 | coolSh 0: +50 | hemiC r13: +53
+  // hemi 1.2 + bnc 1.5: +51 | probeK.42 giK.7: +54 | walk neutral: walk +33 | LB14 light + r13 ground: road +48
+  // r13 light + LB14 ground: road +33 walk +26 => the blue was the LIGHT (satFloor/coolSh/hemiC/fill mix together), the
+  // ground row only sets the walk. Row D = all of those back at r13 with the r13 fill colour and road hue, walk neutral:
+  // road 68,86,105 (+37, reference +38), walk 81,96,104 (+23), paint - asphalt +56 (target 55-65), frame L<80 30 %
+  // (r13 band 24-49), sunlit wall 79,73,73 R>B. The key (sun 5.0, expoK 0.58, conFloor 0.34) is what makes the top end;
+  // the hue levers were fighting the tonemapper and are gone.
+  // env 0.22 -> 0.264 with ST34 (LOOK, AR34 wave 2 round 2): with the sheen trimmed (materials.js ST34) and the canyon's sky
+  // the environment
+  // x1.2, A/B'd in one page in the main tree (shots/ar34/look/m5day _1 / _2): b44 70.0 -> 76.0 (crop 77.6), c120 48.8 ->
+  // 54.0 (66.2), s120 56.4 -> 61.2 (77.2), s351 123.4 -> 123.6; fdb280 157.3 -> 159.1 (135.9) and the arch 88.0 -> 92.5
+  // (81.8) the other way. `?st34=0` restores 0.22.
+  sun: 5.0, hemi: 1.3, bnc: 1.5, env: ST34 ? 0.264 : 0.22, probeK: 0.34, giK: 1.0, expoK: 0.58,
   // coolSh -0.010 (not 0): the aerial L30-70 band went Lenox +23 -> +10 / Bedford +13 -> +1 without it (c_earth) while
   // the eye-level road needs <= +40; sweep4 prices the term at ~5 of road B-R per 0.014, so -0.010 buys the aerial ~+9.
   sunW: 0.26, conFloor: 0.34, satFloor: 0, coolSh: -0.010, hemiC: 0x9db9de,
@@ -176,6 +214,7 @@ export const DAY_LB14 = {
 };
 export const LB14 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('lb14') === '0');
 if (LB13 && LB14) Object.assign(PRESETS.day, DAY_LB14);
+if (SH35) Object.assign(PRESETS.day, SH35_DAY);   // SH35 (see above)
 // N11 street-level ambient budget, in irradiance on an UP-FACING surface at
 // nAmb 1.0. MEASURED, not derived — the first derivation (0.46 / 0.30, from "a
 // 0.22 night ground albedo through exposure 0.95 needs E ~ 0.9 for sRGB 55-70")
@@ -209,7 +248,14 @@ const CS25_GLSL = /* glsl */ `
         // decks fade into the horizon haze. Units: cs25Lit / cs25Shade are sky-dome radiance, set per preset.
         uniform float cs25Cov; uniform float cs25Dens; uniform float cs25Cirrus; uniform float cs25H; uniform float cs25T;
         uniform vec3 cs25Lit; uniform vec3 cs25Shade; uniform vec2 cs25Wind;
-        float cs25h( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453123 ); }
+        ${CS36 ? `// CS36 (t7ValleyArch's sky seam, 2026-10-02): an integer hash of the cell corner. The sin hash's argument reaches
+        // ~1e6 with the drift, where a compiler that folds dot( i + c, k ) into dot( i, k ) + dot( c, k ) gives two cells
+        // different values for their shared corner: a straight seam across the cirrus. Exact in integers, so no seam
+        float cs25h( vec2 p ) {
+          uvec2 q = uvec2( ivec2( p ) ) * uvec2( 1597334673u, 3812015801u );
+          uint n = ( q.x ^ q.y ) * 1597334673u;
+          return float( n ) * ( 1.0 / 4294967295.0 );
+        }` : `float cs25h( vec2 p ) { return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ) * 43758.5453123 ); }`}
         float cs25n( vec2 p ) {
           vec2 i = floor( p ), f = fract( p );
           f = f * f * ( 3.0 - 2.0 * f );
@@ -417,7 +463,9 @@ export class Sky {
     // more of it than a soffit does, which a HemisphereLight cannot express).
     const glowPatch = (mat) => {
       if (!mat.uniforms.skyGain) mat.uniforms.skyGain = { value: 1 };
+      mat.uniforms.skyHaze = { value: 0 };   // SH35 (apply() writes it per preset)
       mat.uniforms.nGlowAmt = { value: 0 };
+      mat.uniforms.tw36Amt = { value: 0 };   // TW36
       mat.uniforms.nGlowLo = { value: new THREE.Vector3().copy(GLOW_LOW) };
       mat.uniforms.nGlowHi = { value: new THREE.Vector3().copy(GLOW_HIGH) };
       // CS25: cloud decks (written per preset in apply(); cs25T follows ENV.time so a recorded take steps them exactly)
@@ -430,9 +478,28 @@ export class Sky {
       const f0 = mat.fragmentShader;
       mat.fragmentShader = f0.replace(
         /gl_FragColor\s*=\s*vec4\(\s*(\w+)\s*,\s*1\.0\s*\)\s*;/,
-        'gl_FragColor = vec4( min( cs25Clouds( direction, $1 * skyGain, vSunDirection ) + n11Glow( direction ), vec3( 5.0 ) ), 1.0 );'
+        'gl_FragColor = vec4( min( cs25Clouds( direction, sh35Haze( $1 ) * skyGain + tw36Sky( direction, vSunDirection ), vSunDirection ) + n11Glow( direction ), vec3( 5.0 ) ), 1.0 );'
       ).replace('void main() {', `${CS25_GLSL}
-        uniform float skyGain;
+        uniform float skyGain; uniform float skyHaze;
+        // SH35: a summer haze over the clear dome (0 = the analytic sky as it is): the colour pulled toward a pale blue-white
+        // of the same luminance, as the 125th Street captures' skies read
+        vec3 sh35Haze( vec3 c ) {
+          float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+          return mix( c, l * vec3( 0.90, 1.0, 1.16 ), skyHaze );
+        }
+        // TW36: the twilight dome (linear radiance; 0 except at dusk)
+        uniform float tw36Amt;
+        vec3 tw36Sky( vec3 dir, vec3 sunDir ) {
+          if ( tw36Amt <= 0.0 ) return vec3( 0.0 );
+          float h = max( dir.y, 0.0 );
+          float sl = length( sunDir.xz ), dl = length( dir.xz );
+          float toward = ( sl > 1e-4 && dl > 1e-4 ) ? dot( dir.xz / dl, sunDir.xz / sl ) * 0.5 + 0.5 : 0.5;   // 1 under the set sun
+          float t3 = toward * toward * toward;
+          vec3 hz = mix( vec3( 0.060, 0.090, 0.180 ), vec3( 0.700, 0.250, 0.085 ), t3 * t3 );   // pale band; the afterglow
+          float k = exp( - h * mix( 4.0, 9.0, t3 ) );
+          vec3 c = mix( vec3( 0.015, 0.041, 0.123 ) * ( 0.85 + 0.3 * toward ), hz, k );   // the deep blue overhead
+          return c * tw36Amt * mix( 0.35, 1.0, smoothstep( -0.25, 0.0, dir.y ) );
+        }
         uniform float nGlowAmt; uniform vec3 nGlowLo; uniform vec3 nGlowHi;
         vec3 n11Glow( vec3 dir ) {
           if ( nGlowAmt <= 0.0 ) return vec3( 0.0 );
@@ -461,6 +528,27 @@ export class Sky {
     glowPatch(this.envSky.material);   // N11: the env bake carries the sky glow too
     this.envScene = new THREE.Scene();
     this.envScene.add(this.envSky);
+    {
+      // drawn after the sky (transparent), multiplying it: 1 over the band, the city's reflectance under it. Built always,
+      // shown only under ?envcity=1 (window.__ENGINE.sky.setEnvCity(on) re-bakes with it on or off, for A/Bs in one page)
+      const ecM = new THREE.ShaderMaterial({
+        uniforms: { uCityR: { value: new THREE.Vector3(0.42, 0.38, 0.33) }, uGndR: { value: new THREE.Vector3(0.20, 0.19, 0.18) } },
+        vertexShader: 'varying vec3 vEcD; void main(){ vEcD = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+        fragmentShader: `uniform vec3 uCityR; uniform vec3 uGndR; varying vec3 vEcD;
+          void main(){
+            vec3 d = normalize(vEcD);
+            float a = 1.0 - smoothstep(-0.02, 0.14, d.y);              // the city band: from just under the horizon to ~8 deg over it
+            vec3 r = mix(uCityR, uGndR, smoothstep(-0.10, -0.70, d.y)); // walls toward the horizon, the street toward the nadir
+            gl_FragColor = vec4(mix(vec3(1.0), r, a), 1.0);
+          }`,
+        side: THREE.BackSide, transparent: true, depthWrite: false, depthTest: false, blending: THREE.MultiplyBlending, premultipliedAlpha: true,
+      });
+      this.envCity = new THREE.Mesh(new THREE.SphereGeometry(50, 48, 32), ecM);
+      this.envCity.renderOrder = 10;
+      this.envCity.frustumCulled = false;
+      this.envCity.visible = EC34;
+      this.envScene.add(this.envCity);
+    }
     this.pmrem = new THREE.PMREMGenerator(engine.renderer);
     this.pmrem.compileEquirectangularShader();
     this._envRT = null;
@@ -477,7 +565,13 @@ export class Sky {
     // GFX sun/sky offsets compose with the preset (editor re-applies on change)
     const el = ((p.elev + (GFX.sunElev || 0)) * Math.PI) / 180;
     const az = ((p.azim + (GFX.sunAzim || 0)) * Math.PI) / 180;
-    this.sky.material.uniforms.turbidity.value = GFX.turbidity ?? 5;
+    // SH35: the visible dome's scattering per preset (day only so far: skyT / skyR / skyM / skyG; the constructor's values
+    // everywhere else); GFX.turbidity still wins
+    this.sky.material.uniforms.turbidity.value = GFX.turbidity ?? p.skyT ?? 5;
+    this.sky.material.uniforms.rayleigh.value = p.skyR ?? 2.5;
+    this.sky.material.uniforms.mieCoefficient.value = p.skyM ?? 0.004;
+    this.sky.material.uniforms.mieDirectionalG.value = p.skyG ?? 0.95;
+    if (this.sky.material.uniforms.skyHaze) this.sky.material.uniforms.skyHaze.value = SH35 ? (p.skyHz ?? 0) : 0;
     if (this.sky.material.uniforms.skyGain) this.sky.material.uniforms.skyGain.value = (p.skyGain ?? 1) * (GFX.skyGain ?? 1);
     const sunDir = new THREE.Vector3(Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az)).normalize();
     this.sunDir = sunDir;
@@ -499,7 +593,11 @@ export class Sky {
     // shaded side = the sky fill, both in sky-dome radiance; the same decks go into the env bake below, so reflections
     // and the IBL carry them too.
     {
-      const cl = p.cloud || null;
+      // DC33 (teaser 4 review 2026-09-30: "every day shot has a cloudless gradient sky whose blue channel is clipped over
+      // up to 59 % of the sky band"): `?daycloud=<coverage>` gives the day preset a scattered cumulus deck with cirrus,
+      // lit for a high sun (the presets without a deck keep their clear sky otherwise)
+      const DCQ = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('daycloud') : null;
+      const cl = p.cloud || (DCQ && mode === 'day' ? { cov: Math.min(0.8, Math.max(0.05, +DCQ || 0.3)), dens: 0.85, cirrus: 0.35, h: 2600, lit: 1.15, shade: 0.8 } : null);
       for (const m of [this.sky.material, this.envSky && this.envSky.material]) {
         const u = m && m.uniforms;
         if (!u || !u.cs25Cov) continue;
@@ -581,6 +679,9 @@ export class Sky {
       const su = this.sky.material.uniforms, eu2 = this.envSky.material.uniforms;
       if (su.nGlowAmt) su.nGlowAmt.value = g;
       if (eu2.nGlowAmt) eu2.nGlowAmt.value = g;
+      const tw = TW36 ? (p.tw36 ?? 0) : 0;   // TW36: the twilight dome, dusk only
+      if (su.tw36Amt) su.tw36Amt.value = tw;
+      if (eu2.tw36Amt) eu2.tw36Amt.value = tw;
       // the visible dome's gain was written above from p.skyGain * GFX.skyGain;
       // envSky had no gain at all before this round, so its base is 1.
       if (su.skyGain) su.skyGain.value *= sg;
@@ -617,6 +718,13 @@ export class Sky {
     this.engine.probeK = p.probeK ?? 1;
     this.engine.expoTargetK = p.expoK ?? 1;
     this.engine.warmK = p.warmK ?? 1;
+    // AE35: the meter's floor, strength and settle rate by day (see AE35 above); the LB13 meter everywhere else
+    {
+      const ae = AE35 && (p.night ?? 0) < 0.01 ? AE35_DAY : null;
+      this.engine.aeMin = ae ? ae.aeMin : 0.70;
+      this.engine.aeK = ae ? ae.aeK : null;
+      this.engine.aeRate = ae ? ae.aeRate : 0.06;
+    }
     // LB14 — day-only floor under the grade's contrast (weather.js composes it), and the day row of
     // the four ground/roof calibration uniforms. Both are the r13 values on any non-day preset, so
     // golden / dusk / night render bit-identically to round 13.
@@ -628,6 +736,16 @@ export class Sky {
     this.engine.hazeSunK = p.hazeSunK ?? 1;
     this.engine.presetGrade = p.grade || null;   // GH25: per-preset grade over the saved settings (weather.js)
     applyLB14Ground(mode === 'day');
+    // CS34 (materials.js applyCityAO): the street wall in the reflection and in the environment's diffuse; ST34
+    // (materials.js applyLightTrim): the day share of a trimmed material's specular. DAY ONLY for now: golden, dusk and
+    // night render as before (A/B'd by day; at golden CS34 neutralised the warm horizon fill and lifted the Mall's
+    // median 48.6 -> 57.8, shots/ar34/look/cp_b2off|cp_b2on t4Mall_golden)
+    {
+      const k = 1 - THREE.MathUtils.smoothstep(p.night ?? 0, 0.0, 0.05);
+      const kc = CS34 ? k : 0;
+      ENV.cs34.value.set(CS34_SPEC * kc, CS34_DIFF * kc, CS34_PALE * kc, 0);
+      ENV.st34.value.x = ST34 ? 1 - (1 - ST34_DAY) * k : 1;
+    }
 
     const fogC = new THREE.Color(nFog);   // N11: p.nFog at dusk/night, p.fog otherwise
     this.engine.scene.fog.color.copy(fogC);
@@ -646,6 +764,12 @@ export class Sky {
     this.engine.envBase = nEnv; // weather multiplies GFX.envScale per frame
     this._bakeFogRing();   // FS26: the fog fades into this sky's own horizon
   }
+  setEnvCity(on) {
+    if (!this.envCity) return false;
+    this.envCity.visible = !!on;
+    this.apply(this.mode);
+    return this.envCity.visible;
+  }
   cycle() {
     const order = ['day', 'golden', 'dusk', 'night'];
     this.apply(order[(order.indexOf(this.mode) + 1) % order.length]);
@@ -656,7 +780,7 @@ export class Sky {
     this.sky.position.copy(this.engine.camera.position);
     // FS26: a sun moved by the editor or a time-lapse re-bakes the fog ring, at most once a second
     this._ringAge = (this._ringAge || 0) + dt;
-    if (FS26 && !this.hdri && this._ringSun && this._ringAge > 1 && this._ringSun.dot(this.sky.material.uniforms.sunPosition.value) < 0.99998) this._bakeFogRing();
+    if (FS26 && !this.hdri && this._ringSun && (this._ringRetry || (this._ringAge > 1 && this._ringSun.dot(this.sky.material.uniforms.sunPosition.value) < 0.99998))) this._bakeFogRing();   // FR35: a failed read re-bakes next frame
   }
   // FS26 (world/materials.js FOG_SKY): the clear sky dome's radiance at 8 azimuths just above the horizon (1.7 deg) and
   // 8 at 11.5 deg, rendered into a 16 x 1 float strip and read back once. Clouds are left out: the aerial perspective of
@@ -687,6 +811,12 @@ export class Sky {
         R.setRenderTarget(rt);
         R.render(sky, cam);
       }
+      // FR35 (TREES 2026-10-02 08:01): three's readRenderTargetPixelsAsync (the light probe, the exposure meter) leaves its
+      // PIXEL_PACK_BUFFER bound while it waits for its fence; a synchronous read made then went into that buffer, not into
+      // _ringBuf, and the ring kept the boot's DAY horizon at golden hour in some boots (t4Mall 71.7 against 64-65 luma).
+      // Unbind first (three rebinds its own before collecting), NaN-fill, and re-bake next frame if the read did not land.
+      this._ringBuf.fill(NaN);
+      { const gl = R.getContext(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); }
       R.readRenderTargetPixels(rt, 0, 0, 16, 1, this._ringBuf);
     } finally {
       rt.scissorTest = false;
@@ -694,6 +824,8 @@ export class Sky {
       u.cs25Cov.value = keep[0]; u.cs25Cirrus.value = keep[1];
       sky.position.copy(keep[2]); sky.updateMatrixWorld(true);
     }
+    if (!Number.isFinite(this._ringBuf[0])) { this._ringRetry = true; return; }   // FR35: the read did not land
+    this._ringRetry = false;
     const B = this._ringBuf, ring = FOG_SKY.ring;
     for (let s = 0; s < 16; s++) {
       let r = B[s * 4], g = B[s * 4 + 1], b = B[s * 4 + 2];

@@ -4164,6 +4164,10 @@ function addPoints(file, kind, opts = {}) {
         else if (species.includes('pear')) sp = 3; else if (species.includes('ginkgo')) sp = 4;
         else if (species.includes('oak')) sp = 5; else if (species.includes('linden')) sp = 6;
         else if (species.includes('maple')) sp = 7; else if (species.includes('cherry')) sp = 8;
+        // AR34 (TREES): the city's sophoras, Japanese zelkovas, ashes and elms were class 0 (a position-hashed form);
+        // furnitureKit's TREE_SPECIES rows 9-12 draw them. 'ash' as a word: "washington hawthorn" contains it.
+        else if (species.includes('sophora')) sp = 9; else if (species.includes('zelkova')) sp = 10;
+        else if (/\bash\b/.test(species)) sp = 11; else if (/\belm\b/.test(species)) sp = 12;
         const dbh = Math.min(255, parseInt(r.tree_dbh) || 8);
         place(lon, lat, sp, dbh, 1); // p2=1 marks census street trees (get pit fences)
       } else place(lon, lat);

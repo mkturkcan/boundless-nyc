@@ -26,6 +26,244 @@ const NaNGuardShader = {
   fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv; ${NF_GLSL}
     void main(){ vec4 c = texture2D(tDiffuse, vUv); if (nfBad3(c.rgb) || nfBad(c.a)) c = vec4(0.0, 0.0, 0.0, 1.0); gl_FragColor = c; }`,
 };
+// BS36 "BULLSHOT" (owner 2026-10-02: "Can we add some special "bullshot" effects for these renders? for example global
+// illumination, reflections, pathtracing etc. so that they look more Blender-like?"): a film-only quality mode, `?bullshot=1`,
+// off by default; without the flag nothing below is built and every pass runs its own code. Each effect is STOCHASTIC per
+// accumulation sample (AC26: a recorded frame is the mean of accum + 1 renders of one frozen world) and converges as the
+// samples add up, the way a path tracer's pixel does:
+//   * the sun is an area light: each sample draws its direction over the solar disc (0.53 deg) and re-renders the near shadow
+//     map (8192, was 4096), so a shadow is hard at contact and opens into a penumbra with the caster's distance;
+//   * the screen-space bounce (SSGIPass) is ray-marched: six cosine-weighted rays a sample from each pixel against the depth
+//     buffer out to 12 m, the lit frame's radiance at each hit, and the previous sample's bounce there as a further bounce;
+//   * the ground's reflection is glossy: each sample draws the mirror normal from a rough lobe and starts the march at a
+//     jittered step;
+//   * the ambient occlusion turns its kernel each sample (GTAO's 5x5 noise tile offset) with more directions;
+//   * OPT-IN (`bsvol=1`): the air in the near shadow box scatters the sun only where the shadow map says it is lit (light
+//     shafts), a ray march with a jittered start each sample, Henyey-Greenstein forward scattering. Off by default: a lens
+//     facing the low golden sun is veiled (t7ValleyTrain luma p25 73 -> 89 at bsvol=1, 127 at 3.2x that density).
+// The seed of every effect is the sample's index (an R2 sequence), never the clock or the frame count: a take renders the same
+// frames every time. Record mode only: the interactive page never jitters. `bullshot=1` takes the defaults; `bsun=<deg>` the
+// sun's angular diameter, `bssm=<size>` the near shadow map, `bsgik=<x>` the bounce's weight (1), `bsvol=<x>` / `bsgi=<x>` /
+// `bsssr=<x>` / `bsao=<x>` scale one effect (0 drops it).
+const BS = (() => {
+  if (typeof location === 'undefined') return null;
+  const q = new URLSearchParams(location.search), v = q.get('bullshot');
+  if (!v || v === '0') return null;
+  const num = (k, d) => { const x = parseFloat(q.get(k)); return Number.isFinite(x) && x >= 0 ? x : d; };
+  return { k: 0, seed: [0.5, 0.5], sun: num('bsun', 0.53), sm: num('bssm', 8192), vol: num('bsvol', 0), gi: num('bsgi', 1), gik: num('bsgik', 1), ssr: num('bsssr', 1), ao: num('bsao', 1) };
+})();
+if (BS) console.log('[bs36] bullshot mode', JSON.stringify(BS));
+const BS_VS = 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+// BS36 bounce: a ray-marched gather in place of the 12-tap heuristic (see the shader), twice the reach, and the previous
+// sample's bounce (the other half of a ping-pong pair) added at each hit times its albedo proxy: a further bounce per sample
+function bsInitSSGI(p) {
+  p.rtB = p.rt.clone();
+  const U = p.uniforms;
+  Object.assign(U, { tPrev: { value: p.rtB.texture }, uSeed: { value: new THREE.Vector2(0.5, 0.5) }, uBounce2: { value: 0.6 * BS.gi }, uRadK: { value: 2.0 } });
+  const m = p._gather.material;
+  m.fragmentShader = /* glsl */ `
+    uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform sampler2D tPrev;
+    uniform mat4 uProj, uInvProj; uniform vec2 uRes; uniform float uRad, uRadK, uBounce2; uniform vec2 uSeed;
+    varying vec2 vUv;
+    ${NF_GLSL}
+    vec3 viewPos(vec2 uv) {
+      float d = texture2D(tDepth, uv).x;
+      vec4 c = uInvProj * vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+      return c.xyz / c.w;
+    }
+    // BS36: RAY-MARCHED bounce. Six cosine-weighted rays a sample from the receiver, each marched in view space against the
+    // depth buffer (ten steps, dense near the receiver, out to R); the first step that passes behind the depth buffer within
+    // a thickness is a hit, and the lit frame's radiance there (plus the previous sample's bounce times its albedo proxy: a
+    // further bounce) is what arrives along that ray. The mean over cosine-weighted rays is E / pi, the incoming irradiance
+    // over pi; a ray that leaves the frame or meets nothing brings nothing (the sky's share is the env light's). Rotated per
+    // pixel (IGN) and per sample (R2 seed): the accumulation converges it.
+    void main() {
+      vec3 p = viewPos(vUv);
+      if (-p.z > 700.0) { gl_FragColor = vec4(0.0); return; }
+      vec3 cn = cross(dFdx(p), dFdy(p));
+      vec3 n = dot(cn, cn) > 1e-20 ? normalize(cn) : vec3(0.0, 0.0, 1.0);
+      if (dot(n, p) > 0.0) n = -n;
+      vec3 ta = normalize(abs(n.y) < 0.9 ? cross(n, vec3(0.0, 1.0, 0.0)) : cross(n, vec3(1.0, 0.0, 0.0)));
+      vec3 tb = cross(n, ta);
+      float R = uRad * uRadK;
+      float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      vec3 acc = vec3(0.0);
+      vec3 p0 = p + n * max(0.02, -p.z * 0.002);
+      for (int i = 0; i < 6; i++) {
+        float u1 = fract(uSeed.x + ign + float(i) * 0.7548777);
+        float u2 = fract(uSeed.y + ign * 0.6180340 + float(i) * 0.5698403);
+        float rr = sqrt(u1), ph = 6.2831853 * u2;
+        vec3 dir = ta * (rr * cos(ph)) + tb * (rr * sin(ph)) + n * sqrt(max(0.0, 1.0 - u1));
+        float jit = fract(ign * 1.618034 + uSeed.y + float(i) * 0.31);
+        for (int j = 0; j < 10; j++) {
+          float f = (float(j) + jit) / 10.0;
+          float dl = R * f * f + 0.05;
+          vec3 q = p0 + dir * dl;
+          if (q.z > -0.45) break;
+          vec4 cq = uProj * vec4(q, 1.0);
+          vec2 uq = cq.xy / cq.w * 0.5 + 0.5;
+          if (uq.x <= 0.002 || uq.x >= 0.998 || uq.y <= 0.002 || uq.y >= 0.998) break;
+          float sz = viewPos(uq).z;
+          float behind = sz - q.z;   // > 0: the ray point lies behind the visible surface
+          if (behind > 0.02) {
+            if (behind < max(0.6, dl * 0.35)) {
+              vec3 L = min(texture2D(tDiffuse, uq).rgb, vec3(4.0));
+              vec3 g2 = texture2D(tPrev, uq).rgb;
+              if (nfBad3(g2)) g2 = vec3(0.0);
+              L += uBounce2 * min(g2, vec3(2.0)) * (L / (dot(L, vec3(0.299, 0.587, 0.114)) + 0.2));
+              acc += L;
+            }
+            break;
+          }
+        }
+      }
+      vec3 o = acc * (1.0 / 6.0);
+      gl_FragColor = vec4(nfBad3(o) ? vec3(0.0) : o, 1.0);
+    }`;
+  m.needsUpdate = true;
+  // the composite's albedo proxy, base / (luma + 0.35), took a pixel in shade (luma 0.05) for an albedo of 0.12, so the bounce
+  // vanished exactly where it should show; 0.2 reads it as 0.2 (a sunlit pixel's proxy moves 0.74 -> 0.83)
+  const cm = p._comp.material, ca = 'vec3 alb = base.rgb / (dot(base.rgb, vec3(0.299, 0.587, 0.114)) + 0.35);';
+  // ...and the bounce's weight: the stock composite adds ~1-2 sRGB levels in shade (A/B: t7ParkCrane luma p25 67.7 -> 68.1
+  // with every other BS36 term on), a fraction of what a lit canyon reflects into its shade; the ray-marched gather replaces it
+  // (E / pi times the albedo proxy is the physical bounce) and `bsgik` (1) multiplies it
+  const cb = 'gl_FragColor = vec4(base.rgb + gi * alb * uStrength, base.a);';
+  if (cm.fragmentShader.split(ca).length === 2 && cm.fragmentShader.split(cb).length === 2) {
+    cm.fragmentShader = cm.fragmentShader.replace(ca, ca.replace('0.35', (0.35 / Math.max(0.5, Math.min(3, 1 + 0.75 * BS.gi))).toFixed(3)))
+      .replace(cb, `gl_FragColor = vec4(base.rgb + gi * alb * (uStrength * ${Math.max(0, Math.min(6, BS.gik)).toFixed(3)}), base.a);`);
+    cm.needsUpdate = true;
+  } else console.warn('[bs36] SSGI composite changed; albedo proxy and gain not adjusted');
+  const setSize0 = p.setSize.bind(p);
+  p.setSize = (w, h) => { setSize0(w, h); p.rtB.setSize(Math.max(2, w >> 1), Math.max(2, h >> 1)); };
+  p.render = function (renderer, writeBuffer, readBuffer) {
+    if (this.compUniforms.uStrength.value >= 0.004) {
+      U.tDiffuse.value = readBuffer.texture;
+      U.uProj.value.copy(this.camera.projectionMatrix);
+      U.uInvProj.value.copy(this.camera.projectionMatrixInverse);
+      U.uSeed.value.set(BS.seed[0], BS.seed[1]);
+      const t = this.rt; this.rt = this.rtB; this.rtB = t;   // gather into the other target; the last one is the further bounce
+      U.tPrev.value = this.rtB.texture;
+      renderer.setRenderTarget(this.rt);
+      this._gather.render(renderer);
+      this.compUniforms.tGI.value = this.rt.texture;
+    }
+    this.compUniforms.tDiffuse.value = readBuffer.texture;
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this._comp.render(renderer);
+  };
+}
+// BS36 glossy ground reflection: the mirror normal drawn from a lobe round true up each sample, the march's start jittered
+function bsInitSSR(p) {
+  const m = p._quad.material;
+  let f = m.fragmentShader;
+  const rep = (a, b) => { const n = f.split(a).length - 1; if (n !== 1) throw new Error('[bs36] ssr anchor x' + n + ': ' + a.slice(0, 40)); f = f.replace(a, b); };
+  rep('uniform vec3 uSkyCol; uniform float uSkyAmt2; uniform float uWetDark;', 'uniform vec3 uSkyCol; uniform float uSkyAmt2; uniform float uWetDark; uniform vec2 uSeed; uniform float uRough;');
+  rep('vec3 r = reflect(vd, uUpView);', `float ignS = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          vec3 tA = normalize(abs(uUpView.z) < 0.9 ? cross(uUpView, vec3(0.0, 0.0, 1.0)) : cross(uUpView, vec3(1.0, 0.0, 0.0)));
+          vec3 tB = cross(uUpView, tA);
+          float lr = uRough * sqrt(fract(uSeed.x + ignS)), la = 6.28318 * fract(uSeed.y + ignS * 0.61803);
+          vec3 r = reflect(vd, normalize(uUpView + (tA * cos(la) + tB * sin(la)) * lr));
+          if (dot(r, uUpView) < 0.02) r = reflect(vd, uUpView);`);
+  rep('vec3 q = p;', 'vec3 q = p + r * (stepL * fract(ignS + uSeed.y * 0.7548777));');
+  m.fragmentShader = f;
+  Object.assign(p.uniforms, { uSeed: { value: new THREE.Vector2(0.5, 0.5) }, uRough: { value: 0.06 * BS.ssr } });
+  m.needsUpdate = true;
+  const r0 = p.render.bind(p);
+  p.render = (renderer, writeBuffer, readBuffer) => { p.uniforms.uSeed.value.set(BS.seed[0], BS.seed[1]); r0(renderer, writeBuffer, readBuffer); };
+}
+// BS36 ambient occlusion: the kernel rotation (GTAO's 5x5 magic-square noise tile, nearest-sampled) is offset by whole texels
+// each sample, so every pixel visits the tile's 25 rotations over 25 samples; more directions, a lighter denoise
+function bsInitAO(g, samples) {
+  const m = g.gtaoMaterial;
+  let f = m.fragmentShader;
+  const a1 = 'uniform sampler2D tNoise;', a2 = 'vec2 noiseUv = vUv * resolution / noiseResolution;';
+  if (f.split(a1).length !== 2 || f.split(a2).length !== 2) { console.warn('[bs36] GTAO shader changed; AO not stochastic'); return; }
+  m.fragmentShader = f.replace(a1, a1 + '\nuniform vec2 uBsOff;').replace(a2, 'vec2 noiseUv = vUv * resolution / noiseResolution + uBsOff;');
+  m.uniforms.uBsOff = { value: new THREE.Vector2() };
+  m.needsUpdate = true;
+  g.updateGtaoMaterial({ samples });
+  const r0 = g.render.bind(g);
+  g.render = (renderer, writeBuffer, readBuffer, dt, mask) => {
+    const k = BS.k;
+    m.uniforms.uBsOff.value.set((k % 5) / 5, (Math.floor(k / 5) % 5) / 5);
+    return r0(renderer, writeBuffer, readBuffer, dt, mask);
+  };
+}
+// BS36 light shafts: the air in the near shadow box scatters the key sun where the near shadow map says it is lit. A 40-step
+// march from the lens to the surface (at most ~220 m) at a jittered start, Henyey-Greenstein phase (g 0.6) under a ceiling of
+// 1.2 (a lens facing a low sun was veiled: t7ValleyTrain's median 119 -> 150 at twice this density without it), transmittance to
+// the lens; a third of the extinction is applied to what lies behind (the haze pass keeps the aerial perspective)
+class BSVolPass extends Pass {
+  constructor(camera, depthTexture, engine) {
+    super();
+    this.camera = camera; this.engine = engine;
+    this.uniforms = {
+      tDiffuse: { value: null }, tDepth: { value: depthTexture }, tShadow: { value: null },
+      uInvProj: { value: new THREE.Matrix4() }, uCamMat: { value: new THREE.Matrix4() }, uShadowMat: { value: new THREE.Matrix4() },
+      uCamPos: { value: new THREE.Vector3() }, uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunE: { value: new THREE.Color(0, 0, 0) },
+      uDen: { value: 0 }, uG: { value: 0.6 }, uMax: { value: 220 }, uExt: { value: 0.35 }, uCap: { value: 1.2 }, uSeed: { value: new THREE.Vector2(0.5, 0.5) },
+    };
+    this._quad = new FullScreenQuad(new THREE.ShaderMaterial({
+      uniforms: this.uniforms, depthTest: false, depthWrite: false, vertexShader: BS_VS,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D tDiffuse; uniform sampler2D tDepth; uniform sampler2DShadow tShadow;
+        uniform mat4 uInvProj, uCamMat, uShadowMat; uniform vec3 uCamPos, uSunDir, uSunE;
+        uniform float uDen, uG, uMax, uExt, uCap; uniform vec2 uSeed;
+        varying vec2 vUv;
+        ${NF_GLSL}
+        void main() {
+          vec4 base = texture2D(tDiffuse, vUv);
+          gl_FragColor = base;
+          if (uDen < 1e-7) return;
+          float d = texture2D(tDepth, vUv).x;
+          vec4 vp = uInvProj * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+          vec3 viewP = vp.xyz / vp.w;
+          float dist = length(viewP);
+          vec3 rd = normalize((uCamMat * vec4(viewP, 0.0)).xyz);
+          float L = min(dist, uMax);
+          float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+          float j = fract(ign + uSeed.x);
+          float ds = L / 40.0;
+          float acc = 0.0;
+          for (int i = 0; i < 40; i++) {
+            float t = (float(i) + j) * ds;
+            vec4 sc = uShadowMat * vec4(uCamPos + rd * t, 1.0);
+            vec3 c = sc.xyz / sc.w;
+            float vis = 1.0;
+            if (c.x > 0.0 && c.x < 1.0 && c.y > 0.0 && c.y < 1.0 && c.z < 1.0) vis = texture(tShadow, vec3(c.xy, c.z - 0.0004));
+            acc += vis * exp(-uDen * t);
+          }
+          acc *= ds;
+          float g2 = uG * uG;
+          float ph = (1.0 - g2) / (12.566371 * pow(max(1e-4, 1.0 + g2 - 2.0 * uG * dot(rd, uSunDir)), 1.5));
+          vec3 sE = uSunE * ph;
+          sE *= min(1.0, uCap / max(1e-4, max(sE.r, max(sE.g, sE.b))));   // a ceiling on the forward peak (no veil into the sun)
+          vec3 o = base.rgb * mix(1.0, exp(-uDen * L), uExt) + sE * (uDen * acc);
+          gl_FragColor = vec4(nfBad3(o) ? base.rgb : o, base.a);
+        }`,
+    }));
+    this._d = new THREE.Vector3();
+  }
+  render(renderer, writeBuffer, readBuffer) {
+    const e = this.engine, s = e.sun, U = this.uniforms;
+    const map = s.shadow.map && s.shadow.map.depthTexture;
+    this._d.subVectors(s.position, s.target.position).normalize();
+    const up = Math.max(0, Math.min(1, (this._d.y + 0.02) * 10));   // a sun under the horizon scatters nothing
+    U.uDen.value = map ? 0.0005 * BS.vol * up : 0;   // per metre
+    U.tShadow.value = map || null;
+    U.uShadowMat.value.copy(s.shadow.matrix);
+    U.uSunDir.value.copy(this._d);
+    U.uSunE.value.copy(s.color).multiplyScalar(s.intensity + (e.sun2 ? e.sun2.intensity : 0));
+    U.uMax.value = Math.min(220, (e._S || 150) * 1.2);
+    U.uSeed.value.set(BS.seed[0], BS.seed[1]);
+    U.tDiffuse.value = readBuffer.texture;
+    U.uInvProj.value.copy(this.camera.projectionMatrixInverse);
+    U.uCamMat.value.copy(this.camera.matrixWorld);
+    U.uCamPos.value.setFromMatrixPosition(this.camera.matrixWorld);
+    renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
+    this._quad.render(renderer);
+  }
+}
 // Scene pre-pass: renders into a DEDICATED color+depth target that is never
 // a draw target again during the frame — the only feedback-proof way to hand
 // scene depth to later passes — then copies color into the composer chain.
@@ -434,6 +672,32 @@ const BL26 = !(typeof location !== 'undefined' && new URLSearchParams(location.s
 // halo breathes with its pixel coverage. After dark the high-pass keeps at most 4x white per channel: a small source
 // glows like a small source; lit glass, signs and wet streaks (1-4) are untouched. `?bc26=0` restores it.
 const BC26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('bc26') === '0');
+// GL36 (AR34, the teaser 7 / 8 night takes): white vehicle bodies and zebra stripes near the lens glowed with a halo, as if
+// lit from inside. After dark the bloom threshold is 0.85 and UnrealBloom's high-pass passes the WHOLE texel of every pixel
+// over it (a step 0.01 wide); a lamp-lit white surface sits at 0.9-1.6 (shown at ~205-225), so it bloomed at full value: a
+// zebra under a lamp +40 levels (t8MuseumGlide f000, mean 166 -> 206), white vans and police cars up to +40. Not the
+// bullshot passes: bullshot=0, bullshot=1 and bsgi=0 render it alike, the bounce adds under 2 levels. After dark the step
+// is a soft knee from 0.85 to 0.85 + `gl36k` (2.0): a lit surface near the threshold passes almost nothing (the zebra +9),
+// a lamp head, a headlamp or a light bar at many times white keeps its bloom (a lamp head ~3/4 of its halo; the rest was
+// its edge samples under the knee). Nothing changes at dusk (night 0.55), golden or day. `?gl36=0` restores the step.
+// docs/notes/ar34-glow.md
+const GL36 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gl36') === '0');
+const GL36_K = (() => { const v = typeof location !== 'undefined' ? parseFloat(new URLSearchParams(location.search).get('gl36k')) : NaN; return Number.isFinite(v) && v >= 0 ? v : 2.0; })();
+// LK34 (AR34 wave 2, the "flatness" of the 125th Street plates). against the twin at
+// the same lens (c120, s120, s351; luma percentiles of the 1600x900 plates): the photographs' 1st / 5th percentiles are
+// 2-11 / 9-21, the twin's 12-19 / 25-36, and the photographs' 99th runs to 218-228 where the twin's stops at 170-216:
+// the twin's range is lifted at the bottom and compressed at the top. By day the grade sets a black point and a white
+// point (levels before the S-curve), relaxing after dusk; a second, contact-scale AO (0.55 m) darkens the reveals, sills,
+// soffits and the foot of every wall that the 3.4 m pass blurs away. `?lk34=0` restores the previous look; `?cao=0`
+// drops the contact AO alone.
+const LK34 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('lk34') === '0');
+const CAO34 = LK34 && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cao') === '0');
+// sky where the twin's plates stopped at 168-216 (AgX's long shoulder under a grade whose S-curve flattens toward
+// white). The grade lifts the top of the range by day (uHi, a shoulder that leaves everything under 0.55 and pure white
+// where they are), and its clarity term fades out across hard edges (uDefE: the +10-20 halo round a crown against a pale
+// wall, TREES 19:15). `?hl34=0` restores both.
+const HL34 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('hl34') === '0');
+const HL34_HI = 0.12;   // knee 0.55 (at 0.45 / 0.11 the medians of bright frames rose ~10: fdb280 157.8 -> 168.1, photo 135.9)
 // Screen-space god rays: quarter-res sky/sun occlusion mask -> 48-tap radial
 // march toward the projected sun -> additive composite. Sun screen position
 // and off-screen/behind-camera fade are computed CPU-side each frame.
@@ -789,6 +1053,31 @@ if (SC31) {
 // 150 frames: a hitch every 2.5-5 s of play. One face a frame now, each at the capture's position; the SH lands five
 // frames later. `?ps29=1` turns it on.
 const PS29 = { on: typeof location !== 'undefined' && new URLSearchParams(location.search).get('ps29') === '1' };   // opt-in until measured
+// CC37 (owner 2026-10-03, the Central Park explainer: a one-frame pop every 36 frames, t4Lake's nearest trees softening):
+// three r185's CubeCamera does not set `isCubeCamera`, so the hooks that skip a cube capture's faces (city/cpFloraKit.js
+// lodSet and the lawn grass, world/vg37.js, world/vg36Pits.js test `cam.parent.isCubeCamera`) ran for every probe face and
+// read the face camera's LOCAL position, (0, 0, 0): the park's tree sets re-binned round the world origin, the near
+// willows and elms dropping to their mid forms, until the view's own trigger re-binned them. The sun's shadow map is drawn
+// before that trigger runs and the recorder holds it for the frame's accumulation samples, so a frame whose stepped render
+// followed a capture took its tree shadows from the coarse forms. The fleet's reflection probe (sim/fleet24.js) captures
+// every 1.2 s = 36 frames, face 0 on a stepped frame; the light probe, the water and fountain probes did it when they fell
+// on one. The flag is set here, for every cube camera; `?cc37=0` restores.
+const CC37 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cc37') === '0');
+if (CC37 && THREE.CubeCamera && !THREE.CubeCamera.prototype.isCubeCamera) THREE.CubeCamera.prototype.isCubeCamera = true;
+// NB37 (t4Crane f88, on every recording): the near cascade's box follows the lens height in 5 % steps (nearExtent), and
+// each step changes the map's texel and re-snaps its grid, so the cast shadows near the lens jumped by up to half a texel
+// in one frame (a crane coming down to the fountain stepped at f35, f61 and f88). While recording, the boxes hold the
+// extent of the take's highest point (main.js PathCam.setPath sets shadowHoldY from the path) when that is at most 1.5x
+// the extent at its lowest, so the take has one shadow grid throughout; a bigger rise keeps the steps (SC31 hides the
+// box's edge). `?nb37=0` restores.
+const NB37 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('nb37') === '0');
+// FP37 (owner 2026-10-03 on the explainer: "the benches change shadows/LOD with distance very noticeably", "flickering on the
+// trees", "I'd prefer if captures didn't have random popups / flicker errors with shadows etc."): THE FILM POLICY. While
+// recording, nothing visible may change LOD, appear, vanish or drop its shadow within a take. main.js PathCam.setPath
+// publishes the take's path (window.__FP37) and every distance-driven switch holds the state the take's nearest approach
+// needs, chosen once per take (city/cpFloraKit.js lodSet, city/cpFlora.js, world/vg37.js, city/pk/props.js, ...; the list
+// is in docs/notes/engine-qa.md "ENGINE2, FP37"). `?fp37=0` restores the per-frame switches.
+export const FP37 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('fp37') === '0');
 if (typeof window !== 'undefined') window.__PS29 = (on) => { PS29.on = !!on; return PS29.on; };   // live A/B
 // N11 (docs/notes/night-r11.md): `?n11=0` restores the round-10 night rig, which in
 // this file means the probe's hard darkness rejection. Read locally rather than
@@ -802,6 +1091,7 @@ const N11 = !(typeof location !== 'undefined' && new URLSearchParams(location.se
 //   y=552  near +/-700 (34 cm)         far +/-2600 (2.54 m)
 const nearExtent = (camY) => Math.max(150, Math.min(700, 150 + Math.max(0, camY) * 1.1));
 const far2Extent = (camY) => Math.max(1150, Math.min(2600, 1050 + Math.max(0, camY) * 3.2));
+export const nb37Hold = (yMin, yMax) => (NB37 && nearExtent(yMax) <= 1.5 * nearExtent(yMin) ? yMax : null);   // NB37: the height a take's boxes hold
 // ...and so does the key split between them (weather.js reads engine.shadowMix).
 // At eye level the near map does the work and the far map is only aerial
 // perspective, so it must not leak shadow strength: 0.88/0.12. From an aerial
@@ -875,11 +1165,12 @@ const GAUSS32 = (() => {
 })();
 
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uVig: { value: 0.2 }, uSat: { value: 1.07 }, uCon: { value: 0.16 }, uWarm: { value: 0.05 }, uTintG: { value: 0.0 }, uSharp: { value: 0.4 }, uDef: { value: 0.25 }, uTexel: { value: new THREE.Vector2(1 / innerWidth, 1 / innerHeight) }, uGrain: { value: 0.05 }, uCA: { value: 0.35 }, uTimeG: { value: 0 } },
+  uniforms: { tDiffuse: { value: null }, uVig: { value: 0.2 }, uSat: { value: 1.07 }, uCon: { value: 0.16 }, uWarm: { value: 0.05 }, uTintG: { value: 0.0 }, uSharp: { value: 0.4 }, uDef: { value: 0.25 }, uTexel: { value: new THREE.Vector2(1 / innerWidth, 1 / innerHeight) }, uGrain: { value: 0.05 }, uCA: { value: 0.35 }, uTimeG: { value: 0 }, uBlk: { value: 0 }, uWht: { value: 1 }, uHi: { value: 0 }, uDefE: { value: 0 } },
   vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform float uVig; uniform float uSat; uniform float uCon; uniform float uWarm; uniform float uTintG;
     uniform float uSharp; uniform float uDef; uniform vec2 uTexel; uniform float uGrain; uniform float uCA; uniform float uTimeG;
+    uniform float uBlk; uniform float uWht; uniform float uHi; uniform float uDefE;
     varying vec2 vUv;
     void main(){
       vec4 c = texture2D(tDiffuse, vUv);
@@ -918,6 +1209,9 @@ const GradeShader = {
         float dHp = lc - lw * 0.125;
         float mid = smoothstep(0.02, 0.18, lc) * smoothstep(1.0, 0.72, lc); // protect deep shadows + highlights
         float gain = clamp(dHp * uDef * 1.4, -0.12, 0.12) * mid;
+        // HL34: clarity is for texture, not silhouettes: at a hard edge (a crown against a pale wall) the 4-texel lift drew
+        // a +10-20 halo (TREES 19:15); fade it out over the edge's own step
+        gain *= 1.0 - uDefE * smoothstep(0.06, 0.22, abs(dHp));
         c.rgb *= 1.0 + gain / max(lc, 0.06);
       }
       // filmic S-curve + split tone. The split used to run WARM IN THE
@@ -928,7 +1222,11 @@ const GradeShader = {
       // that one term, not the haze, was most of the "pale cyan-to-cream sky".
       // Now: warm the shadows and mids (where masonry bounce actually lives),
       // let the highlights keep their own colour.
+      // LK34 levels: black and white point (engine.setBloom drives them by time of day; 0 / 1 = off)
+      c.rgb = clamp((c.rgb - uBlk) / max(uWht - uBlk, 0.5), 0.0, 1.0);
       c.rgb = mix(c.rgb, c.rgb * c.rgb * (3.0 - 2.0 * c.rgb), uCon);
+      // AgX's long shoulder stopped the twin at 168-216; lift the top of the range (nothing under 0.55, white stays white)
+      c.rgb += uHi * smoothstep(0.55, 1.0, c.rgb) * (1.0 - c.rgb) * 4.0;
       float l0 = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
       float shW = 1.0 - smoothstep(0.10, 0.72, l0);
       c.rgb += vec3(uWarm, uWarm * 0.45, -uWarm * 0.6) * shW;
@@ -947,6 +1245,110 @@ const GradeShader = {
       gl_FragColor = c;
     }`,
 };
+
+// DP37 (owner 2026-10-03, the Central Park explainer's overhead take at 1,480 m: "the buildings have immense z fighting"):
+// the lens's near plane was 0.4 m in every view, so a 24-bit depth buffer resolved z^2 / (0.4 * 2^24) m at distance z:
+// 0.33 m over the explainer's roofs (1,480 m down), 0.15 m at 1 km, 0.6 m at 2 km of a 300 m aerial's skyline. Every
+// surface laid a few cm over another (the back yards' planting over the lot, roof gardens and roof tables over the roof,
+// the far terrain 0.4 m under the tiles' ground) then took turns with it frame by frame. The near plane now follows what
+// the view actually holds: after the render the frame's depth is reduced to its minimum (two 8x8 min passes, ~920 texels
+// read back) and the next frames draw with near = 0.4 + max(0, z_min / 2 - 10) m, capped by the lens's height over the
+// ground under it (0.25 x (h - 60) m: nothing changes below 60 m, so the street and the park's low takes keep 0.4 m) and
+// by a visible sheet that writes no depth (the cloud deck: half the lens's height over it) or an object flagged
+// userData.nearCap (the rain): the overhead take draws with ~350 m (under 1 mm of depth at its roofs). The plane only
+// grows 15 % a measurement and drops at once: to 0.4 m when the minimum comes within 1.3x of it (something reached the
+// plane) or the lens jumps, so a bad reading cannot cut the view open. Record mode measures on the first three
+// accumulation samples of each stepped frame (the pose is fixed for the rest); the live view every 4th frame; neither
+// under 60 m over the ground. `?dp37=0` keeps 0.4 m.
+const DP37 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('dp37') === '0');
+const DP37_N0 = 0.4;
+class DepthNear {
+  constructor(depthTexture) {
+    this.depth = depthTexture;
+    this.near = DP37_N0; this.zMin = 0; this.n = 0; this.resets = 0;
+    this._pos = null; this.buf = null;
+    const vs = 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }';
+    // each output texel the minimum of an 8x8 block of the source (depth 1.0 = sky / nothing: ignored unless all of it)
+    const fs = (fetch) => /* glsl */ `
+      uniform sampler2D tSrc; uniform ivec2 uSize;
+      void main() {
+        ivec2 o = ivec2(gl_FragCoord.xy) * 8;
+        float m = 1.0;
+        for (int j = 0; j < 8; j++) for (int i = 0; i < 8; i++) {
+          ivec2 q = o + ivec2(i, j);
+          if (q.x >= uSize.x || q.y >= uSize.y) continue;
+          float d = ${fetch};
+          m = min(m, d);
+        }
+        gl_FragColor = vec4(m, 0.0, 0.0, 1.0);
+      }`;
+    const mk = (fetch) => new FullScreenQuad(new THREE.ShaderMaterial({
+      uniforms: { tSrc: { value: null }, uSize: { value: new THREE.Vector2(1, 1) } },
+      depthTest: false, depthWrite: false, vertexShader: vs, fragmentShader: fs(fetch),
+    }));
+    this.qa = mk('texelFetch(tSrc, q, 0).x');
+    this.qb = mk('texelFetch(tSrc, q, 0).x');
+    this.ra = null; this.rb = null;
+  }
+  _targets(w, h) {
+    const wa = Math.ceil(w / 8), ha = Math.ceil(h / 8), wb = Math.ceil(wa / 8), hb = Math.ceil(ha / 8);
+    const opt = { type: THREE.FloatType, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false };
+    if (!this.ra || this.ra.width !== wa || this.ra.height !== ha) {
+      this.ra?.dispose(); this.rb?.dispose();
+      this.ra = new THREE.WebGLRenderTarget(wa, ha, opt); this.rb = new THREE.WebGLRenderTarget(wb, hb, opt);
+      this.buf = new Float32Array(wb * hb * 4);
+    }
+  }
+  // before the render: the lens's near for this frame (a jump of the lens starts again from 0.4 m)
+  apply(camera, scene, groundAt) {
+    const p = camera.position;
+    // the lens's height over the ground under it: a reading that missed something can never put the plane past it
+    const gy = groundAt ? groundAt(p.x, p.z) : null, h = p.y - (Number.isFinite(gy) ? gy : 0);
+    // a jump (a teleport, a cut) starts again from 0.4 m; a fast aerial's own move (15-20 m a frame at 1 km) is not one
+    if (this._pos && this._pos.distanceTo(p) > Math.max(30, 0.5 * h)) this._reset();
+    (this._pos = this._pos || new THREE.Vector3()).copy(p);
+    let cap = 0.25 * (h - 60);
+    // under 60 m over the ground the cap holds the plane at 0.4 m anyway: no measurement (no read-back stall on the street)
+    this.active = cap > DP37_N0;
+    if (!this.active) this.near = DP37_N0;
+    // a visible sheet that writes no depth (the cloud deck at 780 m) is not in the minimum: keep it outside the near plane
+    for (const o of scene.children) {
+      if (!o.visible) continue;
+      if (o.userData && o.userData.nearCap !== undefined) cap = Math.min(cap, +o.userData.nearCap || DP37_N0);
+      else if (o.isMesh && o.material && o.material.transparent && o.material.depthWrite === false && o.geometry?.parameters?.width >= 1000)
+        cap = Math.min(cap, 0.5 * Math.abs(p.y - o.position.y));
+    }
+    const want = Math.max(DP37_N0, Math.min(this.near, cap));
+    if (camera.near !== want) { camera.near = want; camera.updateProjectionMatrix(); }
+  }
+  _reset() { if (this.near !== DP37_N0) this.resets++; this.near = DP37_N0; }
+  // after the render: the frame's nearest depth, and the near plane for the next frames
+  measure(renderer, camera) {
+    const W = this.depth.image?.width || 0, H = this.depth.image?.height || 0;
+    if (!W || !H) return;
+    this._targets(W, H);
+    const rt0 = renderer.getRenderTarget();
+    try {
+      this.qa.material.uniforms.tSrc.value = this.depth; this.qa.material.uniforms.uSize.value.set(W, H);
+      renderer.setRenderTarget(this.ra); this.qa.render(renderer);
+      this.qb.material.uniforms.tSrc.value = this.ra.texture; this.qb.material.uniforms.uSize.value.set(this.ra.width, this.ra.height);
+      renderer.setRenderTarget(this.rb); this.qb.render(renderer);
+      renderer.readRenderTargetPixels(this.rb, 0, 0, this.rb.width, this.rb.height, this.buf);
+    } catch (e) { renderer.setRenderTarget(rt0); this._reset(); return; }
+    renderer.setRenderTarget(rt0);
+    let d = 1;
+    for (let i = 0; i < this.buf.length; i += 4) if (this.buf[i] < d) d = this.buf[i];
+    this.n++;
+    if (!(d < 1)) return;   // nothing but sky
+    // window depth -> view distance with the near / far this frame was drawn with
+    const n = camera.near, f = camera.far;
+    const z = (n * f) / (f - d * (f - n));
+    this.zMin = z;
+    if (z < n * 1.3) { this._reset(); return; }
+    const want = DP37_N0 + Math.max(0, 0.5 * z - 10);
+    this.near = want > this.near ? Math.min(want, this.near * 1.15 + 0.05) : want;
+  }
+}
 
 export class Engine {
   constructor(el, opts = {}) {
@@ -1015,6 +1417,7 @@ export class Engine {
     this.sun.castShadow = true;
     const sh = this.sun.shadow;
     sh.mapSize.set(4096, 4096);
+    if (BS && BS.sm >= 1024) sh.mapSize.set(BS.sm, BS.sm);   // BS36: the film's near shadow map
     // DEPTH RANGE (lighting-r6 1b/1c). This was 350..1150 with the light 700 m
     // up-sun of the camera, i.e. a slab from 350 m up-sun to 450 m down-sun.
     // Measured at the day preset (elev 42): a caster in the up-sun corner of the
@@ -1129,12 +1532,17 @@ export class Engine {
     // post chain: render -> (GTAO) -> bloom -> SMAA -> output -> grade
     this.composer = new EffectComposer(this.renderer);
     this.prepass = new ScenePrePass(this.scene, this.camera);
+    this.dp37 = DP37 ? new DepthNear(this.prepass.rt.depthTexture) : null;   // DP37: the near plane from the frame's depth
+    // QA37: what can make a recorded frame pop, counted as it happens (main.js __REC_FRAME hands the counts to the recorder)
+    this.popEvents = { nearBox: 0, farBox: 0, farMap: 0, probe: 0, lod: 0 };   // lod: FP37's in-view form / level switches (lodSet, THREE.LOD)
     this.prepass.needsSwap = true;
     this.composer.addPass(this.prepass);
     this.ssr = new GroundSSRPass(this.camera, this.prepass.rt.depthTexture);
     this.composer.addPass(this.ssr);
     this.ssgi = new SSGIPass(this.camera, this.prepass.rt.depthTexture);
     this.composer.addPass(this.ssgi);
+    if (BS && BS.ssr > 0) bsInitSSR(this.ssr);   // BS36
+    if (BS && BS.gi > 0) bsInitSSGI(this.ssgi);   // BS36
     const q = new URLSearchParams(location.search);
     if (q.get('ao') !== '0') { // works in SwiftShader shots too now (external depth g-buffer)
       // feed the prepass depth as the g-buffer: alpha-cutout foliage renders
@@ -1155,9 +1563,22 @@ export class Engine {
       gtao.updatePdMaterial({ lumaPhi: 12, depthPhi: 2.5, normalPhi: 4, radius: 8, rings: 3, samples: 12 });
       this.composer.addPass(gtao);
       this.gtao = gtao; // editor drives blendIntensity
+      if (BS && BS.ao > 0) { bsInitAO(gtao, 32); gtao.updatePdMaterial({ radius: 5 }); }   // BS36
+      if (CAO34) {
+        // LK34 contact AO: the same depth-derived GTAO at a 0.55 m radius, lightly denoised so the crease stays a crease
+        const cao = new GTAOPass(this.scene, this.camera, innerWidth, innerHeight);
+        cao.setGBuffer(this.prepass.rt.depthTexture);
+        cao.updateGtaoMaterial({ radius: 0.55, distanceExponent: 1.2, thickness: 0.5, scale: 1.0, samples: 12 });
+        cao.updatePdMaterial({ lumaPhi: 10, depthPhi: 3, normalPhi: 5, radius: 4, rings: 2, samples: 8 });
+        cao.blendIntensity = 0.85;
+        this.composer.addPass(cao);
+        this.cao = cao;
+        if (BS && BS.ao > 0) bsInitAO(cao, 16);   // BS36
+      }
     }
     this.haze = new HazePass(this.camera, this.prepass.rt.depthTexture);
     this.composer.addPass(this.haze);
+    if (BS && BS.vol > 0) { this.bsVol = new BSVolPass(this.camera, this.prepass.rt.depthTexture, this); this.composer.addPass(this.bsVol); }   // BS36
     this.godrays = new GodraysPass(this.camera, this.prepass.rt.depthTexture);
     this.godrays.enabled = false; // weather.update drives via setSun
     this.composer.addPass(this.godrays);
@@ -1274,6 +1695,7 @@ export class Engine {
       if (this._probeNext) { const go = this._probeNext; this._probeNext = null; go(); }   // PS29: the capture's next face
       if ((warmP ? this.frames % 24 === 12 : this.frames % 150 === 40) && !this._probeBusy && this.probeGoal > 0) this._updateProbe();
       if (this._probeHas) this.probeOn = Math.min(1, this.probeOn + dt * 0.7);
+      if (this.dp37 && !this.segRender && !this.gtRaw) this.dp37.apply(this.camera, this.scene, this.groundAt);   // DP37
       // TAA jitter + deep accumulation ONLY while the camera is (near) still —
       // that is when facade pixelation shows; in motion we drop to a light
       // temporal blend + SMAA, which kills both visible jitter shake and the
@@ -1312,6 +1734,7 @@ export class Engine {
           this._jittered = true;
         } else this._jittered = false;
       }
+      if (BS) this._bsSample();   // BS36: this sample's seed and sun
       const tr0 = performance.now();
       if (this._sortCamPos) this._sortCamPos.copy(this.camera.position);
       if (this.segRender) {
@@ -1324,7 +1747,12 @@ export class Engine {
         this.renderer.toneMapping = THREE.NoToneMapping;
         this.renderer.render(this.scene, this.camera);
         this.renderer.toneMapping = tm;
-      } else this.composer.render();
+      } else {
+        this.composer.render();
+        // DP37: the depth this frame drew, reduced to its nearest point (record mode: the first three samples of a stepped
+        // frame, the pose then holds; the live view every 4th frame)
+        if (this.dp37 && this.dp37.active && ((ACCUM && this.recordMode) ? (this._accK ?? 0) < 3 : this.frames % 4 === 0)) this.dp37.measure(this.renderer, this.camera);
+      }
       // TEAR-PROOF CAPTURE (2026-09-17): `engine.capture()` resolves with the canvas read back in the SAME task as the
       // draw above. Playwright's page.screenshot() races the compositor and returned a dark rectangle over most of the
       // canvas on 68 of 3507 film frames (long sim frames: tile stream-ins); a toDataURL here cannot tear because the
@@ -1368,6 +1796,29 @@ export class Engine {
     // whole rig (sun, hemi, env, haze, bloom) live from the page
     if (typeof window !== 'undefined') window.__ENGINE = this;
   }
+  // BS36: the seed of this accumulation sample and the sun drawn over the solar disc. updateSun has put the light back on the
+  // sun's centre this frame (main.js onFrame), so the offset never compounds; record mode only.
+  _bsSample() {
+    const rec = !!(ACCUM && this.recordMode && this.taa);
+    const k = rec ? (this._accK ?? 0) : 0;
+    BS.k = k;
+    BS.seed[0] = (0.5 + 0.7548776662 * k) % 1; BS.seed[1] = (0.5 + 0.5698402910 * k) % 1;
+    const s = this.sun;
+    if (!rec || !(BS.sun > 0) || !s || !this.sunTarget) return;
+    const d = this._bsD || (this._bsD = new THREE.Vector3()), a = this._bsA || (this._bsA = new THREE.Vector3()), b = this._bsB || (this._bsB = new THREE.Vector3());
+    d.subVectors(s.position, this.sunTarget.position);
+    const len = d.length();
+    if (!(len > 1)) return;
+    d.divideScalar(len);
+    a.set(0, 1, 0); if (Math.abs(d.y) > 0.95) a.set(1, 0, 0);
+    a.cross(d).normalize(); b.crossVectors(d, a);
+    // uniform over the disc (radius sqrt(u), angle 2 pi v) on its own stretch of the R2 sequence
+    const u = (0.5 + 0.7548776662 * (k + 11)) % 1, v = (0.5 + 0.5698402910 * (k + 11)) % 1;
+    const r = Math.sqrt(u) * Math.tan((BS.sun * Math.PI) / 360), th = 2 * Math.PI * v;
+    d.addScaledVector(a, r * Math.cos(th)).addScaledVector(b, r * Math.sin(th)).normalize();
+    s.position.copy(this.sunTarget.position).addScaledVector(d, len);
+    s.shadow.needsUpdate = true;   // the recorder freezes the map for its samples; this one is drawn again
+  }
   async _meterExposure() {
     this._meterBusy = true;
     try {
@@ -1388,8 +1839,9 @@ export class Engine {
       // above the 0.18 of a photographic grey card and asked a correctly exposed
       // street to go BRIGHTER — that lift is a large part of what reads as veil.
       if (!Number.isFinite(avg)) throw new Error('meter NaN');   // a NaN pixel in the readback must not reach autoExpo
-      const want = Math.min(1.35, Math.max(0.70, this.expoTarget / Math.max(avg, 1e-4)));
-      this.autoExpo += (want - this.autoExpo) * 0.06; // slow adaptation
+      // AE35 (world/sky.js): by day the floor 0.35 and a faster settle; 0.70 and 0.06 everywhere else
+      const want = Math.min(1.35, Math.max(this.aeMin ?? 0.70, this.expoTarget / Math.max(avg, 1e-4)));
+      this.autoExpo += (want - this.autoExpo) * (this.aeRate ?? 0.06); // slow adaptation
     } catch { /* readback unsupported — stays 1 */ }
     this._meterBusy = false;
   }
@@ -1410,6 +1862,11 @@ export class Engine {
   }
   async _updateProbe() {
     this._probeBusy = true;
+    // WS34 (teaser 4 v4, 2026-10-01: t4Out hazed white with a hard band at the horizon when recorded after other takes on
+    // the same page, clean on its own): a capture runs over several frames from the place it started, and one in flight
+    // when resetProbe() came in landed after it as the "first" capture, copied whole: the old place's light. A reset now
+    // bumps the generation and a capture of an older generation is dropped.
+    const gen = this._probeGen || 0;
     try {
       this._cubeCam.position.copy(this.camera.position);
       // shadow maps are fresh from the main frame — don't re-render them 6x
@@ -1468,9 +1925,13 @@ export class Engine {
         const k = 3.5449077 / Math.max(0.2, this.probeGoal || 1);
         c0.x += pf.r * k; c0.y += pf.g * k; c0.z += pf.b * k;
       }
+      if ((this._probeGen || 0) !== gen) { console.log('[gi] light probe capture from before a reset dropped'); }
+      else {
+      this.popEvents.probe++;
       if (this._probeHas) this.probe.sh.lerp(p.sh, 0.4); else { this.probe.sh.copy(p.sh); console.log('[gi] light probe live, SH L0', p.sh.coefficients[0].toArray().map((v) => v.toFixed(2)).join(',')); }
       this._probeHas = true;
       this._probeWarm = (this._probeWarm ?? 9) + 1;   // N11: leave the warm-up cadence after 5
+      }
     } catch (e) { /* capture failed — hemi ambient carries on */ }
     this._probeBusy = false;
   }
@@ -1481,6 +1942,7 @@ export class Engine {
   // blending and the warm-up cadence above runs again.
   resetProbe() {
     if (!N11) return;
+    this._probeGen = (this._probeGen || 0) + 1;   // WS34: a capture in flight is from before the reset
     this._probeHas = false;
     this.probeOn = 0;
     this._probeWarm = 0;
@@ -1520,9 +1982,24 @@ export class Engine {
     this.bloom.strength = 0.09 + night * 0.20;
     this.bloom.threshold = 2.30 - night * 1.45;
     if (BC26 && this.bloom.highPassUniforms.uBloomMax) this.bloom.highPassUniforms.uBloomMax.value = night > 0.3 ? 4.0 : 1e4;
+    // GL36: the night knee (0.01 is UnrealBloom's own width); zero at dusk (night 0.55) and below
+    this.bloom.highPassUniforms.smoothWidth.value = 0.01 + (GL36 ? GL36_K * Math.max(0, Math.min(1, (night - 0.6) / 0.3)) : 0);
     const dayW = BL26 ? Math.max(0, 1 - night / 0.05) : 0;   // BL26: 1 at full day, 0 from golden on
     this.bloom.radius = 0.26 + night * 0.10 - 0.14 * dayW;
     this.bloomDayK = 1 - 0.4 * dayW;
+    if (LK34 && this.grade) {
+      // LK34 levels: full by day, relaxing through golden hour and dusk to a token black point after dark
+      const d = Math.max(0, 1 - night / 0.35);
+      this.grade.uniforms.uBlk.value = 0.008 + 0.028 * d;
+      this.grade.uniforms.uWht.value = 1.0 - 0.03 * d;
+    }
+    if (this.grade) {
+      // HL34: the highlight shoulder and the clarity edge fade, DAY ONLY (golden, dusk and night as before: at night the
+      // fade took the lit windows' p95 down 162 -> 150 on the Lenox aerial, shots/ar34/look/b2night)
+      const d = Math.max(0, 1 - night / 0.05);
+      this.hlHi = HL34 ? HL34_HI * d : 0;   // weather.js hands it to the grade under AgX only
+      this.grade.uniforms.uDefE.value = HL34 ? d : 0;
+    }
   }
   // shadow frustum follows the player, snapped to the texel grid IN LIGHT SPACE —
   // world-space snapping leaves subpixel drift, which makes acne crawl during movement
@@ -1536,10 +2013,13 @@ export class Engine {
     const s = this.sun;
     // near cascade extent + key split follow camera height (nearExtent /
     // shadowMixFor). Rebuilding the ortho projection is only worth it past 5 %.
+    // NB37: while recording, both boxes size for the take's highest point (shadowHoldY, from the path)
+    const hy = NB37 && this.recordMode && Number.isFinite(this.shadowHoldY) ? Math.max(ty, this.shadowHoldY) : ty;
     {
-      const wantN = nearExtent(ty);
+      const wantN = nearExtent(hy);
       if (Math.abs(wantN - this._S) > this._S * 0.05) {
         this._S = wantN;
+        this.popEvents.nearBox++;   // QA37: a cascade event a recorded frame reports (tools/ad/temporal_scan.py pairs it with a pop)
         const c = s.shadow.camera;
         c.left = -wantN; c.right = wantN; c.top = wantN; c.bottom = -wantN;
         c.updateProjectionMatrix();
@@ -1584,9 +2064,10 @@ export class Engine {
       // the street, coverage from the air. Re-snap the ortho box only when it
       // has to move by more than 5 % — every change rebuilds the projection and
       // invalidates the cached depth map.
-      const want = far2Extent(ty);
+      const want = far2Extent(hy);
       if (Math.abs(want - this._S2) > this._S2 * 0.05) {
         this._S2 = want;
+        this.popEvents.farBox++;
         sh2.camera.left = -want; sh2.camera.right = want; sh2.camera.top = want; sh2.camera.bottom = -want;
         sh2.camera.updateProjectionMatrix();
         sh2.needsUpdate = true;
@@ -1601,6 +2082,7 @@ export class Engine {
       const moved = Math.hypot(tx - this._farShadowAt.x, tz - this._farShadowAt.z) > 64;
       const sunMoved = this._farShadowDir.dot(sunDir) < 0.99995;
       if (moved || sunMoved || this.sun2.shadow.needsUpdate) {
+        this.popEvents.farMap++;
         this.sun2.position.set(0, 0, 0)
           .addScaledVector(this._lsRight, r2).addScaledVector(this._lsUp, u2)
           .addScaledVector(sunDir, d).addScaledVector(sunDir, 2600);
@@ -1612,6 +2094,18 @@ export class Engine {
       }
     }
     s.target.updateMatrixWorld();
+  }
+  // FP37 telemetry: is a sphere in the view camera's frustum (the frustum cached per frame)
+  inView(x, y, z, r) {
+    if (this._ivF !== this.frames) {
+      this._ivF = this.frames;
+      this._ivFr = this._ivFr || new THREE.Frustum(); this._ivM = this._ivM || new THREE.Matrix4();
+      this.camera.updateMatrixWorld();
+      this._ivFr.setFromProjectionMatrix(this._ivM.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
+    }
+    this._ivS = this._ivS || new THREE.Sphere();
+    this._ivS.center.set(x, y, z); this._ivS.radius = r;
+    return this._ivFr.intersectsSphere(this._ivS);
   }
   // tiles streaming in add casters the cached far map has not seen
   invalidateFarShadow() { if (this.sun2) this.sun2.shadow.needsUpdate = true; }

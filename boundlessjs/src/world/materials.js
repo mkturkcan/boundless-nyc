@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { TILE } from '../shared/geo.js';
 import { fasciaTexture } from '../city/fasciaAtlas.js';  // 2 x 16 slots of 512x64 (inlined in the GLSL below)
 import { tq32Patch } from './tq32.js';   // TQ32: the Times Square towers' relief, weathering and sun occlusion (?tq32=0)
+import { vgGroundPatch } from './vg36Ground.js';   // VG36 (GROUND): the lawn floor under the blades (world/vg36Ground.js)
 
 // FS26 SKY-MATCHED FOG (owner 2026-09-25: golden hour "flat and low quality"). The far field faded into ONE colour per
 // preset (golden: a warm beige, warmed again by the horizon tint below) while the analytic sky at the horizon is a
@@ -141,6 +142,18 @@ export const ENV = {
   // FS26: the sky ring, for the shaders that take ENV as their uniforms (the water)
   fogSkyRing: { value: FOG_SKY.ring },
   fogSkyP: { value: FOG_SKY.p },
+  // CS34 (applyCityAO): x the city's share of the reflection lobe, y of the environment's diffuse, z how much paler the
+  // sky over the canyon reads, w unused; cs34Col: the street wall's colour (rgb) and level (a) against the sky's luminance
+  cs34: { value: new THREE.Vector4(0, 0, 0, 0) },
+  cs34Col: { value: new THREE.Vector4(1.0, 1.0, 0.97, 0.8) },
+  // ST34 (applyLightTrim): x the day share of the specular left on a trimmed material (1 = untrimmed, as before)
+  st34: { value: new THREE.Vector4(1, 0, 0, 0) },
+  // GS35 (makeGroundMaterial): 1 = the ground's specular trim GND_spec reaches the BRDF (three r185 shades with
+  // specularColorBlended, set inside lights_physical_fragment before the trim ran: GROUND's 06:20 finding), 0 = as before
+  gs35: { value: typeof location !== 'undefined' && new URLSearchParams(location.search).get('gs35') === '0' ? 0 : 1 },   // `?gs35=0` off
+  // RV35 (makeWaterMaterial): 1 = by day the river mirrors the far shore's buildings at low reflected elevations and takes
+  // water's own small F0, 0 = as before
+  rv35: { value: typeof location !== 'undefined' && new URLSearchParams(location.search).get('rv35') === '0' ? 0 : 1 },   // `?rv35=0` off
 };
 // LB14 — the DAY row of the four knobs above. sky.apply() writes these on `day` and the r13 row
 // (LB14_R13) on golden/dusk/night, so every non-day preset stays bit-identical by construction and
@@ -270,21 +283,72 @@ export function applySnowCap(mat, amount = 1) {
 // pass the ground's warm calibration (1.94, 1.70, 1.47) so they match the flags
 // they sit in (street audit round 3 §5) — a flat trim left every prop cooler and
 // darker than the pavement.
+// ST34 (LOOK, AR34 wave 2; VIADUCTS 19:06): the trim scaled the diffuse to 0.30 by day and left the specular whole, so on
+// a dark paint, iron or a matte metal the sheen outweighed the paint 3:1 and every dark trim read as a grey or sky-blue film. The specular of a
+// trimmed material takes ENV.st34.x of itself by day (the dielectric F0 and the F90; a metal's F0 is its trimmed colour
+// already), back to whole at night; smooth glass-like surfaces keep their mirror (untouched under roughness 0.12, the
+// whole trim from 0.28).
+// `?st34=0`: untrimmed.
+export const ST34 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('st34') === '0');
 export function applyLightTrim(mat, scale = 1) {
   const sc = Array.isArray(scale) ? scale : [scale, scale, scale];
   const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+  const st = ST34 && !!mat.isMeshStandardMaterial;
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
     sh.uniforms.ltNight = ENV.night;
+    if (st) sh.uniforms.st34 = ENV.st34;
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform float ltNight;')
+      .replace('#include <common>', '#include <common>\nuniform float ltNight;' + (st ? '\nuniform vec4 st34;' : ''))
       .replace('#include <color_fragment>', `#include <color_fragment>
       diffuseColor.rgb *= mix(0.30, 0.88, ltNight) * vec3(${sc.map((v) => v.toFixed(3)).join(', ')});`);
+    if (st) sh.fragmentShader = sh.fragmentShader.replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+      {
+        float stK = mix(mix(st34.x, 1.0, ltNight), 1.0, 1.0 - smoothstep(0.12, 0.28, material.roughness));
+        material.specularColor *= stK;
+        material.specularF90 *= stK;
+        material.specularColorBlended = mix(material.specularColor, diffuseColor.rgb, metalnessFactor);
+      }`);
   };
-  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|lighttrim' + sc.join(',');
+  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|lighttrim' + sc.join(',') + (st ? '|st34' : '');
   mat.needsUpdate = true;
   return mat;
 }
+
+// CS34 (LOOK, AR34 wave 2; BID4 19:02, MATS 19:20, KIT 19:30: dark paint, iron and metal panels read navy in shade by
+// day). The environment is the sky alone, so the reflection lobe of a wall, a cornice or a frame at street level saw open
+// sky where the real one sees the buildings across the street: a 0.04 Fresnel on a bright blue sky outweighs the diffuse
+// of a dark paint. Under the canyon's
+// skyline (seen from this height: ~33 deg at the sidewalk, the horizon from ~32 m up; MATS's pbCityK, so the city's
+// materials agree) the lobe takes the street wall instead, a near-neutral grey at cs34Col.a (0.8) of the sky's luminance
+// (MATS's 0.55 took the shaded 125th plates' medians down 2-8 levels: shots/ar34/look/b2day c120, s120), and the
+// environment's diffuse takes the same colour at the sky's level. ENV.cs34 drives both (sky.js sets them by preset);
+// MATS's own materials (userData.pbCity) keep their own reflection edit and take only the diffuse half. `?cs34=0`: off.
+export const CS34 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cs34') === '0');
+const CS34_GLSL = (spec) => `
+      if (cs34.x + cs34.y > 0.0) {
+        float csH = vCAOw.y;
+        if (cityAORect.z > 0.0) csH -= texture2D(cityAO, (vCAOw.xz - cityAORect.xy) * cityAORect.zw).g * 127.5;
+        float csHz = 0.55 * (1.0 - smoothstep(2.0, 32.0, csH));
+        ${spec ? `#if defined( RE_IndirectSpecular )
+        {
+          vec3 csR = normalize(mix(reflect(-geometryViewDir, geometryNormal), geometryNormal, pow4(material.roughness)));
+          vec3 csRw = transformDirectionByInverseViewMatrix(csR, viewMatrix);
+          float csW = 0.1 + 0.55 * material.roughness * material.roughness;
+          float csK = smoothstep(csHz - csW, csHz + csW, csRw.y);
+          float csL = dot(radiance, vec3(0.2126, 0.7152, 0.0722));
+          vec3 csSky = mix(radiance, vec3(csL), cs34.z);
+          radiance = mix(radiance, mix(csL * cs34Col.a * cs34Col.rgb, csSky, csK), cs34.x);
+        }
+        #endif` : ''}
+        {
+          vec3 csNw = transformDirectionByInverseViewMatrix(geometryNormal, viewMatrix);
+          float csKd = smoothstep(csHz - 0.75, csHz + 0.75, csNw.y);
+          float csLd = dot(iblIrradiance, vec3(0.2126, 0.7152, 0.0722));
+          iblIrradiance = mix(iblIrradiance, mix(csLd * cs34Col.rgb, iblIrradiance, csKd), cs34.y);
+        }
+      }
+`;
 
 // City-scale AO on any MeshStandardMaterial: samples the baked sky-visibility
 // field by world XZ and scales indirect diffuse/specular. Fragments fade to
@@ -299,6 +363,8 @@ export function applyCityAO(mat) {
     sh.uniforms.cityAOAmt = ENV.cityAOAmt;
     sh.uniforms.lb14Gao = ENV.lb14Gao;           // LB14 — the STREET plane takes the bake back (day only)
     if (N11) sh.uniforms.caoNight = ENV.night;   // N11 — see the height ramp below
+    const cs = CS34 && !!mat.isMeshStandardMaterial;   // CS34: radiance, iblIrradiance and material.roughness exist there
+    if (cs) { sh.uniforms.cs34 = ENV.cs34; sh.uniforms.cs34Col = ENV.cs34Col; }
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vCAOw; varying vec3 vCAOn;')
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
@@ -321,8 +387,9 @@ export function applyCityAO(mat) {
         varying vec3 vCAOw; varying vec3 vCAOn;
         uniform sampler2D cityAO; uniform vec4 cityAORect; uniform float cityAOAmt;
         uniform float lb14Gao;   // LB14
+        ${cs ? 'uniform vec4 cs34; uniform vec4 cs34Col;' : ''}
         ${N11 ? 'uniform float caoNight;' : ''}`)
-      .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+      .replace('#include <lights_fragment_end>', `${cs ? CS34_GLSL(!mat.userData.pbCity) : ''}#include <lights_fragment_end>
       if (cityAORect.z > 0.0) {
         vec2 caoUV = (vCAOw.xz - cityAORect.xy) * cityAORect.zw;
         vec2 caoS = texture2D(cityAO, caoUV).rg;
@@ -356,7 +423,7 @@ export function applyCityAO(mat) {
         reflectedLight.indirectSpecular *= mix(0.65, 1.0, caoF);
       }`);
   };
-  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|cityao' + (N11 ? 'n' : '');
+  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|cityao' + (N11 ? 'n' : '') + (CS34 && mat.isMeshStandardMaterial ? (mat.userData.pbCity ? '|cs34p' : '|cs34') : '');
   mat.needsUpdate = true;
   return mat;
 }
@@ -815,8 +882,7 @@ export function applyStoneDetail(mat, name, o = {}) {
 
 export function initGTEX(renderer) {
   (async () => {
-    const { KTX2Loader } = await import('three/addons/loaders/KTX2Loader.js');
-    const loader = new KTX2Loader().setTranscoderPath('basis/').detectSupport(renderer);
+    const loader = (await import('../city/mat/ktx2.js')).ktx2Loader(renderer);   // the app's one KTX2 loader (MATS 06:15)
     const tl = new THREE.TextureLoader();
     stoneLoaderReady(loader, tl);   // CT25
     const install = (k, t, srgb) => {
@@ -1032,10 +1098,17 @@ export function applySkyGlass(mat, o = {}) {
 export function applySkyMetal(mat, o = {}) {
   const tint = o.tint || [0.86, 0.88, 0.91], rough = o.rough ?? 0.12;
   const brush = o.brush ?? 0.7, gain = o.gain ?? 1.0;
-  const prev = mat.onBeforeCompile;
+  const prev = mat.onBeforeCompile, prevKey = mat.customProgramCacheKey;
+  // LOOK34: the tint, roughness, brush and gain are this material's uniforms, so every metal over the same base material
+  // shares one program (baked into the source they made one program per tint: 109 pbr:panel_alu programs at apFront,
+  // docs/notes/ar33-kit.md). The base material's own key is chained (wrappedKey), as the other wrappers do.
+  const smTn = { value: new THREE.Vector3(tint[0], tint[1], tint[2]) };
+  const smP = { value: new THREE.Vector4(rough, brush, gain, Math.max(rough, 0.04)) };
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
     skyReflUniforms(sh);
+    sh.uniforms.uSmTn = smTn;
+    sh.uniforms.uSmP = smP;
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vSMw;')
       .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
@@ -1043,6 +1116,7 @@ export function applySkyMetal(mat, o = {}) {
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
         varying vec3 vSMw;${SKYREFL_PARS}
+        uniform vec3 uSmTn; uniform vec4 uSmP;   // tint; rough, brush, gain, roughness floor
         ${SKYREFL_GLSL}`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       {
@@ -1053,18 +1127,18 @@ export function applySkyMetal(mat, o = {}) {
         // brushed sheet: pull the reflection vector toward the horizontal
         // plane so the highlight smears in a band, the way rolled stainless
         // does on a spire — this is the read that says "metal" at 600 m
-        Rm = normalize(mix(Rm, normalize(vec3(Rm.x, Rm.y * 0.42, Rm.z)), ${brush.toFixed(2)}));
+        Rm = normalize(mix(Rm, normalize(vec3(Rm.x, Rm.y * 0.42, Rm.z)), uSmP.y));
         float fp = length(fwidth(vSMw)) * 0.05;
-        vec3 tn = vec3(${tint.map((v) => v.toFixed(3)).join(', ')});
+        vec3 tn = uSmTn;
         // a metal has no F0 dielectric tail: reflectance is the tint, near flat
         float F = mix(1.0, 1.0 + 0.6 * pow(1.0 - max(dot(Vm, Nm), 0.0), 5.0), 0.8);
-        vec3 refl = skyLook(Rm, uSunD, uSunC, uZenC, uHorC, uRefl, 2.2) * tn * F * ${gain.toFixed(2)};
-        refl += uSunC * tn * sunDisc(Rm, uSunD, ${rough.toFixed(3)}, fp) * 10.0 * uRefl * ${gain.toFixed(2)};
+        vec3 refl = skyLook(Rm, uSunD, uSunC, uZenC, uHorC, uRefl, 2.2) * tn * F * uSmP.z;
+        refl += uSunC * tn * sunDisc(Rm, uSunD, uSmP.x, fp) * 10.0 * uRefl * uSmP.z;
         totalEmissiveRadiance += refl;
-        roughnessFactor = min(roughnessFactor, ${Math.max(rough, 0.04).toFixed(3)});
+        roughnessFactor = min(roughnessFactor, uSmP.w);
       }`);
   };
-  mat.customProgramCacheKey = () => (prev ? String(prev) : '') + '|skymetal' + tint.join(',') + rough + brush + gain;
+  mat.customProgramCacheKey = () => wrappedKey(mat, prev, prevKey) + '|skymetalU';
   mat.needsUpdate = true;
   return mat;
 }
@@ -3632,6 +3706,9 @@ const cpFarPhoto = () => {
 export const GP32 = GP31 && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('gp32') === '0');
 // ?gp32k=<x> scales the crack net's density (an inspection aid for stills; 1 = the default)
 const GP32K = (typeof location !== 'undefined' ? Math.max(0, +(new URLSearchParams(location.search).get('gp32k') || 1)) : 1).toFixed(3);
+// AK34: `?asphk=<k>` scales the asphalt scan's detail
+// contrast about its mean (the chip ratio and the 30 m scan's tone) by k; 1 = unchanged until STREET's A/B picks a value.
+const ASPHK = (typeof location !== 'undefined' ? Math.max(0, Math.min(2, +(new URLSearchParams(location.search).get('asphk') || 1))) : 1).toFixed(3);
 // GP32 crack net: block cracking on the borders of a jittered cell grid, the crack look along a line (width wandering to
 // nothing, spalled lips, a dusty dark floor), and straight joints (saw cuts, cold joints) drawn with the same look
 const GP32_NET_GLSL = /* glsl */ `
@@ -4653,12 +4730,12 @@ const GP31_SURF_GLSL = /* glsl */ `
                 // 0.042. So it peaks where those scales resolve (2-15 m), and eases off at the lens, where its 1.5 cm texels
                 // would blur over the chips
                 float mcK = mix(0.38, mix(0.88, 0.55, smoothstep(0.008, 0.003, gFw)), smoothstep(0.06, 0.012, gFw));
-                albedo *= mix(1.0, mcr, (mcK - 0.35 * GP_cut) * bare * far * outP);
+                albedo *= mix(1.0, mcr, (mcK - 0.35 * GP_cut) * bare * far * outP * ${ASPHK});
                 // the scan's contrast raised (linear about 1, so the mean holds), most where the chips resolve: measured on
                 // the display at 1.5-3 m the first GP31 stills had p10/p90 0.80/1.21 of the mean where the photographs have
                 // 0.77/1.34 (ref 01, 0.7 m) and 0.59/1.40 (ref 03, 2-4 m): light chips on a darker binder
                 float nearC = smoothstep(0.02, 0.006, gFw);
-                ratio = max(1.0 + (ratio - 1.0) * mix(1.0, mix(1.25, 1.60, nearC), far), vec3(0.12));
+                ratio = max(1.0 + (ratio - 1.0) * mix(1.0, mix(1.25, 1.60, nearC), far) * ${ASPHK}, vec3(0.12));
                 albedo *= mix(vec3(1.0), ratio * mix(1.0, ao, 0.85), bare);
                 // the cavity: a height-linear term, so it is mean-preserving and a minified road keeps its tone. Chip tops
                 // a little lighter, the binder between them darker, most in a raveled surface
@@ -4864,6 +4941,7 @@ export function makeGroundMaterial() {
     sh.uniforms.wet = ENV.wet;
     sh.uniforms.windT = ENV.windT;
     sh.uniforms.snowA = ENV.snow;
+    sh.uniforms.gs35 = ENV.gs35;   // GS35
     for (const k of ['asC', 'asN', 'asR', 'asD', 'coC', 'coN', 'grC', 'grN', 'pvC', 'pvN']) sh.uniforms['t_' + k] = { value: GTEX[k] };
     sh.uniforms.cp32lMask = CP32L_GROUND.mask; sh.uniforms.cp32lRect = CP32L_GROUND.rect; sh.uniforms.cp32lOn = CP32L_GROUND.on;   // CP32L
     if (CP32R_MASK) sh.uniforms.cpFarPhoto = { value: cpFarPhoto() };   // CP32R: the far park's ground (matId 8) from the aerial
@@ -4903,6 +4981,14 @@ export function makeGroundMaterial() {
                    // ...and campus brick (10) yields its ties: the College Walk brick ribbons run under the grey walk
                    // and the lawn beds either side of it (refs/earth/col_earth_top.png)
                    : matId == 10.0 ? -2.0 : 0.0;
+          // CPZ34 (owner 2026-10-01: "z fighting heavily in aerial shots of central park"): the park's walks are drawn over
+          // its lawn, not cut out of it, 8 mm above it after the relief (centralPark.js reliefApply), and one LSB at the
+          // teaser's 280-470 m is 12-33 mm (tools/zfight.mjs t4Dive: sidewalk x grass ratio 0.4-0.75). Inside the park's
+          // rectangle the lawn yields its ties like the campus underlay; the city's lawns keep their datum order.
+          if (matId == 5.0) {
+            vec2 cq = (modelMatrix * vec4(transformed, 1.0)).xz - vec2(447.2, 82.2);
+            if (abs(dot(cq, vec2(0.4848, -0.8746))) < 2090.0 && abs(dot(cq, vec2(0.8746, 0.4848))) < 460.0) zb = -4.0;
+          }
           gl_Position.z -= (zb / 8388608.0) * gl_Position.w;
         }`);
     sh.fragmentShader = sh.fragmentShader
@@ -6203,12 +6289,26 @@ ${GP31_SURF_GLSL}
               // late September under the canopy (the lead's 08:00 review against photographs of the Ramble: brown litter,
               // warm grey-brown to olive in shade, with green patches of understory): a warm, lighter litter, the
               // understory's greens mottled through it, no sheen (the sky's specular had tinted it slate-blue)
-              vec3 cpL = mix(vec3(0.118, 0.090, 0.058), vec3(0.160, 0.122, 0.078), cpv_l1);
-              cpL = mix(cpL, mix(vec3(0.066, 0.092, 0.036), vec3(0.090, 0.118, 0.046), cpv_l2), smoothstep(0.50, 0.80, cpv_l3) * 0.45);
-              cpL = mix(cpL, vec3(0.092, 0.074, 0.052), smoothstep(0.62, 0.88, cpv_l2) * 0.3 * gNear);
+              // CP33 LANDSCAPE: the woodland floor (review of teaser 4 v2: "bare brown soil ... an orange dirt band from the
+              // air at golden hour"): a greyer, darker litter (oak, maple and beech leaves browned to umber, not orange), the
+              // ground cover (ivy, wild ginger, mayapple, sedge) green in broad drifts and patches, sunlit leaf flecks and
+              // damp soil between them near the lens, and the litter's own bump (finite-difference noise normals)
+              vec2 cpP = vWPos.xz;
+              vec3 cpL = mix(vec3(0.088, 0.070, 0.050), vec3(0.134, 0.104, 0.074), cpv_l1);
+              float cpv_g = smoothstep(0.34, 0.64, cpv_l3 + 0.2 * (cpv_l1 - 0.5));
+              cpL = mix(cpL, mix(vec3(0.058, 0.090, 0.034), vec3(0.098, 0.130, 0.052), cpv_l2), cpv_g * 0.72);
+              float cpv_f = vnoise(cpP * 11.0 + 41.0), cpv_f2 = vnoise(cpP * 23.0 + 5.0);
+              cpL = mix(cpL, vec3(0.190, 0.136, 0.070), smoothstep(0.72, 0.90, cpv_f) * 0.55 * gNear * (1.0 - 0.6 * cpv_g));
+              cpL = mix(cpL, vec3(0.040, 0.032, 0.024), smoothstep(0.70, 0.92, cpv_f2) * 0.5 * gNear);
               cpL *= 0.9 + 0.2 * cpv_l2 * gNear + 0.1 * (1.0 - gNear);
               albedo = mix(albedo, cpL, cpWood);
-              GND_tnW *= 1.0 - 0.75 * cpWood;
+              {
+                vec2 cpq = cpP * 17.0;
+                float cpb0 = vnoise(cpq + 3.0);
+                vec3 cpBn = normalize(vec3((vnoise(cpq + vec2(0.35, 0.0) + 3.0) - cpb0) * 3.2, (vnoise(cpq + vec2(0.0, 0.35) + 3.0) - cpb0) * 3.2, 1.0));
+                GND_tn = mix(GND_tn, cpBn, cpWood * gNear);
+                GND_tnW = mix(GND_tnW * (1.0 - 0.75 * cpWood), 0.6 * gNear, cpWood * gNear);
+              }
               GND_rough = mix(GND_rough, 1.0, cpWood);
               GND_spec = mix(GND_spec, 0.25, cpWood);
             }
@@ -6425,7 +6525,7 @@ ${GP31_SURF_GLSL}
         diffuseColor.rgb = albedo;
       }`)
       .replace('#include <common>', `#include <common>
-        uniform float wet; uniform float windT; uniform float snowA;`)
+        uniform float wet; uniform float windT; uniform float snowA; uniform float gs35;`)
       .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
         roughnessFactor = GND_rough;`)
       // Specular trim. Three's dielectric F0 of 0.04 is right for a smooth
@@ -6434,8 +6534,12 @@ ${GP31_SURF_GLSL}
       // a wet-looking mirror as soon as the albedo is dark enough to show it.
       // Asphalt drops to half F0, concrete to 0.72; paint, cast iron, granite
       // and anything with a water film keep the full value.
+      // GS35: three r185 has already blended specularColor into specularColorBlended inside that chunk, so the trim has
+      // to reach the blended value too (a product, so VG36's own scale composes in either order). By day only for now
+      // (golden, dusk and night keep the lamp and sky sheen they were graded with); `gs35` 0 = as before
       .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
-        material.specularColor *= GND_spec;`)
+        material.specularColor *= GND_spec;
+        material.specularColorBlended *= mix(1.0, GND_spec, gs35 * (1.0 - smoothstep(0.0, 0.05, night)));`)
       // GP31: the height field's own shadow (pothole walls, crevices at a low sun) takes the direct light only
       .replace('#include <lights_fragment_end>', GP31 ? `#include <lights_fragment_end>
         reflectedLight.directDiffuse *= GP_shadow; reflectedLight.directSpecular *= GP_shadow;` : '#include <lights_fragment_end>')
@@ -6469,6 +6573,7 @@ ${GP31_SURF_GLSL}
             normal = normalize(mix(normal, rperp, pud2 * 0.85));
           }
         }`);
+    vgGroundPatch(sh);   // VG36 (GROUND): the lawn under the blades (world/vg36Ground.js; `?vg36g=0` alone off)
   };
   // r8 geometric specular AA (?aa=0 to disable). The ground's shading normal
   // comes from the mip-averaged PBR normal maps (asphalt / concrete / grass /
@@ -6633,7 +6738,7 @@ export function makeWaterMaterial() {
       varying vec3 vWorld; varying float vDist;
       uniform float time; uniform float night;
       uniform vec3 fogColor; uniform float fogDensity;
-      uniform vec3 sunDir; uniform vec3 sunColor; uniform vec3 skyAmbient;
+      uniform vec3 sunDir; uniform vec3 sunColor; uniform vec3 skyAmbient; uniform float rv35;
       ${FOG_SKY_GLSL}
       ${HASH_GLSL}
       // three-octave animated height field; taps widen with distance so the
@@ -6667,7 +6772,17 @@ export function makeWaterMaterial() {
         vec3 skyRef = mix(skyAmbient * 1.05, horizonC, pow(1.0 - max(V.y, 0.0), 2.0));
         skyRef *= (1.0 - night * 0.82);
         float fres = 0.05 + 0.95 * pow(1.0 - max(dot(N, V), 0.0), 3.2);
-        vec3 col = mix(deep, skyRef, clamp(0.16 + fres * 0.7, 0.0, 0.95));
+        // RV35 (day): a reflected ray under ~5 deg meets the far shore's walls, not open sky (a city river is walled by
+        // buildings 1-2 km off), and water's F0 is ~0.02, not the 0.16 floor that mirrored the sky from every angle
+        float rvK = rv35 * (1.0 - smoothstep(0.0, 0.05, night));
+        float shore = (1.0 - smoothstep(0.012, 0.085, Rw.y)) * rvK;
+        skyRef = mix(skyRef, horizonC * 0.42, shore * 0.8);
+        // the East and Harlem Rivers are turbid tidal water: an olive-teal body, and the ripples blur and grey the sky they mirror
+        deep = mix(deep, mix(vec3(0.028, 0.052, 0.046), vec3(0.055, 0.090, 0.078), hC), rvK);
+        skyRef = mix(skyRef, vec3(dot(skyRef, vec3(0.2126, 0.7152, 0.0722))), 0.5 * rvK);
+        // and water's own Fresnel (Schlick, F0 0.02): ~3 % of the sky from a 40 deg aerial, most of it at a grazing look
+        float fresW = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+        vec3 col = mix(deep, skyRef, clamp(mix(0.16 + fres * 0.7, fresW, rvK), 0.0, 0.95));
         // sun streak: lobe widens with distance (a razor lobe vanishes from the
         // air), sparkle modulated by the ripple field, amp specular-AA faded
         float glExp = mix(620.0, 70.0, smoothstep(120.0, 2600.0, vDist));

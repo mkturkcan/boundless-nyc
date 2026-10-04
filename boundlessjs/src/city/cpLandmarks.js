@@ -11,6 +11,13 @@ import { CP_DATUM, cpDemToWorld, cpReliefReady } from './cpRelief.js';
 import { BOW, bowDeckY, buildBowBridge, bowColliders, bowPromenade, buildRowboats, BOATHOUSE, buildBoathouse, BELV, buildBelvedere, belvedereColliders, GAP, gapWalkY, buildGapstow, gapColliders, NEEDLE, buildNeedle, OAK, oakFrame, oakDeckY, buildOakBridge, oakColliders, STATUES, buildStatue, BANDSHELL, buildBandshell, LADIES, buildLadies, SGATE, buildGatehouse, LANDING, buildLanding, DELA, buildDelacorte, K as KC, buildOctagon, DAIRY, buildDairy, SWEDISH, buildSwedish, RINK, buildRinkBoards, mergeByMaterial, BALC, buildBalcony, buildArch, LBin, lmMats } from './cpLandmarksKit.js';
 import * as RELIEF from './cpRelief.js';
 import { mkConvex, tpSplit } from './tsqPlaza.js';
+// CPB33: the bridges and arches modelled stone by stone (city/cpBridges.js); the CP32 builders stay as their far level
+import { CPB33, CPB34, buildBowBridgeB, buildGapstowB, buildOakBridgeB, buildBalconyB, buildArchB, gapGrade, bowBanks } from './cpBridges.js';
+// CP33L: the Lake's rowboats with photoreal rowers, the Loeb Boathouse and Cleopatra's Needle for the near field
+// (city/cpLakeside.js); the CP32 builders in cpLandmarksKit.js stay as the `?cp33l=0` fallback
+import { CP33L, lsBuildFleet } from './cpLakeside.js';
+// CPC33: Belvedere Castle, its terraces and Vista Rock stone by stone (city/cpCastle.js); the CP32 builder stays behind `?cpc33=0`
+import { CPC33, buildCastleB, castleColliders, CASTLE_BENCH, castleKeepOut, castleDrop } from './cpCastle.js';
 
 export const CP32M = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cp32m') === '0');
 const TILE = 512;
@@ -84,6 +91,8 @@ function bowApply(tile, ox, oz) {
   };
   const W = waterY('lake', 17.0, cx, cz), gS = gAt(-BOW.END), gN = gAt(BOW.END);
   BOWL = { W, gS, gN };
+  // CP34: past the ends the roadway's sidewalks and kerbs ran down the banks into the Lake; there they are lawn (cpBridges.js bowBanks)
+  try { const n = bowBanks(tile, ox, oz, W, gS, gN, (x, z, pad) => land.cpWaterY(x, z, pad)); if (n) console.log(`[cp34] Bow Bridge: ${n} roadway triangles on the banks made lawn or dropped`); } catch (e) { console.warn('[cp34] Bow banks', e); }
   // the walkers' strip under the planks
   const strip = [];
   const pt = (u, w) => { const x = cx + ax * u - az * w, z = cz + az * u + ax * w; return [x - ox, Math.max(bowDeckY(u, W, gS, gN) - 0.25, Math.min(gS, gN) - 0.3), z - oz]; };
@@ -109,7 +118,7 @@ function bowBuild(group, ctx) {
     BOWL = { W: waterY('lake', 17.0, cx, cz), gS: ctx.padYNear(cx - ax * e, cz - az * e), gN: ctx.padYNear(cx + ax * e, cz + az * e) };
   }
   const { W, gS, gN } = BOWL;
-  const parts = buildBowBridge(group, W, gS, gN, ctx.key);
+  const parts = CPB33 ? buildBowBridgeB(group, W, gS, gN, ctx.key) : buildBowBridge(group, W, gS, gN, ctx.key);
   if (!_bowColl) { _bowColl = true; try { bowColliders(COLLIDERS, W, gS, gN); } catch (e) { console.warn('[cp32m] bow colliders', e); } }
   console.log(`[cp32m] Bow Bridge built: ${parts.map(([n, t]) => `${n} ${t}`).join(', ')} triangles`);
 }
@@ -131,7 +140,7 @@ const COURSES = [[-68.66, 607.75, 20.39, 10.19, 0.48, 1, 0.7, 1.85], [-110.13, 7
 function boatsBuild(group, ctx) {
   const [cx, cz] = BOW.C;
   if (!owns(ctx.ox, ctx.oz, cx, cz)) return;
-  const r = buildRowboats(group, COURSES, (x, z) => waterY('lake', 17.0, x, z));
+  const r = (CP33L ? lsBuildFleet : buildRowboats)(group, COURSES, (x, z) => waterY('lake', 17.0, x, z));
   console.log(`[cp32m] rowboats: ${r.boats} boats, ${r.people} people`);
   const [lx, lz] = LANDING.P, L = buildLanding(group, waterY('lake', 17.0, lx, lz + 4), ctx.padYNear(lx, lz - 1.5));
   try { COLLIDERS.addBox('kit31', { x: lx, y: L.y - 0.3, z: lz + 2.3, hw: 2.0, hh: 0.3, hd: 2.9, rotY: 0, deck: true }); } catch { /* colliders not loaded */ }
@@ -156,8 +165,8 @@ function belvedereBuild(group, ctx) {
   if (!owns(ctx.ox, ctx.oz, cx, cz)) return;
   const B = cpReliefReady() ? cpDemToWorld(39.6, cx, cz) : CP_DATUM + 6.0;
   const groundAt = (x, z) => { let g = ctx.padYNear(x, z); try { const r = land.cpRockTop?.(x, z); if (r != null && isFinite(r) && r > g) g = r; } catch { /* not in yet */ } return g; };
-  const parts = buildBelvedere(group, B, groundAt);
-  if (!_belvColl) { _belvColl = true; try { belvedereColliders(COLLIDERS, B); } catch (e) { console.warn('[cp32m] belvedere colliders', e); } }
+  const parts = CPC33 ? buildCastleB(group, B) : buildBelvedere(group, B, groundAt);
+  if (!_belvColl) { _belvColl = true; try { if (CPC33) castleColliders(COLLIDERS, B); else belvedereColliders(COLLIDERS, B); } catch (e) { console.warn('[cp32m] belvedere colliders', e); } }
   console.log(`[cp32m] Belvedere Castle built on Vista Rock at ${B.toFixed(2)}: ${parts.map(([n, t]) => `${n} ${t}`).join(', ')}`);
 }
 
@@ -185,6 +194,8 @@ function gapApply(tile, ox, oz) {
     }
     if (out.length !== a.length) tile.S[name] = Float32Array.from(out);
   }
+  // CP34: the walled approaches are gone; the banks are graded to the bridge's ends instead (cpBridges.js gapGrade)
+  try { const g = gapGrade(tile, ox, oz, W, gW, gE, (x, z, pad) => land.cpWaterY(x, z, pad)); if (g) console.log(`[cp34] Gapstow's banks graded: ${g.tris} triangles, ${g.moved} vertices moved`); } catch (e) { console.warn('[cp34] Gapstow grade', e); }
   const strip = [], HW = GAP.W2 - 0.6;
   const pt = (u, w) => { const x = cx + ax * u - az * w, z = cz + az * u + ax * w; return [x - ox, gapWalkY(u, W, gW, gE) - 0.25, z - oz]; };
   for (let u = -E; u < E - 1e-6; u += 1.0) {
@@ -203,8 +214,8 @@ function gapBuild(group, ctx) {
   if (!owns(ctx.ox, ctx.oz, cx, cz)) return;
   if (!GAPL) { const [ax, az] = GAP.A, e = GAP.HALF + GAP.RAMP + 2; GAPL = { W: waterY('pond', 7.1, cx, cz), gW: ctx.padYNear(cx - ax * e, cz - az * e), gE: ctx.padYNear(cx + ax * e, cz + az * e) }; }
   const { W, gW, gE } = GAPL;
-  const parts = buildGapstow(group, W, gW, gE);
-  if (!_gapColl) { _gapColl = true; try { gapColliders(COLLIDERS, W, gW, gE); } catch (e) { console.warn('[cp32m] gapstow colliders', e); } }
+  const parts = CPB33 ? buildGapstowB(group, W, gW, gE) : buildGapstow(group, W, gW, gE);
+  if (!_gapColl) { _gapColl = true; try { gapColliders(COLLIDERS, W, gW, gE, CPB34 ? GAP.HALF + 0.4 : Infinity); } catch (e) { console.warn('[cp32m] gapstow colliders', e); } }
   console.log(`[cp32m] Gapstow Bridge built: ${parts.map(([n, t]) => `${n} ${t}`).join(', ')}`);
 }
 
@@ -247,7 +258,7 @@ function oakBuild(group, ctx) {
   const F = oakFrame(), [cx, cz] = F.C;
   if (!owns(ctx.ox, ctx.oz, cx, cz)) return;
   if (!OAKL) { const [ax, az] = F.A, e = F.L / 2 + 1.5; OAKL = { W: waterY('lake', 16.6, cx, cz), gA: ctx.padYNear(cx - ax * e, cz - az * e), gB: ctx.padYNear(cx + ax * e, cz + az * e) }; }
-  const { W, gA, gB } = OAKL, parts = buildOakBridge(group, W, gA, gB);
+  const { W, gA, gB } = OAKL, parts = CPB33 ? buildOakBridgeB(group, W, gA, gB) : buildOakBridge(group, W, gA, gB);
   if (!_oakColl) { _oakColl = true; try { oakColliders(COLLIDERS, W, gA, gB); } catch (e) { console.warn('[cp32m] oak colliders', e); } }
   console.log(`[cp32m] Oak Bridge built: ${parts.map(([n, t]) => `${n} ${t}`).join(', ')}`);
 }
@@ -369,7 +380,7 @@ function balcBuild(group, ctx) {
   const L = BALCL || balcLevels((x, z) => ctx.sectionY('asphalt', x, z, 0.5));
   if (!L) { console.log('[cp32m] Balcony Bridge: no deck level (the relief along the drive is not in), not built'); return; }
   if (L.yA - L.W < 3 || L.yB - L.W < 3) { console.log(`[cp32m] Balcony Bridge: the drive only ${(Math.min(L.yA, L.yB) - L.W).toFixed(2)} m over the water, not built`); return; }
-  const parts = buildBalcony(group, L.W, L.yA, L.yB);
+  const parts = CPB33 ? buildBalconyB(group, L.W, L.yA, L.yB) : buildBalcony(group, L.W, L.yA, L.yB);
   if (!_balcColl) {
     _balcColl = true;
     try {
@@ -408,6 +419,11 @@ function archesBuild(group, ctx) {
   for (const A of ARCHES) {
     const [, name, , cx, cz, ax, az] = A;
     if (!owns(ctx.ox, ctx.oz, cx, cz)) continue;
+    if (CPB33) {                                              // CPB33: the modelled arch near, the CP32 one far (cpBridges.js buildArchB)
+      const t = buildArchB(group, A, deckAt, groundAt);
+      if (t) { n++; tris += t; if (name) console.log(`[cp32m] ${name} built (CPB33)`); }
+      continue;
+    }
     const B = new LBin().frame(cx, 0, cz, ax, az), SN = new LBin().frame(cx, 0, cz, ax, az), DK = new LBin().frame(cx, 0, cz, ax, az);
     const t = buildArch(B, SN, DK, A, deckAt, groundAt);
     if (!t) continue;
@@ -498,7 +514,7 @@ export function apply(tile, ox, oz) {
 export function cpLmKeepOut(x, z) {
   if (!CP32M) return false;
   const [bx0, bz0] = BELV.O, [bx, bz] = BELV.A, ex = x - bx0, ez = z - bz0, u = ex * bx + ez * bz, w = -ex * bz + ez * bx, [pu0, pu1, pw0, pw1] = BELV.PLAT;
-  return u > pu0 - 8 && u < pu1 + 8 && w > pw0 - 8 && w < pw1 + 8;
+  return (u > pu0 - 8 && u < pu1 + 8 && w > pw0 - 8 && w < pw1 + 8) || (CPC33 && castleKeepOut(x, z));
 }
 // a compiled tree, lamp or bench standing on a structure's footprint
 export function dropFurniture(wx, wz, f) {
@@ -509,6 +525,7 @@ export function dropFurniture(wx, wz, f) {
     if (Math.abs(ex * bx + ez * bz) < GAP.HALF + GAP.RAMP + 2 && Math.abs(-ex * bz + ez * bx) < GAP.W2 + 2) return true; }
   { const [bx0, bz0] = BELV.O, [bx, bz] = BELV.A, ex = wx - bx0, ez = wz - bz0, u = ex * bx + ez * bz, w = -ex * bz + ez * bx, [pu0, pu1, pw0, pw1] = BELV.PLAT;
     if (u > pu0 - 1 && u < pu1 + 1 && w > pw0 - 1 && w < pw1 + 1) return true; }
+  if (CPC33 && castleDrop(wx, wz)) return true;
   { const F = oakFrame(), [ox2, oz2] = F.C, [bx, bz] = F.A, ex = wx - ox2, ez = wz - oz2;
     if (Math.abs(ex * bx + ez * bz) < F.L / 2 + 2 && Math.abs(-ex * bz + ez * bx) < OAK.W2 + 1.5) return true; }
   return false;
@@ -535,8 +552,8 @@ export function seats() {
   if (!CP32M) return [];
   const out = [];
   { const [ox, oz] = BELV.O, [ax, az] = BELV.A, [cx, cz] = BELV.C, B = cpReliefReady() ? cpDemToWorld(39.6, cx, cz) : CP_DATUM + 6.0;
-    const w = BELV.PLAT[2] + 1.0, fx = az, fz = -ax;                                   // facing -w: over the parapet toward the pond
-    BELV.BENCH.forEach((u, g) => { for (const du of [-0.55, 0, 0.55]) out.push({ x: ox + ax * (u + du) - az * w, y: B, z: oz + az * (u + du) + ax * w, yaw: Math.atan2(fx, fz), seat: 0.46, kind: 'bench', group: 9100 + g }); }); }
+    const w = CPC33 ? CASTLE_BENCH.w : BELV.PLAT[2] + 1.0, fx = az, fz = -ax;           // facing -w: over the parapet toward the pond
+    (CPC33 ? CASTLE_BENCH.u : BELV.BENCH).forEach((u, g) => { for (const du of [-0.55, 0, 0.55]) out.push({ x: ox + ax * (u + du) - az * w, y: B, z: oz + az * (u + du) + ax * w, yaw: Math.atan2(fx, fz), seat: 0.46, kind: 'bench', group: 9100 + g }); }); }
   { const [lx, lz] = LANDING.P, W = waterY('lake', 17.0, lx, lz + 4), y = W + 0.9;
     for (const u of [1.45, 2.2, 2.95]) out.push({ x: lx - 1.65, y, z: lz + u, yaw: Math.PI / 2, seat: 0.48, kind: 'bench', group: 9200 }); }
   return out;

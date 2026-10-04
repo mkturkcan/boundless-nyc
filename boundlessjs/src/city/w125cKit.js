@@ -12,6 +12,10 @@
 import * as THREE from 'three';
 import { ENV, applyLightTrim as LT, applyStoneDetail } from '../world/materials.js';
 import { loadAdFonts } from './adArt.js';
+import { buildSign } from './fk/signKit.js';
+import { neonContours } from './fk/signNeon.js';
+import { parseFont, fontCSS, fontReady } from './fk/signPaint.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { APOLLO, FACADE } from './w125cData.js';
 
 // ---------------------------------------------------------------- the sign atlas
@@ -27,6 +31,10 @@ export const CELLS = {
   steelC: [1600, 0, 16, 16],       // flat colours for tube and frame pieces
   smBlade: [240, 610, 70, 414],    // the Studio Museum's vertical sign (1.1 x 6.5 m)
   smFascia: [330, 610, 900, 60],   // its name over the entrance (7.5 x 0.5 m)
+  // AR33 (buildApollo33): the 2024 marquee's LED boards, the APOLLO outline letters over the east shop
+  shopBand: [330, 690, 1000, 150], // 6.4 x 1.15 m (u 7.4-13.8, y 2.75-3.9)
+  ledFront: [1340, 690, 700, 150], // the front board, 7.0 x 1.5 m
+  ledEnd: [1340, 850, 440, 150],   // an end board, 4.4 x 1.5 m
 };
 const FONT = (w, px, fam) => `${w} ${px}px ${fam}`;
 const SANS = '"Montserrat", "Arial Black", Arial, sans-serif';
@@ -136,6 +144,30 @@ function paint(c, night) {
     c.fillStyle = night ? '#060606' : '#2c2d2f'; c.fillRect(x, y, w, h);
     c.fillStyle = night ? '#f2f1ec' : '#e9e8e4'; fitText(c, 'STUDIO MUSEUM IN HARLEM', x + w / 2, y + h * 0.54, w * 0.92, h * 0.62, SANS, 600);
   }
+  // -- AR33: the APOLLO outline letters on the cream band over the east shop (2024-08: thin red-orange outlines of wide
+  // round capitals on a warm cream field, the letters filling the band's height)
+  {
+    const [x, y, w, h] = CELLS.shopBand;
+    c.fillStyle = night ? '#1a0f08' : '#efe2cf'; c.fillRect(x, y, w, h);
+    c.save(); c.lineJoin = 'round';
+    if (night) { c.shadowColor = '#ff5a1e'; c.shadowBlur = 6; }
+    c.strokeStyle = night ? '#ff7a3a' : '#d9542e'; c.lineWidth = night ? 3.2 : 2.6;
+    fitText(c, 'APOLLO', x + w / 2, y + h * 0.53, w * 0.94, h * 0.9, SANS, 500, 1);
+    c.restore();
+  }
+  // -- AR33: the LED boards (full-colour screens since the 2020s): drawn as lit dot-matrix content on a black field
+  const led = (x, y, w, h, lines) => {
+    c.fillStyle = '#050608'; c.fillRect(x, y, w, h);
+    const g = c.createLinearGradient(x, y, x, y + h); g.addColorStop(0, night ? '#2a0a3a' : '#1a0826'); g.addColorStop(1, night ? '#08163a' : '#061028');
+    c.fillStyle = g; c.fillRect(x + 3, y + 3, w - 6, h - 6);
+    for (const [s, fy, fh, col, fam] of lines) { c.fillStyle = col; fitText(c, s, x + w / 2, y + h * fy, w * 0.9, h * fh, fam, 700); }
+    // the LED pitch: a faint dark grid over everything
+    c.fillStyle = 'rgba(0,0,0,0.28)';
+    for (let gx = x + 3; gx < x + w - 3; gx += 3) c.fillRect(gx, y + 3, 1, h - 6);
+    for (let gy = y + 3; gy < y + h - 3; gy += 3) c.fillRect(x + 3, gy, w - 6, 1);
+  };
+  { const [x, y, w, h] = CELLS.ledFront; led(x, y, w, h, [['AMATEUR NIGHT', 0.36, 0.34, '#ffd24a', COND], ['EVERY WEDNESDAY  7:30 PM', 0.72, 0.2, '#ffffff', COND]]); }
+  { const [x, y, w, h] = CELLS.ledEnd; led(x, y, w, h, [['APOLLO', 0.38, 0.38, '#ff3b3b', COND], ['125TH STREET', 0.74, 0.2, '#ffffff', COND]]); }
 }
 let _texD = null, _texN = null;
 function atlases() {
@@ -473,4 +505,567 @@ export function addPieces(group, pieces, name) {
     group.add(mesh); tris += g.getAttribute('position').count / 3;
   }
   return tris;
+}
+
+// ================================================================ AR33: the Apollo rebuilt to the measured front
+// Called by fk/custom/bid2.js apollo with the facade kit's frame: u from the compiled
+// front's west end, y over the sidewalk, w out of the wall. The AR32 front above (apolloParts, 20 m tall) stays for the
+// ?fk=0 fallback (city/w125c.js).
+export const AP33 = {
+  u0: -0.57, u1: 14.58,                          // the terracotta front: the 50 ft lot (the compiled west end is 0.57 m inside it)
+  piers: [[-0.57, 0.6], [13.32, 14.58]],         // the end piers
+  pil: [3.47, 6.95, 10.42], pilW: 0.62, capW: 0.95,   // the fluted Ionic pilasters (a 3.475 m rhythm from the west pier's centre)
+  bays: [[0.6, 3.16], [3.78, 6.64], [7.26, 10.11], [10.73, 13.32]],
+  sill: [4.6, 5.1], flat: [4.0, 4.6], w2: [5.25, 7.4], t2: 0.55, w3: [8.7, 11.0], t3: 0.7,
+  cap: [10.9, 11.5], arch: [11.5, 11.9], frieze: [11.9, 12.55], corn: [12.55, 13.25], bal: [13.25, 13.9], roof: 13.3,
+  shop: { u0: 7.45, u1: 13.2, h: 2.7, band: [2.75, 3.9] },
+  lobby: { u0: 0.6, u1: 7.05, h: 3.05, d: 1.6 },   // the entrance vestibule under the marquee
+  mq: { u0: -0.4, u1: 7.25, y0: 3.05, y1: 5.05, d: 5.9, r: 0.3 },   // AR34: the corner post's bearing from 1395 and 1375 gives the depth 5.8-6.0, the top 5.05
+  crest: { u0: 0.3, u1: 5.3, h: 1.35, w: 3.9 }, crestE: { u0: 5.7, u1: 7.0, h: 0.62, w: 3.9 },
+  blade: { u: 3.47, y0: 10.2, y1: 20.5, w: 1.7, t: 0.38, off: 0.95 },   // AR34: measured off blade_1415 (top 20.5, 1.7 m wide, 1.4 m letters every 1.65 m)
+  frame: { u0: 1.8, u1: 5.0, w0: -5.2, w1: -2.0, y1: 20.2 },   // AR34: its top under the blade's (blade_1415)
+  lobbyD: 14.0, audH: 20.05,
+};
+// ---------------------------------------------------------------- AR33: the marquee's LED boards
+// A full-colour LED wall as the camera car saw it: a violet-blue field of random coloured diodes, the message in near-black
+// letters (z1375: THANK YOU / THE HOWARD GILMAN FOUNDATION / PROUD SPONSOR OF THE 2023-2024 SEASON on the front, z1395: RESPECT
+// BLACK WOMEN on the east end, the west end a darker board), a faint 4 px diode grid over everything.
+const L33 = { W: 2048, H: 1344 };
+export const LED33 = {
+  front: [0, 0, 2048, 420],        // 7.0 x 1.44 m
+  east: [0, 440, 1280, 420],       // 4.4 x 1.44 m
+  west: [0, 880, 1280, 420],
+};
+function paintLed33(c) {
+  c.clearRect(0, 0, L33.W, L33.H);
+  const led = (cell, lines, seed, dark) => {
+    const [x, y, w, h] = cell;
+    let s = seed;
+    const rnd = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296);
+    // AR34 batch 3 session 2 (QA Q13: the board read as purple TV static at 1:1): the screen as the eye sees it, not the
+    // lighter at the top, the LED modules (32 diodes, 128 px) a shade
+    // apart, the message in near-black, the diode pitch a faint regular grid
+    const px = 4;
+    const gr = c.createLinearGradient(0, y, 0, y + h);
+    gr.addColorStop(0, dark ? '#2a2e40' : '#6c727a'); gr.addColorStop(1, dark ? '#212433' : '#60666c');
+    c.fillStyle = gr; c.fillRect(x, y, w, h);
+    for (let my = 0; my < h; my += 32 * px) for (let mx = 0; mx < w; mx += 32 * px) {
+      c.fillStyle = rnd() < 0.5 ? `rgba(255,255,255,${0.005 + rnd() * 0.01})` : `rgba(0,0,0,${0.005 + rnd() * 0.01})`;
+      c.fillRect(x + mx, y + my, Math.min(32 * px, w - mx), Math.min(32 * px, h - my));
+    }
+    c.fillStyle = '#0d0f15';
+    for (const [s2, fy, fh, fam, mw] of lines) fitText(c, s2, x + w / 2, y + h * fy, w * (mw || 0.94), h * fh, fam, 400);
+    c.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let gx = px - 1; gx < w; gx += px) c.fillRect(x + gx, y, 1, h);
+    for (let gy = px - 1; gy < h; gy += px) c.fillRect(x, y + gy, w, 1);
+  };
+  led(LED33.front, [['THANK YOU', 0.22, 0.13, COND, 0.2], ['THE HOWARD GILMAN FOUNDATION', 0.5, 0.3, COND, 0.62], ['PROUD SPONSOR OF THE 2023-2024 SEASON', 0.8, 0.15, COND, 0.58]], 11, false);
+  led(LED33.east, [['RESPECT BLACK WOMEN', 0.5, 0.4, COND, 0.9]], 23, false);
+  led(LED33.west, [['125TH STREET', 0.5, 0.3, COND]], 37, true);
+}
+let _led33 = null;
+function ledMat33() {
+  if (_led33) return _led33;
+  const cv = document.createElement('canvas'); cv.width = L33.W; cv.height = L33.H;
+  paintLed33(cv.getContext('2d'));
+  const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  loadAdFonts().then(() => { paintLed33(cv.getContext('2d')); t.needsUpdate = true; });
+  // AR34: matte (an LED face is a black louvred grid: at 0.3 the west board mirrored the sky at the grazing view from 1375)
+  const m = LT(new THREE.MeshStandardMaterial({ map: t, emissiveMap: t, emissive: 0xffffff, roughness: 0.9, metalness: 0.0 }));
+  const prev = m.onBeforeCompile;
+  m.onBeforeCompile = (sh, r) => {
+    prev?.call(m, sh, r);
+    sh.uniforms.a33N = ENV.night;
+    // an LED wall is bright by day as well: half its night light by day, more after dark (AR34 b3 s2: 1.2 -> 0.8 at night:
+    // with the smooth slide of Q13 the board read near white after dark, c1n/apollo_mq_z1375_night.jpg)
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float a33N;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= mix(0.5, 0.8, a33N);');
+  };
+  m.customProgramCacheKey = () => 'a33led2';
+  return (_led33 = m);
+}
+// a quad showing one cell of the LED sheet
+function ledPanel(cell, w, h, x, y, z, ry = 0) {
+  const [cx, cy, cw, ch] = LED33[cell], g = new THREE.PlaneGeometry(w, h), uv = g.getAttribute('uv');
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, (cx + uv.getX(i) * cw) / L33.W, 1 - (cy + (1 - uv.getY(i)) * ch) / L33.H);
+  return [g, mtx(x, y, z, 1, 1, 1, ry, 0)];
+}
+
+function ledMat() {
+  const [d, n] = atlases();
+  const m = LT(new THREE.MeshStandardMaterial({ map: d, emissiveMap: n, emissive: 0xffffff, roughness: 0.35, metalness: 0.05 }));
+  const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+  m.onBeforeCompile = (sh, r) => {
+    prev?.call(m, sh, r);
+    sh.uniforms.a33N = ENV.night;
+    // an LED screen is bright by day too: a floor of 0.55 of its night light, full after dark
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float a33N;')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= mix(0.55, 1.15, a33N);');
+  };
+  m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|a33led';
+  return m;
+}
+let _M33 = null;
+function mats33() {
+  if (_M33) return _M33;
+  const M = kitMats();
+  _M33 = { sign: M.sign, tubeB: M.tubeB, tubeW: tubeMat([0.86, 0.88, 0.92], [0.85, 0.92, 1.4]), led: ledMat(), led33: ledMat33() };
+  return _M33;
+}
+// a vertical prism over a world polygon (x/z): walls facing out (metre UVs) except the edges listed in `skip`, a flat roof
+function prismGeom(pts, y0, y1, skip = new Set()) {
+  const pos = [], nor = [], uv = [];
+  // the winding decides the outward side (signed area in (x, z) taken as a plane: > 0 -> outward is (dz, -dx))
+  let area = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; area += a[0] * b[1] - b[0] * a[1]; }
+  const sgn = area > 0 ? 1 : -1;
+  let run = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[i], b = pts[(i + 1) % pts.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (skip.has(i) || L < 1e-3) { run += L; continue; }
+    const nx = (sgn * (b[1] - a[1])) / L, nz = (-sgn * (b[0] - a[0])) / L;
+    const P = [[a[0], y0, a[1], run, y0], [b[0], y0, b[1], run + L, y0], [b[0], y1, b[1], run + L, y1], [a[0], y1, a[1], run, y1]];
+    const tri = (p, q, r) => {
+      const ux = q[0] - p[0], uy = q[1] - p[1], uz = q[2] - p[2], vx = r[0] - p[0], vy = r[1] - p[1], vz = r[2] - p[2];
+      const nX = uy * vz - uz * vy, nZ = ux * vy - uy * vx;
+      const ok = nX * nx + nZ * nz > 0;
+      for (const v of ok ? [p, q, r] : [p, r, q]) { pos.push(v[0], v[1], v[2]); nor.push(nx, 0, nz); uv.push(v[3], v[4]); }
+    };
+    tri(P[0], P[1], P[2]); tri(P[0], P[2], P[3]);
+    run += L;
+  }
+
+  const tris = THREE.ShapeUtils.triangulateShape(pts.map((p) => new THREE.Vector2(p[0], p[1])), []);
+  for (const t of tris) {
+    const v = t.map((k) => pts[k]);
+    // facing up (+y) with x east, z south: (b - a) x (c - a) has +y when (bz - az)(cx - ax) - (bx - ax)(cz - az) > 0
+    const up = (v[1][1] - v[0][1]) * (v[2][0] - v[0][0]) - (v[1][0] - v[0][0]) * (v[2][1] - v[0][1]) > 0;
+    for (const p of up ? v : [v[0], v[2], v[1]]) { pos.push(p[0], y1, p[1]); nor.push(0, 1, 0); uv.push(p[0], p[1]); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.computeBoundingSphere();
+  return g;
+}
+// a box with its two street-side vertical corners rounded (radius r), plan u0..u1 x w 0..d, y0..y1, in the frame
+function roundBox(u0, u1, d, r, y0, y1, seg = 5) {
+  const s = new THREE.Shape();
+  s.moveTo(u0, 0); s.lineTo(u1, 0); s.lineTo(u1, d - r); s.quadraticCurveTo(u1, d, u1 - r, d); s.lineTo(u0 + r, d); s.quadraticCurveTo(u0, d, u0, d - r); s.lineTo(u0, 0);
+  // the shape lies in (x, y) = (u, -w) so the extrusion (+z) can be turned to +y by a -90 degree turn about x
+  const g = new THREE.ExtrudeGeometry(s, { depth: y1 - y0, bevelEnabled: false, curveSegments: seg });
+  g.rotateX(-Math.PI / 2);        // (x, y, z) -> (x, z, -y): shape y (= w) goes to -z ... flip it back below
+  g.scale(1, 1, -1);              // w to +z (the mirror flips the winding)
+  const idx = g.index;
+  if (idx) for (let i = 0; i < idx.count; i += 3) { const a = idx.getX(i + 1); idx.setX(i + 1, idx.getX(i + 2)); idx.setX(i + 2, a); }
+  else {
+    const p = g.getAttribute('position').array, n = g.getAttribute('normal').array;
+    for (let i = 0; i < p.length; i += 9) for (let k = 0; k < 3; k++) { let t = p[i + 3 + k]; p[i + 3 + k] = p[i + 6 + k]; p[i + 6 + k] = t; t = n[i + 3 + k]; n[i + 3 + k] = n[i + 6 + k]; n[i + 6 + k] = t; }
+  }
+  g.translate(0, y0, 0);
+  g.computeVertexNormals();
+  return g;
+}
+// ================================================================ AR34: the blade and the crests, drawn from scratch
+// the six letters stacked down it as open channel letters (red returns ~0.15 m deep over a red back) with three to four
+// parallel neon tubes nested in every stroke; the crests on the marquee carry the same letters in a row on a cream
+// housing. The letters are a geometric face (Jost, the Futura cut; Montserrat until it has loaded) painted on a canvas,
+// traced (fk/signNeon.js neonContours) and extruded; the tubes are the traced outline inset (0.045 / 0.10 / 0.155 m on the
+// blade). By day the tubes read as pink-red glass, after dark they burn red and the field takes a little of their light.
+let _ap34 = null;
+function ap34Mats() {
+  if (_ap34) return _ap34;
+  const night = (m, lo, hi, key) => {
+    const prev = m.onBeforeCompile, prevKey = m.customProgramCacheKey;
+    m.onBeforeCompile = (sh, r) => {
+      prev?.call(m, sh, r);
+      sh.uniforms.a34N = ENV.night;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float a34N;')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>\ntotalEmissiveRadiance *= mix(${lo.toFixed(3)}, ${hi.toFixed(3)}, a34N);`);
+    };
+    m.customProgramCacheKey = () => (prevKey ? prevKey.call(m) : '') + '|' + key;
+    return m;
+  };
+  // a weathered paint film (faint vertical runs, specks), multiplied into the paint colour; metre UVs
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 256;
+  const c = cv.getContext('2d'); c.fillStyle = '#ffffff'; c.fillRect(0, 0, 64, 256);
+  let sd = 7; const rnd = () => ((sd = (Math.imul(sd, 1664525) + 1013904223) >>> 0) / 4294967296);
+  for (let i = 0; i < 40; i++) { c.fillStyle = `rgba(90,70,40,${(0.03 + rnd() * 0.06).toFixed(3)})`; c.fillRect(rnd() * 64, rnd() * 128, 1 + rnd() * 3, 60 + rnd() * 196); }
+  for (let i = 0; i < 300; i++) { c.fillStyle = `rgba(60,50,30,${(rnd() * 0.06).toFixed(3)})`; c.fillRect(rnd() * 64, rnd() * 256, 1 + rnd() * 2, 1 + rnd() * 2); }
+  const film = new THREE.CanvasTexture(cv); film.colorSpace = THREE.SRGBColorSpace; film.wrapS = film.wrapT = THREE.RepeatWrapping; film.anisotropy = 4;
+  const paint = (hex, rough, o = {}) => LT(new THREE.MeshStandardMaterial({ color: hex, map: film, roughness: rough, metalness: 0.0, ...o }));
+  _ap34 = {
+    field: night(paint('#d9b97c', 0.6, { emissive: new THREE.Color('#4a120a') }), 0.0, 0.7, 'a34field'),
+    cream: night(paint('#e8dfc8', 0.55, { emissive: new THREE.Color('#4a120a') }), 0.0, 0.6, 'a34cream'),
+    white: paint('#efefeb', 0.45),
+    ret: LT(new THREE.MeshStandardMaterial({ color: '#c23826', roughness: 0.5, metalness: 0.0, side: THREE.DoubleSide })),
+    back: night(LT(new THREE.MeshStandardMaterial({ color: '#c8432f', roughness: 0.55, metalness: 0.0, emissive: new THREE.Color('#ff2a14') })), 0.0, 0.5, 'a34back'),
+    tube: night(LT(new THREE.MeshStandardMaterial({ color: '#e66a55', emissive: new THREE.Color('#ff3320'), roughness: 0.2, metalness: 0.0 })), 0.04, 3.0, 'a34tube'),
+  };
+  return _ap34;
+}
+// open channel letters with nested tubes: `rows` [text, yBase, cap] (metres) in a W x H field (x right, y up, z out of
+// the field, origin at its bottom left), each row centred on x = W / 2 and squeezed to maxW; { back, walls, tubes } in that
+// frame. Cached by key (both faces of the blade share one set).
+const _ap34L = new Map();
+function chanNeon(key, rows, W, H, { ppm = 110, depth = 0.15, insets = [0.045, 0.1, 0.155], tubeR = 0.016, tubeZ = 0.08, maxW = W - 0.1, tracking = 0 } = {}) {
+  if (_ap34L.has(key)) return _ap34L.get(key);
+  const fi = ['Jost-600', 'Montserrat-800'].map((n) => parseFont(n)).find((f) => fontReady(f)) || parseFont('Montserrat-800');
+  const Wp = Math.round(W * ppm), Hp = Math.round(H * ppm);
+  const mc = document.createElement('canvas').getContext('2d');
+  mc.font = fontCSS(fi, 200);
+  const capK = (mc.measureText('H').actualBoundingBoxAscent || 140) / 200;
+  const items = rows.map(([text, yb, cap]) => {
+    const px = (cap * ppm) / capK;
+    mc.font = fontCSS(fi, px);
+    try { mc.letterSpacing = `${(tracking * px).toFixed(1)}px`; } catch { /* no letterSpacing */ }
+    const m = mc.measureText(text), L = m.actualBoundingBoxLeft || 0, R = m.actualBoundingBoxRight || m.width;
+    const sx = Math.min(1, (maxW * ppm) / Math.max(1, L + R));
+    return { text, font: fontCSS(fi, px), px, sx, dx: (L - R) / 2, x: Wp / 2, y: Hp - yb * ppm };
+  });
+  const draw = (c) => {
+    for (const it of items) {
+      c.save(); c.translate(it.x, it.y); c.scale(it.sx, 1); c.font = it.font; c.textAlign = 'left'; c.textBaseline = 'alphabetic';
+      try { c.letterSpacing = `${(tracking * it.px).toFixed(1)}px`; } catch { /* no letterSpacing */ }
+      c.fillText(it.text, it.dx, 0); c.restore();
+    }
+  };
+  const toM = (P) => P.map(([x, y]) => new THREE.Vector2(x / ppm, H - y / ppm));
+  const outl = neonContours(draw, Wp, Hp, { inset: 1, minLen: 0.08 * ppm, eps: 0.5, smooth: 2 }).map((l) => toM(l.pts));
+  const inside = (p, poly) => { let o = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a.y > p.y) !== (b.y > p.y) && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) o = !o; } return o; };
+  const lev = outl.map((l, i) => outl.reduce((n, q, j) => n + (j !== i && inside(l[0], q) ? 1 : 0), 0));
+  const shapes = [];
+  outl.forEach((l, i) => {
+    if (lev[i] % 2) return;
+    const sh = new THREE.Shape(l);
+    outl.forEach((h, j) => { if (lev[j] === lev[i] + 1 && inside(h[0], l)) sh.holes.push(new THREE.Path(h)); });
+    shapes.push(sh);
+  });
+  const back = new THREE.ShapeGeometry(shapes, 1); back.translate(0, 0, 0.004);
+  const ex = new THREE.ExtrudeGeometry(shapes, { depth, bevelEnabled: false, steps: 1, curveSegments: 1 });
+  const walls = new THREE.BufferGeometry();
+  for (const k of ['position', 'normal', 'uv']) {
+    const a = ex.getAttribute(k), out = [];
+    for (const g of ex.groups) if (g.materialIndex === 1) for (let i = g.start * a.itemSize; i < (g.start + g.count) * a.itemSize; i++) out.push(a.array[i]);
+    walls.setAttribute(k, new THREE.Float32BufferAttribute(out, a.itemSize));
+  }
+  ex.dispose();
+  const tg = [];
+  for (const ins of insets) {
+    for (const l of neonContours(draw, Wp, Hp, { inset: Math.max(1, Math.round(ins * ppm)), minLen: 0.1 * ppm, eps: 0.5, smooth: 2 })) {
+      const pts = toM(l.pts).map((v) => new THREE.Vector3(v.x, v.y, tubeZ));
+      if (pts.length < 4) continue;
+      const cu = new THREE.CatmullRomCurve3(pts, true, 'centripetal');
+      tg.push(new THREE.TubeGeometry(cu, Math.max(8, Math.ceil(cu.getLength() / 0.035)), tubeR, 5, true));
+    }
+  }
+  const tubes = tg.length ? mergeGeometries(tg.map((g) => g.toNonIndexed()), false) : null;
+  for (const g of tg) g.dispose();
+  const r = { back, walls, tubes, font: fi.id, shapes: shapes.length };
+  _ap34L.set(key, r);
+  return r;
+}
+// place a chanNeon set: the local frame put at frame (u, y, w) turned by ry about y, into the per-material lists
+function putChan(L, M, lists) {
+  for (const k of ['back', 'walls', 'tubes']) if (L[k]) lists[k].push(L[k].clone().applyMatrix4(M));
+}
+export function buildApollo33(group, frame) {
+  const K = frame.kit, A = AP33, Mk = mats33();
+  // AR34: a warmer, greyer terracotta with more grime
+  // (AR34 wave 2 b3: N253w_sq / apollo_win_1395 at full size: the sunlit piers read (207-212, 204-205, 189-200), lum 205,
+  // the twin's (174-199, 162-185, 141-160), lum 164-186 with '#d6cbb2': too yellow and dark; the set's cream base is in
+  // the render, so the tint is a near-neutral light grey)
+  const TC = K.mat('terracotta_cream', { tint: '#dcdad3', dirt: 0.45 });
+  const TCd = K.mat('terracotta_cream', { tint: '#cbc7bc', dirt: 0.55 });
+  const BRZ = K.mat('alu_bronze', { tint: '#3d3125' });
+  const SS = K.mat('stainless', {});
+  const BLK = K.mat('steel_black', { tint: '#27305a' });   // AR34: the rooftop lattice and the arms are navy-painted steel
+  const box = (m, u0, u1, y0, y1, w0, w1, o) => K.box(m, u0, u1, y0, y1, w0, w1, o);
+  const near = { near: true };
+  // ------------------------------------------------------------ the front wall (w = 0) with its openings
+  const holes = [{ u0: A.lobby.u0, u1: A.lobby.u1, y0: 0, y1: A.lobby.h }, { u0: A.shop.u0, u1: A.shop.u1, y0: 0, y1: A.shop.h }];
+  for (const [b0, b1] of A.bays) for (const [y0, y1] of [A.w2, A.w3]) holes.push({ u0: b0 + 0.2, u1: b1 - 0.2, y0, y1 });
+  K.wall({ u0: A.u0, u1: A.u1, y0: -0.4, y1: A.roof, holes, mat: TC });
+  // the west end: the front stands 0.57 m past the compiled corner and 0.44 m proud of 261's front; close it to 261's wall
+  box(TC, A.u0, 0.02, -0.4, A.bal[1], -0.5, 0.0);
+  // the vestibule under the marquee: returns, a soffit, the bronze and glass doors 1.6 m back, the lobby behind
+  {
+    const L = A.lobby, D = L.d;
+    box(TC, L.u0 - 0.02, L.u0, 0, L.h, -D, 0);
+    box(TC, L.u1, L.u1 + 0.02, 0, L.h, -D, 0);
+    box(TCd, L.u0, L.u1, L.h - 0.02, L.h, -D, 0);
+    box(BRZ, L.u0, L.u1, 0, 0.08, -D - 0.04, -D + 0.04);
+    box(BRZ, L.u0, L.u1, 2.45, 2.6, -D - 0.05, -D + 0.05);
+    box(BRZ, L.u0, L.u1, L.h - 0.1, L.h, -D - 0.05, -D + 0.05);
+    const n = 6;
+    for (let k = 0; k <= n; k++) { const u = L.u0 + ((L.u1 - L.u0) * k) / n; box(BRZ, u - 0.06, u + 0.06, 0, L.h, -D - 0.06, -D + 0.06, near); }
+    for (let k = 0; k < n; k++) { const u = L.u0 + ((L.u1 - L.u0) * (k + 0.5)) / n; box(SS, u - 0.35, u + 0.35, 1.0, 1.05, -D + 0.06, -D + 0.1, near); }
+    box(K.mat('glass_storefront', {}), L.u0, L.u1, 0.08, L.h - 0.1, -D - 0.01, -D + 0.01);
+    box(K.mat('granite_black', { tint: '#1a1a1b' }), L.u0, L.u1, -0.02, 0.01, -D, 0.25);
+    box(K.mat('wood_painted', { tint: '#3a241a' }), L.u0, L.u1, 0, L.h, -D - 6.0, -D - 5.9);
+    box(K.mat('wood_painted', { tint: '#6e1a16' }), L.u0, L.u1, -0.02, 0.0, -D - 6.0, -D);
+  }
+  // the Apollo's shop at 253 (the east bay): the kit's storefront in its hole
+  K.storefront({ u0: A.shop.u0, u1: A.shop.u1, kind: 'store', h: A.shop.h, setback: 0.25,
+    glazing: { bulkhead: 0.12, transom: 0, mullions: 3, frame: 'alu_bronze' }, door: { u: 0.47, w: 1.05, kind: 'glass', recess: 0.5, h: 2.35 },
+    gate: { kind: 'none' }, interior: 'shop_clothing', lit: 1.0 }, A.shop.h);
+  // the shop band (the APOLLO outline letters go on it), the flat band and the moulded sill course over it
+  box(TC, A.piers[0][1], A.u1, A.shop.h, A.flat[0], -0.02, 0.04);
+  box(TC, A.u0, A.u1, A.flat[0], A.flat[1], 0, 0.1);
+  K.extrude(TC, [[0.1, A.sill[0]], [0.16, A.sill[0] + 0.06], [0.2, A.sill[0] + 0.22], [0.28, A.sill[0] + 0.3], [0.3, A.sill[1] - 0.06], [0.24, A.sill[1]], [0, A.sill[1]]], A.u0 - 0.02, A.u1 + 0.02);
+  // ------------------------------------------------------------ piers, pilasters, capitals
+  for (const [p0, p1] of A.piers) {
+    box(TC, p0, p1, -0.02, A.arch[0], 0, 0.14);
+    for (let y = 0.34; y < A.arch[0] - 0.2; y += 0.34) box(TCd, p0 + 0.01, p1 - 0.01, y - 0.012, y + 0.012, 0.14, 0.146, near);
+    box(TC, p0 - 0.04, p1 + 0.04, A.cap[0] - 0.1, A.cap[1], 0, 0.2);
+    box(TCd, (p0 + p1) / 2 - 0.2, (p0 + p1) / 2 + 0.2, A.cap[0], A.cap[1] - 0.12, 0.2, 0.26, near);
+  }
+  for (const c of A.pil) {
+    const h = A.pilW / 2;
+    box(TC, c - h - 0.08, c + h + 0.08, A.sill[1], A.sill[1] + 0.22, 0, 0.18);
+    box(TC, c - h, c + h, A.sill[1] + 0.22, A.cap[0], 0, 0.07);
+    for (let f = 0; f <= 5; f++) { const x = c - h + 0.03 + (f * (A.pilW - 0.06)) / 5; box(TC, x - 0.022, x + 0.022, A.sill[1] + 0.3, A.cap[0] - 0.08, 0.07, 0.12, near); }
+    box(TC, c - h, c + h, A.sill[1] + 0.22, A.sill[1] + 0.3, 0.07, 0.12);
+    box(TC, c - h, c + h, A.cap[0] - 0.08, A.cap[0], 0.07, 0.12);
+    box(TC, c - h - 0.03, c + h + 0.03, A.cap[0], A.cap[0] + 0.06, 0, 0.14);
+    box(TC, c - 0.4, c + 0.4, A.cap[0] + 0.06, A.cap[1] - 0.14, 0, 0.19);
+    box(TC, c - A.capW / 2, c + A.capW / 2, A.cap[1] - 0.14, A.cap[1], 0, 0.24);
+  }
+  const round = [], rods = [], bal = [];
+  // the Ionic volutes: a disc and its rolled rim at each top corner of the capital
+  for (const c of A.pil) for (const s of [-1, 1]) {
+    round.push([new THREE.CylinderGeometry(0.15, 0.15, 0.2, 14).rotateX(Math.PI / 2), mtx(c + s * 0.36, A.cap[1] - 0.2, 0.15)]);
+    round.push([new THREE.TorusGeometry(0.09, 0.025, 6, 16), mtx(c + s * 0.36, A.cap[1] - 0.2, 0.26)]);
+  }
+  // ------------------------------------------------------------ the windows: bronze frames, a mullion, a transom light
+  // AR34: the frames are a light sage-grey painted metal, not bronze
+  // AR34 wave 2 b3: the kit's
+  // panes read; the opaque glass_tower_grey took its default near-black body (the window passes no body colour)
+  const T2 = { kind: 'fixed', mullions: 0, transom: A.t2, frame: { mat: 'plain', tint: '#a9b0a5', rough: 0.5 }, frameW: 0.08, reveal: 0.35, lintel: null, sillStone: null, sheer: 1.0, sheerTint: '#66767c', blinds: 0.35, lit: 0.45 };   // b3b: '#d3d6d5' in 0.8 read lum 182 / 102 (no sheer), b3c '#9eaaae' 166-170, b3d '#7f8f95' 157-161 135-141
+  const T3 = { ...T2, transom: A.t3 };
+  for (const [b0, b1] of A.bays) {
+    K.window(T2, b0 + 0.2, b1 - 0.2, A.w2[0], A.w2[1], { wallMat: TC });
+    K.window(T3, b0 + 0.2, b1 - 0.2, A.w3[0], A.w3[1], { wallMat: TC });
+    const mid = (b0 + b1) / 2;
+    box(TC, b0, b1, A.w2[1], A.w2[1] + 0.2, 0, 0.05);                                           // the lintel band
+    box(TCd, b0 + 0.3, b1 - 0.3, A.w2[1] + 0.32, A.w3[0] - 0.36, -0.035, 0.0);                  // the recessed panel
+    box(TCd, mid - 0.22, mid + 0.22, A.w2[1] + 0.45, A.w2[1] + 0.95, -0.01, 0.055, near);       // the shield
+    K.poly(TCd, [[mid - 0.22, A.w2[1] + 0.45, 0.056], [mid, A.w2[1] + 0.3, 0.056], [mid + 0.22, A.w2[1] + 0.45, 0.056]], [0, 0, 1]);
+    box(TC, b0 - 0.02, b1 + 0.02, A.w3[0] - 0.2, A.w3[0], 0, 0.09);                             // the third storey's sill band
+    box(TC, b0, b1, A.w3[1], A.arch[0], 0, 0.03);
+    // AR34: the Greek-key fret runs in each bay over the third-storey window, level with the
+    // capitals (it was drawn in the frieze over the architrave, which is plain)
+    {
+      const y0 = A.w3[1] + 0.07, y1 = A.arch[0] - 0.05, hh = y1 - y0, t = 0.03, P = 0.3;
+      box(TC, b0 + 0.05, b1 - 0.05, y0 - t, y0, 0.03, 0.055, near); box(TC, b0 + 0.05, b1 - 0.05, y1, y1 + t, 0.03, 0.055, near);
+      for (let u = b0 + 0.08; u + P <= b1 - 0.05; u += P) {
+        box(TC, u, u + t, y0, y1 - 0.08, 0.03, 0.055, near);
+        box(TC, u, u + P * 0.72, y1 - 0.08 - t, y1 - 0.08, 0.03, 0.055, near);
+        box(TC, u + P * 0.72 - t, u + P * 0.72, y0 + 0.08, y1 - 0.08, 0.03, 0.055, near);
+        box(TC, u + P * 0.3, u + P * 0.72, y0 + 0.08, y0 + 0.08 + t, 0.03, 0.055, near);
+        box(TC, u + P * 0.3, u + P * 0.3 + t, y0 + 0.08, y0 + hh * 0.55, 0.03, 0.055, near);
+      }
+    }
+  }
+  // ------------------------------------------------------------ the entablature: architrave, the Greek-key frieze, the cornice
+  box(TC, A.u0 - 0.03, A.u1 + 0.03, A.arch[0], A.arch[1], 0, 0.17);
+  box(TC, A.u0 - 0.03, A.u1 + 0.03, A.arch[1] - 0.06, A.arch[1], 0.17, 0.2);
+  box(TC, A.u0 - 0.03, A.u1 + 0.03, A.frieze[0], A.frieze[1], 0, 0.1);   // the frieze: plain (the fret is in the bays below)
+  box(TC, A.u0 - 0.03, A.u1 + 0.03, A.frieze[1] - 0.08, A.frieze[1], 0.1, 0.16, near);
+  K.extrude(TC, [[0, A.corn[0]], [0.14, A.corn[0]], [0.2, A.corn[0] + 0.08], [0.3, A.corn[0] + 0.15], [0.3, A.corn[0] + 0.4], [0, A.corn[0] + 0.4]], A.u0 - 0.06, A.u1 + 0.06);
+  for (let u = A.u0 + 0.2; u < A.u1 - 0.1; u += 0.52) {
+    box(TCd, u - 0.07, u + 0.07, A.corn[0] + 0.16, A.corn[0] + 0.4, 0.3, 0.78, near);
+    box(TCd, u - 0.07, u + 0.07, A.corn[0] + 0.1, A.corn[0] + 0.2, 0.3, 0.5, near);
+  }
+  K.extrude(TC, [[0, A.corn[0] + 0.4], [0.84, A.corn[0] + 0.4], [0.86, A.corn[0] + 0.44], [0.86, A.corn[1] - 0.1], [0.92, A.corn[1] - 0.04], [0.92, A.corn[1]], [0, A.corn[1]]], A.u0 - 0.1, A.u1 + 0.1);
+  // the balustrade: plinth, dies over the piers and pilasters, balusters, the rail; the parapet's back
+  const dies = [(A.piers[0][0] + A.piers[0][1]) / 2, ...A.pil, (A.piers[1][0] + A.piers[1][1]) / 2];
+  box(TC, A.u0, A.u1, A.bal[0], A.bal[0] + 0.14, 0.06, 0.54);
+  for (const d of dies) box(TC, d - 0.3, d + 0.3, A.bal[0] + 0.14, A.bal[1] - 0.12, 0.08, 0.52);
+  box(TC, A.u0 - 0.02, A.u1 + 0.02, A.bal[1] - 0.14, A.bal[1], 0.04, 0.56);
+  for (let u = A.u0 + 0.25; u < A.u1 - 0.2; u += 0.24) {
+    if (dies.some((d) => Math.abs(u - d) < 0.42)) continue;
+    const hB = A.bal[1] - A.bal[0] - 0.28, yc = A.bal[0] + 0.14 + hB / 2;
+    bal.push([new THREE.CylinderGeometry(0.045, 0.06, hB * 0.5, 8), mtx(u, yc + hB * 0.25, 0.3)], [new THREE.CylinderGeometry(0.06, 0.045, hB * 0.5, 8), mtx(u, yc - hB * 0.25, 0.3)]);
+  }
+  box(TC, A.u0, A.u1, A.roof, A.bal[1], -0.35, 0.06);
+  // ------------------------------------------------------------ the marquee
+  // brushed stainless over a steel core: a soffit rim, a ribbed valance, a lower cap with two neon lines, the recessed LED
+  // screens between rounded corner posts, an upper cap with two neon lines, a top slab; an APOLLO crest on each END
+  const Q = A.mq, place = frame.matrix(0, 0, 0);
+  const SSm = K.mat('stainless', { tint: '#8a8780', dirt: 0.3 }), SSd = K.mat('stainless', { tint: '#5a5853', dirt: 0.4 });
+  const mqY = { v0: Q.y0 + 0.04, v1: Q.y0 + 0.26, c1: Q.y0 + 0.40, c2: Q.y1 - 0.37, c3: Q.y1 - 0.17 };
+  {
+    const slab = (ins, y0, y1, mat, name) => {
+      const g = roundBox(Q.u0 + ins, Q.u1 - ins, Q.d - ins, Math.max(0.06, Q.r - ins), y0, y1);
+      g.applyMatrix4(place); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, mat); m.name = `bid2:apollo:mq:${name}`; m.castShadow = true; m.receiveShadow = true; group.add(m);
+    };
+    slab(0.0, Q.y0, mqY.v0, SSd, 'soffit');
+    slab(0.03, mqY.v0, mqY.v1, SSm, 'valance');
+    slab(-0.05, mqY.v1, mqY.c1, SSm, 'capLow');
+    slab(0.09, mqY.c1, mqY.c2, SSd, 'screens');
+    slab(-0.05, mqY.c2, mqY.c3, SSm, 'capHigh');
+    slab(0.0, mqY.c3, Q.y1, SSm, 'top');
+    slab(0.04, Q.y1, Q.y1 + 0.03, SSd, 'lid');
+  }
+  const sg = [], led = [], tubes = [], tubesW = [], ribs = [];
+  // the ribbed valance under the lower cap (fluting every 0.14 m, front and both ends)
+  for (let u = Q.u0 + Q.r + 0.05; u < Q.u1 - Q.r; u += 0.14) ribs.push(bx(u - 0.022, u + 0.022, mqY.v0 + 0.015, mqY.v1 - 0.015, Q.d - 0.04, Q.d));
+  for (let w = 0.3; w < Q.d - Q.r; w += 0.14) {
+    ribs.push(bx(Q.u0, Q.u0 + 0.04, mqY.v0 + 0.015, mqY.v1 - 0.015, w - 0.022, w + 0.022), bx(Q.u1 - 0.04, Q.u1, mqY.v0 + 0.015, mqY.v1 - 0.015, w - 0.022, w + 0.022));
+  }
+  // neon along the caps: the marquee's plan outline (front and both ends, the rounded corners), two tubes a cap
+  const mqPath = (ins) => {
+    const u0 = Q.u0 + ins, u1 = Q.u1 - ins, d = Q.d - ins, r = Math.max(0.06, Q.r - ins), pts = [];
+    for (let w = 0.15; w < d - r - 0.2; w += 0.6) pts.push([u0, w]);
+    for (let a = 0; a <= 6; a++) { const t = (a / 6) * Math.PI / 2; pts.push([u0 + r - Math.cos(t) * r, d - r + Math.sin(t) * r]); }
+    for (let u = u0 + r + 0.6; u < u1 - r - 0.2; u += 0.6) pts.push([u, d]);
+    for (let a = 0; a <= 6; a++) { const t = (a / 6) * Math.PI / 2; pts.push([u1 - r + Math.sin(t) * r, d - r + Math.cos(t) * r]); }
+    for (let w = d - r - 0.6; w > 0.15; w -= 0.6) pts.push([u1, w]);
+    return pts;
+  };
+  const neonRun = (y, list) => {
+    const pts = mqPath(-0.062).map((p) => new THREE.Vector3(p[0], y, p[1]));
+    list.push([new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts, false, 'centripetal'), pts.length * 3, 0.016, 6, false), new THREE.Matrix4()]);
+  };
+  neonRun(mqY.v1 + 0.045, tubes); neonRun(mqY.v1 + 0.10, tubesW); neonRun(mqY.c2 + 0.06, tubes); neonRun(mqY.c2 + 0.14, tubesW);
+  // the LED boards in their bezel
+  {
+    const by = (mqY.c1 + mqY.c2) / 2, bh = mqY.c2 - mqY.c1 - 0.06, fw = Q.u1 - Q.u0 - 2 * Q.r - 0.05, ew = Q.d - Q.r - 0.3;
+    led.push(ledPanel('front', fw, bh, (Q.u0 + Q.u1) / 2, by, Q.d - 0.09 + 0.006));
+    led.push(ledPanel('east', ew, bh, Q.u1 - 0.09 + 0.006, by, 0.2 + ew / 2, Math.PI / 2));
+    led.push(ledPanel('west', ew, bh, Q.u0 + 0.09 - 0.006, by, 0.2 + ew / 2, -Math.PI / 2));
+  }
+  sg.push(panel('soffit', Q.u1 - Q.u0 - 0.3, Q.d - 0.3, (Q.u0 + Q.u1) / 2, Q.y0 - 0.012, Q.d / 2, 0, Math.PI / 2));
+  // channel letters into meshes (back, returns, tubes), one per material for the lot
+  const addChan = (cl, name) => {
+    const M4 = ap34Mats();
+    for (const [k, mat, shadow] of [['back', M4.back, false], ['walls', M4.ret, true], ['tubes', M4.tube, false]]) {
+      if (!cl[k].length) continue;
+      const g = mergeGeometries(cl[k].map((q) => (q.index ? q.toNonIndexed() : q)), false);
+      if (!g) continue;
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, mat); m.name = `bid2:apollo:${name}:${k}`; m.castShadow = shadow; m.receiveShadow = true; group.add(m);
+    }
+  };
+  // the crests: cream housings 0.92 m tall on the marquee's top at both ends, their
+  // street ends rounded, APOLLO in open red channels with neon on the outer faces (the west crest looks west, the east east)
+  {
+    const M4 = ap34Mats(), Hc = 0.86, t = 0.3, w0 = 0.95, w1 = Q.d - 0.12, R = 0.4, y = Q.y1 + 0.03;
+    const prof = [[w0, y], [w1, y], [w1, y + Hc - R]];
+    for (let a = 1; a <= 8; a++) { const th = (a / 8) * Math.PI / 2; prof.push([w1 - R + Math.cos(th) * R, y + Hc - R + Math.sin(th) * R]); }
+    prof.push([w0, y + Hc]);
+    K.extrude(M4.cream, prof, Q.u0 + 0.03, Q.u0 + 0.03 + t);
+    K.extrude(M4.cream, prof, Q.u1 - 0.03 - t, Q.u1 - 0.03);
+    K.box(SSm, Q.u0 + 0.01, Q.u0 + 0.05 + t, y - 0.02, y + 0.06, w0 - 0.02, w1 + 0.02, near);   // the feet
+    K.box(SSm, Q.u1 - 0.05 - t, Q.u1 - 0.01, y - 0.02, y + 0.06, w0 - 0.02, w1 + 0.02, near);
+    const Lc = w1 - R * 0.3 - w0 - 0.12, cap = 0.64;
+    let L = null;
+    try { L = chanNeon('crest', [['APOLLO', (Hc - cap) / 2 - 0.01, cap]], Lc, Hc, { ppm: 260, depth: 0.07, insets: [0.02, 0.048], tubeR: 0.009, tubeZ: 0.04, maxW: Lc - 0.06, tracking: 0.03 }); }
+    catch (e) { console.warn('[bid2] crest letters', e); }
+    if (L) {
+      const cl = { back: [], walls: [], tubes: [] };
+      putChan(L, frame.matrix(Q.u0 + 0.03, y, w0 + 0.1).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)), cl);
+      putChan(L, frame.matrix(Q.u1 - 0.03, y, w0 + 0.1 + Lc).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), cl);
+      addChan(cl, 'crest');
+    }
+  }
+  sg.push(panel('shopBand', 6.4, A.shop.band[1] - A.shop.band[0], 10.6, (A.shop.band[0] + A.shop.band[1]) / 2, 0.047));
+  // ------------------------------------------------------------ the blade on pilaster 1: three arms and a stay rod
+  const rod = (a, b, r = 0.04) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length();
+    rods.push([new THREE.CylinderGeometry(r, r, L, 5), new THREE.Matrix4().compose(new THREE.Vector3((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()), new THREE.Vector3(1, 1, 1))]); };
+  {
+    const B = A.blade, z0 = B.off, z1 = B.off + B.w, zc = (z0 + z1) / 2, yc = (B.y0 + B.y1) / 2, H = B.y1 - B.y0;
+    // AR34: a painted sheet-metal cabinet, the ochre field on both faces, the
+    // white street edge with a white strip down each face beside it, white top and foot trims; the letters 1.4 m caps every
+    // 1.65 m from 0.5 m under the top (the A 18.6-20.0 m over the sidewalk off blade_1415), open red channels 0.14 m deep
+    // with three nested tubes
+    const M4 = ap34Mats(), ua = B.u - B.t / 2, ub = B.u + B.t / 2, strip = 0.15;
+    box(M4.field, ua, ub, B.y0, B.y1, z0, z1 - 0.04);
+    box(M4.white, ua - 0.006, ub + 0.006, B.y0 - 0.02, B.y1 + 0.05, z1 - 0.04, z1 + 0.03);
+    box(M4.white, ua - 0.014, ua, B.y0, B.y1, z1 - strip, z1 - 0.04, near); box(M4.white, ub, ub + 0.014, B.y0, B.y1, z1 - strip, z1 - 0.04, near);
+    box(M4.white, ua - 0.014, ub + 0.014, B.y1 - 0.04, B.y1 + 0.02, z0, z1 - 0.04, near);
+    box(M4.white, ua - 0.014, ub + 0.014, B.y0, B.y0 + 0.04, z0, z1 - 0.04, near);
+    const Wz = B.w - strip - 0.12, cap = 1.4, pitch = 1.65, rows = [];
+    'APOLLO'.split('').forEach((ch, k) => rows.push([ch, H - 0.5 - cap - k * pitch, cap]));
+    let L = null;
+    try { L = chanNeon('blade', rows, Wz, H, { ppm: 130, depth: 0.14, insets: [0.035, 0.08, 0.125], tubeR: 0.014, tubeZ: 0.075, maxW: Wz - 0.08 }); }
+    catch (e) { console.warn('[bid2] blade letters', e); }
+    if (L) {
+      const cl = { back: [], walls: [], tubes: [] };
+      putChan(L, frame.matrix(ua, B.y0, z0 + 0.1).multiply(new THREE.Matrix4().makeRotationY(-Math.PI / 2)), cl);
+      putChan(L, frame.matrix(ub, B.y0, z0 + 0.1 + Wz).multiply(new THREE.Matrix4().makeRotationY(Math.PI / 2)), cl);
+      addChan(cl, 'blade');
+    } else {
+      // (the painted atlas faces stay as the fallback when the letters cannot be traced)
+      sg.push(panel('blade', B.w - 0.08, H - 0.08, ua - 0.012, yc, zc, -Math.PI / 2));
+      sg.push(panel('blade', B.w - 0.08, H - 0.08, ub + 0.012, yc, zc, Math.PI / 2));
+    }
+    for (const ay of [B.y0 + 0.7, A.corn[0] - 0.3, B.y1 - 1.6]) box(BLK, B.u - 0.07, B.u + 0.07, ay - 0.08, ay + 0.08, 0.1, z0 + 0.05);
+    rod([B.u, A.w2[1] + 0.25, 0.15], [B.u, B.y0 + 0.15, z1 - 0.25], 0.03);
+  }
+  // ------------------------------------------------------------ the rooftop sign frame: a steel lattice braced to the blade
+  {
+    const Fr = A.frame, s = 0.08, y0 = A.roof, y1 = Fr.y1, lv = [y0 + 0.4, y0 + 3.3, y0 + 6.2, y1 - 0.1];
+    for (const u of [Fr.u0, Fr.u1]) for (const w of [Fr.w0, Fr.w1]) box(BLK, u - s, u + s, y0, y1, w - s, w + s);
+    for (const y of lv) {
+      box(BLK, Fr.u0, Fr.u1, y - s, y + s, Fr.w0 - s, Fr.w0 + s); box(BLK, Fr.u0, Fr.u1, y - s, y + s, Fr.w1 - s, Fr.w1 + s);
+      box(BLK, Fr.u0 - s, Fr.u0 + s, y - s, y + s, Fr.w0, Fr.w1); box(BLK, Fr.u1 - s, Fr.u1 + s, y - s, y + s, Fr.w0, Fr.w1);
+    }
+    for (let k = 0; k < 3; k++) {
+      rod([Fr.u0, lv[k], Fr.w1], [Fr.u1, lv[k + 1], Fr.w1]); rod([Fr.u1, lv[k], Fr.w1], [Fr.u0, lv[k + 1], Fr.w1]);
+      rod([Fr.u0, lv[k], Fr.w0], [Fr.u0, lv[k + 1], Fr.w1]); rod([Fr.u1, lv[k], Fr.w1], [Fr.u1, lv[k + 1], Fr.w0]);
+      rod([Fr.u0, lv[k], Fr.w0], [Fr.u1, lv[k + 1], Fr.w0]);
+    }
+    rod([Fr.u1, y1 - 0.4, Fr.w1], [A.blade.u, A.blade.y1 - 0.5, A.blade.off + 0.2], 0.05);
+  }
+  // ------------------------------------------------------------ the own meshes (signs, LED boards, tubes, round pieces)
+  let tris = 0;
+  const addM = (parts, mat, name, shadow) => {
+    if (!parts.length) return;
+    const g = merge(parts, place), m = new THREE.Mesh(g, mat);
+    m.name = `bid2:apollo:${name}`; m.castShadow = shadow; m.receiveShadow = true; group.add(m); tris += g.getAttribute('position').count / 3;
+  };
+  addM(sg, Mk.sign, 'signs', false);
+  addM(led, Mk.led33, 'led', false);
+  addM(tubes, Mk.tubeB, 'neon', false);
+  addM(tubesW, Mk.tubeW, 'neonW', false);
+  addM(ribs, SSm, 'ribs', false);
+  addM(round, TC, 'round', true);
+  addM(rods, BLK, 'rods', true);
+  addM(bal, TC, 'balusters', true);
+  // ------------------------------------------------------------ the massing: the lobby block and the auditorium behind it
+  {
+    const P0 = frame.p0, P1 = frame.p1, N = frame.n, U = frame.u, D = A.lobbyD, y0 = frame.y0;
+    const back = (p) => [p[0] - N[0] * D, p[1] - N[1] * D];
+    const BR = K.mat('brick_tan', { tint: '#8d7a64', dirt: 0.45 });
+    // the lobby block: the compiled front edge, D metres deep (its front face is the terracotta wall above)
+    const g1 = prismGeom([P0, P1, back(P1), back(P0)], y0 - 0.3, y0 + A.roof, new Set([0]));
+    const m1 = new THREE.Mesh(g1, BR); m1.name = 'bid2:apollo:lobby'; m1.castShadow = true; m1.receiveShadow = true; group.add(m1);
+    // the auditorium: the lot's ring behind the lobby's back line
+    const dn = (p) => (p[0] - P0[0]) * N[0] + (p[1] - P0[1]) * N[1];
+    const R = frame.ring, out = [];
+    for (let i = 0; i < R.length; i++) {
+      const a = R[i], b = R[(i + 1) % R.length], da = dn(a) + D, db = dn(b) + D;   // < 0: behind the line
+      if (da <= 0) out.push(a);
+      if ((da < 0) !== (db < 0) && Math.abs(da - db) > 1e-9) { const t = da / (da - db); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+    }
+    void U;
+    if (out.length >= 3) {
+      const g2 = prismGeom(out, y0 - 0.3, y0 + A.audH);
+      const m2 = new THREE.Mesh(g2, BR); m2.name = 'bid2:apollo:auditorium'; m2.castShadow = true; m2.receiveShadow = true; group.add(m2);
+      tris += g2.getAttribute('position').count / 3;
+    }
+    // AR34: the roofs a dark grey membrane, not the walls' brick
+    const MEM = K.mat('roof_membrane', { tint: '#4b4b4d', dirt: 0.5 });
+    for (const [poly, y] of [[[P0, P1, back(P1), back(P0)], y0 + A.roof + 0.03], [out, y0 + A.audH + 0.03]]) {
+      if (poly.length < 3) continue;
+      const sh = new THREE.Shape(poly.map((p) => new THREE.Vector2(p[0], -p[1])));
+      const g = new THREE.ShapeGeometry(sh); g.rotateX(-Math.PI / 2); g.translate(0, y, 0); g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, MEM); m.name = 'bid2:apollo:roof'; m.receiveShadow = true; group.add(m);
+    }
+    tris += g1.getAttribute('position').count / 3;
+  }
+  return { tris };
 }

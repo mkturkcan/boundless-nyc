@@ -8,9 +8,22 @@
 // edges and the NYS orthoimagery agree to 0.05 deg). a runs toward the Lake along the axis, b east; the origin is the
 // fountain's centre. Meshes are built in a local frame x = b, y = world y, z = -a, placed with rotation.y = -TH.
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices, toCreasedNormals } from 'three/addons/utils/BufferGeometryUtils.js';
 import { applyLightTrim, applyStoneDetail } from '../world/materials.js';
 import { FW25, FW26, FW27, fountainProbe, fountainSpray, poolRings, veilMat } from './fountainFX.js';
+import { cpPoolWaterMat } from './cpWaterMat.js';
+// CPFW (owner 2026-09-30: "Central park fountain water looks weird and tiled; the lake water has a much better shader"):
+// the pool and the two basins take the Lake's water shader (city/cpWaterMat.js) scaled for a fountain, instead of the
+// campus fountains' tiled ripple map under FW27's rings; `?cpfw=0` restores that
+const CPFW = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cpfw') === '0');
+// CP33 (owner 2026-09-30 22:15: "for Central Park, stones, parts of bridges, and the castle area look really low poly ...
+// update all details and objects so that nothing looks flat low poly"): the Angel of the Waters from a photogrammetry
+// scan (models/cp33/bethesda/angel.glb, tools/cp33/bethesda/angel.mjs) in a patinated bronze, every bronze and stone
+// part smooth-shaded, the fountain's tiers in their own stones (a dark granite base and frieze, eight pink-red granite
+// columns with bronze capitals and bases, an octagonal pink-tan lower basin with a bronze rim), the lower veil as eight
+// streams off the basin's corners and the upper one broken into drops, the bronze rock, the drive over the Arcade in
+// granite setts, the treads nosed over darker risers. `?cp33b=0` restores CP32's build.
+export const CP33B = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cp33b') === '0');
 
 export const TH = (16.85 * Math.PI) / 180;
 export const C0 = [31.313, 976.286];          // the fountain's centre, world x, z
@@ -125,7 +138,7 @@ function reliefMaps() {
   const ao = canvas(W, Hh), ac = ao.getContext('2d'), ai = ac.createImageData(W, Hh);
   for (let i = 0; i < W * Hh; i++) { const v = 150 + H0[i] * 105; ai.data[i * 4] = v; ai.data[i * 4 + 1] = v; ai.data[i * 4 + 2] = v * 0.97; ai.data[i * 4 + 3] = 255; }
   ac.putImageData(ai, 0, 0);
-  _relief = { nrm: texOf(nrm, false), ao: texOf(ao, true) };
+  _relief = { nrm: texOf(nrm, false), ao: texOf(ao, true), H: H0, W, Hh };   // CP33: the height for carved geometry
   return _relief;
 }
 
@@ -148,6 +161,118 @@ function diaperMaps() {
   _diaper = { nrm: texOf(nrm, false), ao: texOf(ao, true) };
   return _diaper;
 }
+// CP33 bronze with its patina: a dark brown metal where the rain washes it, a green-grey verdigris (a mineral, not a
+// metal: rougher, no metallic reflection) in the recesses (the scan's cavity map where there is one, else the hollows
+// of a world-space noise) and in streaks drawn down from the upward faces; smooth-shaded
+function patinaBronze(o) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.42, metalness: 0.6, map: o.cav || null });
+  const base = new THREE.Color(o.base), verd = new THREE.Color(o.verd);
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.paBase = { value: base }; sh.uniforms.paVerd = { value: verd }; sh.uniforms.paAmt = { value: o.amt ?? 0.55 };
+    // o.attr: the cavity map is a per-vertex attribute 'cavity' (the cherubs: a scan without a texture, its photo shading baked
+    // into the vertices by tools/cp33/bethesda/cherub.mjs)
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vPaW; varying vec3 vPaN;' + (o.attr ? '\nattribute float cavity; varying float vPaC;' : ''))
+      .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvPaW = (modelMatrix * vec4(transformed, 1.0)).xyz; vPaN = normalize(mat3(modelMatrix) * objectNormal);' + (o.attr ? '\nvPaC = cavity;' : ''));
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      uniform vec3 paBase; uniform vec3 paVerd; uniform float paAmt; varying vec3 vPaW; varying vec3 vPaN;${o.attr ? ' varying float vPaC;' : ''}
+      float paH(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+      float paN(vec3 p) { vec3 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(paH(i), paH(i + vec3(1.0, 0.0, 0.0)), f.x), mix(paH(i + vec3(0.0, 1.0, 0.0)), paH(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+                   mix(mix(paH(i + vec3(0.0, 0.0, 1.0)), paH(i + vec3(1.0, 0.0, 1.0)), f.x), mix(paH(i + vec3(0.0, 1.0, 1.0)), paH(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z); }`)
+      .replace('#include <map_fragment>', `
+      float paCav;
+      ${o.attr ? 'paCav = smoothstep(0.16, 0.72, vPaC);' : `
+      #ifdef USE_MAP
+        paCav = smoothstep(0.16, 0.72, texture2D(map, vMapUv).r);
+      #else
+        paCav = 0.3 + 0.7 * (0.65 * paN(vPaW * 7.0) + 0.35 * paN(vPaW * 23.0));
+      #endif`}
+      float paStreak = paN(vec3(vPaW.x * 16.0, vPaW.y * 0.9, vPaW.z * 16.0));
+      float paUp = clamp(vPaN.y, 0.0, 1.0);
+      float pat = smoothstep(0.1, 0.85, clamp((1.0 - paCav) * 1.05 + paUp * 0.3 + (paStreak - 0.5) * 0.55, 0.0, 1.0) * paAmt * 1.4);
+      diffuseColor.rgb = mix(paBase, paVerd, pat) * (0.86 + 0.28 * paN(vPaW * 61.0));`)
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.34, 0.8, pat);')
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(0.62, 0.06, pat);');
+  };
+  m.customProgramCacheKey = () => 'cp33patina' + (o.cav ? 'C' : '') + (o.attr ? 'A' : '');
+  return LT(m);
+}
+// CP33 the scanned cherubs (tools/cp33/bethesda/cherub.mjs: noe-3d.at's "Putto auf Fisch", CC0): two hands (A and B, mirror
+// images) in three LODs each (70k, 12k and 2.5k triangles), the photo shading in a per-vertex 'cavity' attribute
+let _cherubScan = null;
+export const cherubScan = () => _cherubScan || (_cherubScan = (async () => {
+  const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+  const g = await new GLTFLoader().loadAsync('models/cp33/bethesda/cherub.glb');
+  const geos = {};
+  g.scene.traverse((o) => {
+    if (!o.isMesh) return;
+    const col = o.geometry.getAttribute('color');
+    if (col) { const c = new Float32Array(col.count); for (let i = 0; i < c.length; i++) c[i] = col.getX(i); o.geometry.setAttribute('cavity', new THREE.BufferAttribute(c, 1)); o.geometry.deleteAttribute('color'); }
+    geos[o.name] = o.geometry;
+  });
+  return { A: [geos.A0, geos.A1, geos.A2], B: [geos.B0, geos.B1, geos.B2], mat: patinaBronze({ base: 0x40332a, verd: 0x62826f, amt: 0.62, attr: true }) };
+})());
+// CP33 a rock (bronze or stone): an icosphere welded and pushed out by lumps, three octaves of RIDGED noise (crests, not
+// blobs), horizontal strata and eight cleavage planes that cut flat facets with sharp arrises; flattened at the bottom;
+// rx, ry, rz the half extents. Smooth-shaded over 10-40k vertices
+export function rockGeo(rx, ry, rz, seed = 1, detail = 5) {
+  const g = mergeVertices(new THREE.IcosahedronGeometry(1, detail).deleteAttribute('normal').deleteAttribute('uv'));
+  const p = g.attributes.position, h = (x, y, z) => { const s = Math.sin(x * 12.9898 + y * 78.233 + z * 37.719 + seed * 4.1) * 43758.5453; return s - Math.floor(s); };
+  const vn = (x, y, z) => { const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), fx = x - xi, fy = y - yi, fz = z - zi, u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy), w = fz * fz * (3 - 2 * fz);
+    const L = (a, b, t) => a + (b - a) * t;
+    return L(L(L(h(xi, yi, zi), h(xi + 1, yi, zi), u), L(h(xi, yi + 1, zi), h(xi + 1, yi + 1, zi), u), v), L(L(h(xi, yi, zi + 1), h(xi + 1, yi, zi + 1), u), L(h(xi, yi + 1, zi + 1), h(xi + 1, yi + 1, zi + 1), u), v), w); };
+  const rd = (x, y, z, k) => 1 - Math.abs(2 * vn(x * k, y * k, z * k) - 1);
+  const planes = Array.from({ length: 8 }, (_, i) => { const a = h(i, 1, 2) * 6.283, e = (h(i, 3, 4) - 0.25) * 1.3; return [Math.cos(a) * Math.cos(e), Math.sin(e), Math.sin(a) * Math.cos(e), 0.7 + 0.2 * h(i, 5, 6)]; });
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    let r = 1 + 0.17 * (vn(x * 1.9, y * 1.9, z * 1.9) - 0.5) + 0.10 * (rd(x, y, z, 4.3) - 0.5) + 0.055 * (rd(x, y, z, 9.1) - 0.5) + 0.03 * (rd(x, y, z, 19) - 0.5) + 0.012 * (vn(x * 41, y * 41, z * 41) - 0.5);
+    r *= 1 + 0.018 * Math.sin((y * 8.5 + 2.4 * vn(x * 1.7, y * 1.7, z * 1.7)) * 3);
+    for (const [nx, ny, nz, d] of planes) { const t = (x * nx + y * ny + z * nz) * r; if (t > d) r *= 1 - 0.9 * (t - d) / Math.max(t, 1e-3); }
+    x *= r; y *= r; z *= r;
+    if (y < -0.55) y = -0.55 - (y + 0.55) * 0.15;
+    p.setXYZ(i, x * rx, y * ry, z * rz);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+// CP33 granite setts (Terrace Drive over the Arcade; Commons "Central Park Apr 2019 122", look only): grey granite blocks
+// ~12 x 22 cm in courses across the drive, each its own tone with a split face, dark sanded joints; 1024 px over 2.4 m,
+// mapped by the slab's (b, a) metres; the normal map from the blocks' domed tops and sunk joints
+let _setts = null;
+function settsMat() {
+  if (_setts) return _setts;
+  const N = 1024, S = 2.4, H = new Float32Array(N * N), cv = canvas(N, N), c = cv.getContext('2d'), img = c.createImageData(N, N);
+  const cw = 0.12, rows = Math.round(S / cw), lenA = S / 11;
+  const tone = new Float32Array(rows * 12 * 3);
+  for (let i = 0; i < tone.length; i += 3) { const t = 0.36 + rnd() * 0.2, w = (rnd() - 0.5) * 0.03; tone[i] = t + w; tone[i + 1] = t; tone[i + 2] = t - w * 0.5 + 0.01; }
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const u = (x / N) * S, v = (y / N) * S, row = Math.floor(u / cw), fu = u / cw - row, off = (row % 2) * 0.5, sv = v / lenA + off, col = Math.floor(sv) % 11, fv = sv - Math.floor(sv);
+    const du = Math.min(fu, 1 - fu) * cw, dv = Math.min(fv, 1 - fv) * lenA, d = Math.min(du, dv);   // metres to the joint
+    const jw = 0.007 + 0.004 * Math.sin(row * 3.1 + col * 1.7);
+    const k = (row * 12 + col) * 3, sp = 0.85 + 0.3 * rnd();
+    const top = d < jw ? 0 : Math.min(1, (d - jw) / 0.018) * (0.75 + 0.25 * Math.sin(fu * 3.14) * Math.sin(fv * 3.14)) + (rnd() - 0.5) * 0.06;
+    H[y * N + x] = top;
+    const i = (y * N + x) * 4, j = d < jw ? 0.16 + rnd() * 0.04 : 1;
+    img.data[i] = Math.min(255, tone[k] * sp * j * 255); img.data[i + 1] = Math.min(255, tone[k + 1] * sp * j * 255); img.data[i + 2] = Math.min(255, tone[k + 2] * sp * j * 255); img.data[i + 3] = 255;
+  }
+  c.putImageData(img, 0, 0);
+  const map = texOf(cv, true), nrm = texOf(heightToNormal(H, N, N, 3.0), false);
+  map.repeat.set(1 / S, 1 / S); nrm.repeat.set(1 / S, 1 / S);
+  _setts = LT(new THREE.MeshStandardMaterial({ map, normalMap: nrm, normalScale: new THREE.Vector2(1.2, 1.2), roughness: 0.86, metalness: 0 }));
+  return _setts;
+}
+// CP33 the scanned angel (tools/cp33/bethesda/angel.mjs: noe-3d.at's "Engel", CC BY 4.0), its three LODs, loaded once
+let _angelScan = null;
+export const angelScan = () => _angelScan || (_angelScan = (async () => {
+  const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+  const g = await new GLTFLoader().loadAsync('models/cp33/bethesda/angel.glb');
+  const geos = {};
+  let cav = null;
+  g.scene.traverse((o) => { if (o.isMesh) { geos[o.name] = o.geometry; cav = cav || o.material.map; } });
+  if (cav) { cav.colorSpace = THREE.NoColorSpace; cav.anisotropy = 8; cav.needsUpdate = true; }
+  return { geos: [geos.LOD0, geos.LOD1, geos.LOD2], mat: patinaBronze({ base: 0x45382b, verd: 0x6a8a76, amt: 0.6, cav }) };
+})());
+
 // the terrace's stone: the Albert (New Brunswick) sandstone Vaux and Mould carved, a warm buff going olive and grey where
 // it has weathered; triplanar sandstone detail with ashlar coursing
 let _M = null;
@@ -168,12 +293,21 @@ export function mats() {
     paving: pavingMat(),
     upper: upperPavingMat(),
     tile: tileMat(),
-    bronze: LT(new THREE.MeshStandardMaterial({ color: 0x46503e, roughness: 0.5, metalness: 0.55, flatShading: true })),
-    bronzeD: LT(new THREE.MeshStandardMaterial({ color: 0x2f3a31, roughness: 0.55, metalness: 0.5, flatShading: true })),
+    bronze: CP33B ? patinaBronze({ base: 0x3b2f24, verd: 0x5d7b69, amt: 0.55 }) : LT(new THREE.MeshStandardMaterial({ color: 0x46503e, roughness: 0.5, metalness: 0.55, flatShading: true })),
+    bronzeD: CP33B ? patinaBronze({ base: 0x2e271f, verd: 0x506c5c, amt: 0.62, rock: 1 }) : LT(new THREE.MeshStandardMaterial({ color: 0x2f3a31, roughness: 0.55, metalness: 0.5, flatShading: true })),
+    // CP33 the fountain's tiers (the photographs): the base and its frieze a dark granite, the columns a pink-red polished
+    // granite, the lower basin a pink-tan stone
+    granDk: gran(0x56524d, 0.62),
+    granRed: applyStoneDetail(LT(new THREE.MeshStandardMaterial({ color: 0x9a5a4c, roughness: 0.32, metalness: 0.02 })), 'cgranite', { amt: 0.75, nrm: 0.35, rgh: 0.25 }),
+    basinTan: stone(0xb39782, { ashlar: 0 }),
+    carvedDk: applyStoneDetail(LT(new THREE.MeshStandardMaterial({ color: 0x5c5853, roughness: 0.7, metalness: 0.02, vertexColors: true })), 'cgranite', { amt: 0.6, nrm: 0.4, rgh: 0.3 }),
+    setts: settsMat(),
+    riser: stone(0x6d675c, { ashlar: 0 }),
     iron: LT(new THREE.MeshStandardMaterial({ color: 0x1d2320, roughness: 0.55, metalness: 0.6 })),
     glass: LT(new THREE.MeshStandardMaterial({ color: 0xfff2d8, roughness: 0.3, emissive: 0xffd9a0, emissiveIntensity: 0.6 })),
     dark: LT(new THREE.MeshStandardMaterial({ color: 0x3a3228, roughness: 0.95 })),
-    leaf: LT(new THREE.MeshStandardMaterial({ color: 0x3d5a2a, roughness: 0.85, flatShading: true })),
+    leaf: LT(new THREE.MeshStandardMaterial({ color: 0x3d5a2a, roughness: 0.8, flatShading: !CP33B, side: CP33B ? THREE.DoubleSide : THREE.FrontSide })),
+    leaf2: LT(new THREE.MeshStandardMaterial({ color: 0x597a34, roughness: 0.75, side: THREE.DoubleSide })),
   };
   return _M;
 }
@@ -191,24 +325,68 @@ function brickDetail(m, sx, sy) {
   const prev = m.onBeforeCompile;
   m.onBeforeCompile = (sh, r) => {
     prev?.call(m, sh, r);
-    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-      {
-        vec2 pm = vec2( vMapUv.x * ${sx.toFixed(3)}, vMapUv.y * ${sy.toFixed(3)} );
-        vec2 q = vec2( 0.70711 * ( pm.x + pm.y ), 0.70711 * ( pm.y - pm.x ) );
-        float row = floor( q.y / 0.1 );
-        float xb = q.x / 0.2 + 0.5 * mod( row, 2.0 );
-        vec2 cell = vec2( floor( xb ), row );
-        vec2 f = vec2( fract( xb ) * 0.2, fract( q.y / 0.1 ) * 0.1 );
-        float jd = min( min( f.x, 0.2 - f.x ), min( f.y, 0.1 - f.y ) );
-        float aa = clamp( 1.0 - length( fwidth( q ) ) / 0.035, 0.0, 1.0 );
-        float joint = ( 1.0 - smoothstep( 0.0, 0.007, jd ) ) * aa;
-        float h = fract( sin( dot( cell, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
-        float isBrick = smoothstep( 0.14, 0.22, diffuseColor.r - diffuseColor.b );
-        diffuseColor.rgb *= mix( 1.0, mix( 1.0, 0.84 + 0.3 * h, aa ) * ( 1.0 - 0.42 * joint ), isBrick );
-      }`);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        float cpbH2( vec2 p ) { p = mod( p, 251.0 ); return fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 ); }   // reduced first: sin() of a 1e7 argument is noise stripes in fp32
+        float cpbN( vec2 p ) { vec2 i = floor( p ), f = fract( p ); f = f * f * ( 3.0 - 2.0 * f );
+          return mix( mix( cpbH2( i ), cpbH2( i + vec2( 1.0, 0.0 ) ), f.x ), mix( cpbH2( i + vec2( 0.0, 1.0 ) ), cpbH2( i + vec2( 1.0, 1.0 ) ), f.x ), f.y ); }`)
+      .replace('#include <map_fragment>', `#include <map_fragment>
+        // CP33: Roman brick (20 x 10 cm) laid at 45 degrees to the axis in a stretcher bond, every brick its own tone and hue,
+        // the pale bands as granite with grain; the brick/band split is the LINEAR red-green difference (brick .12-.15, band
+        // .06; the earlier test on red-blue was ~.16 on both and the joints never showed). cpbH is the surface height in metres
+        // (sunk mortar, domed faces) for the bump below; the detail fades into the mean tone with the pixel's footprint
+        float cpbJ = 0.0, cpbBr = 0.0, cpbH = 0.0, cpbAa = 0.0;
+        vec2 cpbPm = vec2( vMapUv.x * ${sx.toFixed(3)}, vMapUv.y * ${sy.toFixed(3)} );
+        {
+          vec2 q = vec2( 0.70711 * ( cpbPm.x + cpbPm.y ), 0.70711 * ( cpbPm.y - cpbPm.x ) );
+          float fp = max( length( fwidth( q ) ), 1e-4 );
+          cpbAa = clamp( 1.0 - fp / 0.07, 0.0, 1.0 );
+          float row = floor( q.y / 0.1 );
+          float xb = q.x / 0.2 + 0.5 * mod( row, 2.0 );
+          vec2 cell = vec2( floor( xb ), row );
+          vec2 f = vec2( fract( xb ) * 0.2, fract( q.y / 0.1 ) * 0.1 );
+          float jd = min( min( f.x, 0.2 - f.x ), min( f.y, 0.1 - f.y ) );
+          float h1 = cpbH2( cell ), h2 = cpbH2( cell + 17.3 ), h3 = cpbH2( cell + 41.9 );
+          cpbBr = smoothstep( 0.075, 0.105, diffuseColor.r - diffuseColor.g );
+          float jw = 0.0035, fw = fp * 0.5;
+          float jSharp = ( 1.0 - smoothstep( jw - fw, jw + fw, jd ) ) * min( 1.0, jw / fw );
+          cpbJ = mix( 0.105, jSharp, cpbAa );
+          float mott = cpbN( cpbPm * 42.0 + cell * 7.3 ) * 0.6 + cpbN( cpbPm * 130.0 ) * 0.4;
+          float tone = 0.80 + 0.36 * h1;
+          tone *= mix( 1.0, 0.60, step( 0.93, h2 ) );                                   // dark, hard-fired bricks
+          tone *= mix( 1.0, 1.22, step( 0.95, h3 ) * ( 1.0 - step( 0.93, h2 ) ) );     // pale, underfired ones
+          vec3 hue = vec3( 1.0 + 0.10 * ( h2 - 0.5 ), 1.0, 1.0 - 0.20 * ( h3 - 0.5 ) );
+          vec3 brickCol = diffuseColor.rgb * tone * hue * ( 0.88 + 0.24 * mott ) * 0.95;
+          brickCol *= 1.0 - 0.28 * ( 1.0 - smoothstep( 0.0, 0.016, jd ) );              // the worn arris, grime at the edge
+          vec3 mortar = vec3( 0.26, 0.23, 0.19 ) * ( 0.8 + 0.4 * cpbN( cpbPm * 70.0 ) );
+          vec3 det = mix( brickCol, mortar, cpbJ );
+          diffuseColor.rgb = mix( diffuseColor.rgb, det, cpbBr * mix( 0.6, 1.0, cpbAa ) );
+          // the granite bands: grains 3-5 mm (pink feldspar, black mica), faded by the footprint
+          float gA = clamp( 1.0 - fp / 0.025, 0.0, 1.0 ) * ( 1.0 - cpbBr );
+          float g1 = cpbN( cpbPm * 240.0 ), g2 = cpbN( cpbPm * 610.0 + 5.0 ), g3 = cpbN( cpbPm * 410.0 + 11.0 );
+          vec3 gr = diffuseColor.rgb * ( 0.84 + 0.30 * g1 );
+          gr = mix( gr, gr * vec3( 1.28, 0.94, 0.90 ), smoothstep( 0.66, 0.78, g2 ) );
+          gr = mix( gr, gr * 0.42, smoothstep( 0.74, 0.82, g3 ) );
+          diffuseColor.rgb = mix( diffuseColor.rgb, gr, gA );
+          cpbH = ( -0.0042 * ( 1.0 - smoothstep( jw, jw + 0.0045, jd ) ) + 0.0016 * smoothstep( 0.0, 0.05, jd ) * ( 0.4 + 0.6 * mott ) ) * cpbBr * cpbAa;
+          cpbH += 0.0007 * ( g1 - 0.5 ) * gA;
+        }`)
+      .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
+        roughnessFactor = clamp( mix( roughnessFactor, 0.97, cpbJ * cpbBr ), 0.05, 1.0 );`)
+      .replace('#include <clearcoat_normal_fragment_begin>', `
+        {
+          // CP33: bump from cpbH (Mikkelsen's surface-gradient perturbation, unnormalised tangents: the height is in metres)
+          vec2 cpbD = vec2( dFdx( cpbH ), dFdy( cpbH ) );
+          vec3 cpbSx = dFdx( - vViewPosition ), cpbSy = dFdy( - vViewPosition );
+          vec3 cpbR1 = cross( cpbSy, normal ), cpbR2 = cross( normal, cpbSx );
+          float cpbDet = dot( cpbSx, cpbR1 );
+          vec3 cpbG = sign( cpbDet ) * ( cpbD.x * cpbR1 + cpbD.y * cpbR2 );
+          normal = normalize( abs( cpbDet ) * normal - cpbG );
+        }
+        #include <clearcoat_normal_fragment_begin>`);
   };
   const key = m.customProgramCacheKey?.bind(m);
-  m.customProgramCacheKey = () => (key ? key() : '') + '|cpbBrick' + sx.toFixed(1) + sy.toFixed(1);
+  m.customProgramCacheKey = () => (key ? key() : '') + '|cpbBrick33' + sx.toFixed(1) + sy.toFixed(1);
   m.needsUpdate = true;
   return m;
 }
@@ -325,7 +503,23 @@ function tileMat() {
   }
   const t = texOf(cv, true);
   t.anisotropy = 16;
-  return LT(new THREE.MeshStandardMaterial({ map: t, roughness: 0.28, metalness: 0.02, emissiveMap: t, emissive: 0x3a2a1a, emissiveIntensity: 0.6 }));
+  if (!CP33B) return LT(new THREE.MeshStandardMaterial({ map: t, roughness: 0.28, metalness: 0.02, emissiveMap: t, emissive: 0x3a2a1a, emissiveIntensity: 0.6 }));
+  // CP33: the tiles as glazed relief: each 13 cm tile a little domed (its own height), the grout sunk, the panel's frame
+  // raised over the girders' soffit; the same layout as the colours, so one normal map on the same UVs
+  const N = BAY * 2, NH = new Float32Array(N * N), hash = (a, b, c, d) => { const s = Math.sin(a * 127.1 + b * 311.7 + c * 74.7 + d * 19.3) * 43758.5453; return s - Math.floor(s); };
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const bx = x >= BAY ? 1 : 0, by = y >= BAY ? 1 : 0, lx = x - bx * BAY, ly = y - by * BAY, px = lx - off, py = ly - off;
+    let h = 0.18;                                                       // the soffit
+    if (px >= -6 && py >= -6 && px < panelPx + 6 && py < panelPx + 6) h = 0.5;      // the frame
+    if (px >= 0 && py >= 0 && px < panelPx && py < panelPx) {
+      const u = px / T, v = py / T, i = Math.floor(u), j = Math.floor(v), d = Math.min(u - i, i + 1 - u, v - j, j + 1 - v) * T;
+      h = d < 1.4 ? 0.52 : 0.78 + 0.08 * hash(bx, by, i, j) + 0.06 * Math.min(1, (d - 1.4) / 5);
+    }
+    NH[y * N + x] = h;
+  }
+  const nrmT = texOf(heightToNormal(NH, N, N, 4.0), false);
+  nrmT.anisotropy = 16;
+  return LT(new THREE.MeshStandardMaterial({ map: t, normalMap: nrmT, normalScale: new THREE.Vector2(1.0, 1.0), roughness: 0.24, metalness: 0.02, emissiveMap: t, emissive: 0x3a2a1a, emissiveIntensity: 0.6 }));
 }
 
 // ---- the geometry bag: parts per material in the local frame (x = b, z = -a), merged at the end --------------------
@@ -497,8 +691,11 @@ function balustrade(bag, balL, a0, b0, a1, b1, yf, o = {}) {
       const len = s1 - s0, ph = H - 0.36, sh = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(len, 0), new THREE.Vector2(len, ph), new THREE.Vector2(0, ph)]);
       const nh = Math.max(1, Math.round(len / 0.36)), rr = Math.min(0.13, ph * 0.3);
       for (let j = 0; j < nh; j++) { const c = new THREE.Path(); c.absarc(((j + 0.5) / nh) * len, ph / 2, rr, 0, Math.PI * 2, true); sh.holes.push(c); }
-      const g = new THREE.ExtrudeGeometry(sh, { depth: 0.2, bevelEnabled: false, curveSegments: 10 });
-      g.translate(0, 0, -0.1);
+      // CP33: arrised (a 1.2 cm bevel catches the light on every opening), the openings round at 24 segments
+      let g = CP33B ? new THREE.ExtrudeGeometry(sh, { depth: 0.17, bevelEnabled: true, bevelThickness: 0.014, bevelSize: 0.011, bevelOffset: -0.011, bevelSegments: 2, curveSegments: 24 })
+        : new THREE.ExtrudeGeometry(sh, { depth: 0.2, bevelEnabled: false, curveSegments: 10 });
+      g.translate(0, 0, CP33B ? -0.085 : -0.1);
+      if (CP33B) g = toCreasedNormals(g, 0.6);   // the openings' walls smooth over their 15-degree facets, the arrises crisp
       // local x along the run from p0, y up: onto the run's heading (a panel on a level base)
       const yaw = Math.atan2(ub, -ua) - Math.PI / 2;
       g.rotateY(yaw);
@@ -515,7 +712,11 @@ function balustrade(bag, balL, a0, b0, a1, b1, yf, o = {}) {
 }
 // a turned baluster, 1 m tall (scaled to the run), for instancing
 function balusterGeo() {
-  return lathe([[0.001, 0], [0.085, 0], [0.085, 0.07], [0.06, 0.1], [0.075, 0.2], [0.1, 0.36], [0.09, 0.5], [0.05, 0.64], [0.04, 0.72], [0.065, 0.78], [0.05, 0.84], [0.085, 0.9], [0.085, 1.0], [0.001, 1.0]], 10);
+  if (!CP33B) return lathe([[0.001, 0], [0.085, 0], [0.085, 0.07], [0.06, 0.1], [0.075, 0.2], [0.1, 0.36], [0.09, 0.5], [0.05, 0.64], [0.04, 0.72], [0.065, 0.78], [0.05, 0.84], [0.085, 0.9], [0.085, 1.0], [0.001, 1.0]], 10);
+  // CP33: a turned baluster in 28 sides and a fuller profile (a plinth, a cyma, the swelling vase, a collar of fillets and
+  // beads under the abacus), smooth-shaded; 1 m tall, scaled to the run
+  return lathe([[0.001, 0], [0.088, 0], [0.088, 0.04], [0.098, 0.05], [0.098, 0.075], [0.074, 0.088], [0.064, 0.115], [0.07, 0.15], [0.086, 0.205], [0.103, 0.29], [0.11, 0.38], [0.103, 0.46],
+    [0.086, 0.54], [0.064, 0.62], [0.048, 0.69], [0.042, 0.73], [0.05, 0.755], [0.068, 0.77], [0.07, 0.79], [0.056, 0.805], [0.05, 0.83], [0.058, 0.855], [0.074, 0.875], [0.09, 0.9], [0.094, 0.925], [0.094, 1.0], [0.001, 1.0]], 28);
 }
 // a solid parapet along a run whose nosing line goes p0[2] -> p1[2]: its top 1.1 m (h) carved panels under a coping,
 // over an ashlar wall down to the floor (or deeper); o.topMin raises the top (a retaining wall with the ground behind)
@@ -533,8 +734,34 @@ function parapet(bag, p0, p1, w, h, floorY, o = {}) {
     rakeBox(bag, 'sandL', [A[0], A[1], TA], [B[0], B[1], TB], w + 0.14, 0.16, 0);
   }
 }
+// CP33 a block with its vertical corners chamfered (ch) and its edges arrised: a shape in (b, a) extruded up
+function cbox(bag, key, a0, a1, b0, b1, y0, y1, ch = 0.03, bev = 0.008) {
+  const c = Math.min(ch, (a1 - a0) / 3, (b1 - b0) / 3);
+  const sh = new THREE.Shape([[b0 + c, a0], [b1 - c, a0], [b1, a0 + c], [b1, a1 - c], [b1 - c, a1], [b0 + c, a1], [b0, a1 - c], [b0, a0 + c]].map(([x, y]) => new THREE.Vector2(x, y)));
+  const g = new THREE.ExtrudeGeometry(sh, { depth: Math.max(0.01, y1 - y0 - 2 * bev), bevelEnabled: true, bevelThickness: bev, bevelSize: bev, bevelOffset: -bev, bevelSegments: 1 });
+  g.rotateX(-Math.PI / 2); g.translate(0, y0 + bev, 0);
+  return bag.add(key, g);
+}
 // a pier (square, a base, a moulded cap and a ball finial), its foot at y, its shaft h tall
 function pier(bag, a, b, y, h, w = 1.0, key = 'sand', ball = true) {
+  if (CP33B) {
+    // CP33: a stepped plinth, a shaft with chamfered corners and a sunk panel on each face, a three-step moulded cap, a turned
+    // finial (a neck and bead under the ball)
+    cbox(bag, 'sandD', a - w / 2 - 0.08, a + w / 2 + 0.08, b - w / 2 - 0.08, b + w / 2 + 0.08, y - 0.3, y + 0.28, 0.05);
+    cbox(bag, 'sandD', a - w / 2 - 0.04, a + w / 2 + 0.04, b - w / 2 - 0.04, b + w / 2 + 0.04, y + 0.28, y + 0.38, 0.04);
+    cbox(bag, key, a - w / 2, a + w / 2, b - w / 2, b + w / 2, y + 0.38, y + h, 0.045);
+    const ph = h - 0.38 - 0.5, pw = w * 0.62;
+    if (ph > 0.3) for (const [da, db, wa, wb] of [[w / 2, 0, 0.02, pw], [-w / 2, 0, 0.02, pw], [0, w / 2, pw, 0.02], [0, -w / 2, pw, 0.02]])
+      bag.box('sandD', a + da - wa / 2, a + da + wa / 2, b + db - wb / 2, b + db + wb / 2, y + 0.38 + 0.25, y + 0.38 + 0.25 + ph);
+    cbox(bag, 'sandL', a - w / 2 - 0.1, a + w / 2 + 0.1, b - w / 2 - 0.1, b + w / 2 + 0.1, y + h, y + h + 0.1, 0.04);
+    cbox(bag, 'sandL', a - w / 2 - 0.04, a + w / 2 + 0.04, b - w / 2 - 0.04, b + w / 2 + 0.04, y + h + 0.1, y + h + 0.2, 0.04);
+    cbox(bag, 'sandL', a - w / 2 + 0.12, a + w / 2 - 0.12, b - w / 2 + 0.12, b + w / 2 - 0.12, y + h + 0.2, y + h + 0.36, 0.05);
+    if (ball) {
+      const fin = lathe([[0.001, 0], [w * 0.2, 0], [w * 0.2, 0.025], [w * 0.13, 0.05], [w * 0.12, 0.09], [w * 0.17, 0.12], [w * 0.24, 0.17], [w * 0.265, 0.24], [w * 0.24, 0.31], [w * 0.17, 0.36], [w * 0.05, 0.385], [0.001, 0.39]], 28);
+      fin.translate(b, y + h + 0.36, -a); bag.add('sandL', fin);
+    }
+    return y + h + 0.36;
+  }
   bag.box('sandD', a - w / 2 - 0.08, a + w / 2 + 0.08, b - w / 2 - 0.08, b + w / 2 + 0.08, y - 0.3, y + 0.35);
   bag.box(key, a - w / 2, a + w / 2, b - w / 2, b + w / 2, y + 0.35, y + h);
   bag.box('sandL', a - w / 2 - 0.1, a + w / 2 + 0.1, b - w / 2 - 0.1, b + w / 2 + 0.1, y + h, y + h + 0.16);
@@ -560,13 +787,47 @@ function lamp(bag, a, b, y) {
 }
 const SOUTH_RISE = 0.24;
 // a sandstone urn with its planting on a pier (the stairs' feet, the photographs)
+// CP33 the urns' planting: a mound of arching blades (fountain grass / spider plant), each a tapering six-segment ribbon bent over
+// under its own weight, two greens by blade
+function plantBlades(bag, a, b, y, n = 110, R = 0.3) {
+  for (let i = 0; i < n; i++) {
+    const th = i * 2.399963 + rnd() * 0.5, r0 = Math.sqrt((i + 0.5) / n) * R, L = 0.42 + rnd() * 0.4, w = 0.013 + rnd() * 0.01;
+    const psi0 = 1.15 + rnd() * 0.35 - (r0 / R) * 0.55, bend = 1.5 + rnd() * 0.9, seg = 6, P = [], U = [], Ix = [];
+    const cx = Math.cos(th), cz = Math.sin(th);
+    let rr = r0, hh = 0;
+    for (let k = 0; k <= seg; k++) {
+      const t = k / seg, ww = w * (1 - 0.8 * t * t) * 0.5, px = b + cx * rr, pz = -a + cz * rr, py = y + hh;
+      P.push(px - cz * ww, py, pz + cx * ww, px + cz * ww, py, pz - cx * ww); U.push(0, t, 1, t);
+      const psi = psi0 - bend * t; rr += (L / seg) * Math.cos(psi); hh += (L / seg) * Math.sin(psi);
+      if (k < seg) { const q = k * 2; Ix.push(q, q + 1, q + 3, q, q + 3, q + 2); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); g.setIndex(Ix);
+    g.computeVertexNormals();
+    bag.add(i % 3 === 0 ? 'leaf2' : 'leaf', g);
+  }
+}
 function urn(bag, a, b, y) {
-  const g = lathe([[0.001, 0], [0.24, 0], [0.24, 0.08], [0.15, 0.14], [0.13, 0.24], [0.3, 0.36], [0.44, 0.56], [0.42, 0.72], [0.5, 0.78], [0.46, 0.84], [0.001, 0.84]], 20);
+  const g = lathe([[0.001, 0], [0.24, 0], [0.24, 0.08], [0.15, 0.14], [0.13, 0.24], [0.3, 0.36], [0.44, 0.56], [0.42, 0.72], [0.5, 0.78], [0.46, 0.84], [0.001, 0.84]], CP33B ? 44 : 20);
   g.translate(b, y, -a); bag.add('sandL', g);
+  if (CP33B) { plantBlades(bag, a, b, y + 0.8); return; }
   for (let i = 0; i < 7; i++) { const an = i * 2.4, r = i ? 0.26 : 0, s = new THREE.IcosahedronGeometry(0.2 + (i % 3) * 0.04, 1); s.translate(b + Math.cos(an) * r, y + 0.95 + (i ? 0 : 0.12), -a + Math.sin(an) * r); bag.add('leaf', s); }
 }
 // the Arcade's north face (IO_88053a0f): seven arches in 2 + 3 + 2, the loggias' two either side of the passage's
 // three; spans 7'9 2/3", the piers 0.58 m in the middle group, 0.69 m in the side ones; the crowns 13'6" over the floor
+// CP33 an archivolt of cut voussoirs round an arch (centre cx, spring height sp, intrados radius r): n blocks (odd, the keystone
+// in the middle standing a little further out and down) ring width w, each a wedge with a 1.1 cm joint and an arrised face,
+// proud of the wall by depth, its back on z0 (local z = -a: z0 = -aFace - depth for a face looking toward +a)
+function voussoirs(bag, key, cx, sp, r, w, depth, z0, n = 13) {
+  const gap = 0.011, dth = Math.PI / n, mid = (n - 1) / 2;
+  for (let k = 0; k < n; k++) {
+    const t1 = k * dth + gap / (2 * r), t0 = (k + 1) * dth - gap / (2 * r), key_ = k === mid, ro = r + w + (key_ ? 0.1 : 0), ri = r - (key_ ? 0.035 : 0);
+    const sh = new THREE.Shape([new THREE.Vector2(cx + ri * Math.cos(t0), sp + ri * Math.sin(t0)), new THREE.Vector2(cx + ro * Math.cos(t0), sp + ro * Math.sin(t0)),
+      new THREE.Vector2(cx + ro * Math.cos(t1), sp + ro * Math.sin(t1)), new THREE.Vector2(cx + ri * Math.cos(t1), sp + ri * Math.sin(t1))]);
+    const g = new THREE.ExtrudeGeometry(sh, { depth: depth - 0.016 + (key_ ? 0.02 : 0), bevelEnabled: true, bevelThickness: 0.008, bevelSize: 0.007, bevelOffset: -0.007, bevelSegments: 1 });
+    g.translate(0, 0, z0 + 0.008 - (key_ ? 0.02 : 0)); bag.add(key, g);
+  }
+}
 export function arcadeArches() {
   const S = 2.38, out = [], mid = 9.45 / 2, pm = (9.45 - 3 * S) / 4, ps = (PLAN.arcadeB - mid - 2 * S) / 3;
   for (let i = 0; i < 3; i++) { const b0 = -mid + pm + i * (S + pm); out.push([b0, b0 + S]); }
@@ -661,6 +922,15 @@ export function buildTerrace(G, L, o) {
   // 4. the grand staircases: two flights of 19 risers (granite, 1'2" treads) and the landing, carved parapets, piers
   //    with lamps at the foot and the head
   const nR = Math.max(8, Math.round(h1 / 0.1524)), rise = h1 / nR, nT = nR - 1;
+  // CP33 a step: the riser's face a darker weathered stone under a granite tread slab whose rounded nosing projects 4 cm
+  // and throws the shadow line that makes a flight read as steps from the air (review t4Crane: smooth grey ramps)
+  const step = (A0, A1, b0, b1, y, yBot) => {
+    if (!CP33B) { bag.box('gran', A1, A0 + 0.03, b0, b1, yBot, y); bag.box('granD', A0 - 0.02, A0 + 0.035, b0 + 0.02, b1 - 0.02, y - 0.035, y - 0.012); return; }
+    bag.box('riser', A1, A0, b0, b1, yBot, y - 0.055);
+    bag.box('gran', A1, A0 + 0.012, b0, b1, y - 0.06, y);
+    const n = new THREE.CylinderGeometry(0.03, 0.03, b1 - b0, 12, 1); n.rotateZ(Math.PI / 2); n.translate((b0 + b1) / 2, y - 0.03, -(A0 + 0.012));
+    bag.add('gran', n);
+  };
   const flights = [[PLAN.stairFootA, PLAN.landA0, ys], [PLAN.landA1, PLAN.stairTopA, ys + h1]];
   const nosing = (a) => {
     if (a >= PLAN.stairFootA) return ys;
@@ -675,8 +945,7 @@ export function buildTerrace(G, L, o) {
       const t = (fa0 - fa1) / nT;
       for (let k = 0; k < nT; k++) {
         const A0 = fa0 - k * t, A1 = fa0 - (k + 1) * t, y = fy + (k + 1) * rise;
-        bag.box('gran', A1, A0 + 0.03, b0, b1, fy - 0.45 + k * rise * 0.5, y);
-        bag.box('granD', A0 - 0.02, A0 + 0.035, b0 + 0.02, b1 - 0.02, y - 0.035, y - 0.012);   // the nosing's shadow line
+        step(A0, A1, b0, b1, y, fy - 0.45 + k * rise * 0.5);   // the tread, its nosing and the riser under it
         deck(A1, A0, b0, b1, y);
       }
     }
@@ -715,11 +984,14 @@ export function buildTerrace(G, L, o) {
       p.absarc(cx, spring, r, 0, Math.PI, false);
       p.lineTo(x0, ys);
       sh.holes.push(p);
+      if (CP33B) voussoirs(bag, 'sandL', cx, spring, r, 0.26, 0.1, -aF - 0.1, 13);
+      else {
       const ring = new THREE.Shape();
       ring.moveTo(x1 + 0.26, spring); ring.absarc(cx, spring, r + 0.26, 0, Math.PI, false);
       ring.lineTo(x0, spring); ring.absarc(cx, spring, r, Math.PI, 0, true); ring.lineTo(x1 + 0.26, spring);
       const rg = new THREE.ExtrudeGeometry(ring, { depth: 0.08, bevelEnabled: false, curveSegments: 16 });
       rg.translate(0, 0, -aF - 0.08); bag.add('sandL', rg);
+      }
       for (const x of [x0, x1]) bag.box('sandL', aF - 0.02, aF + 0.1, x - 0.16, x + 0.16, spring - 0.2, spring);
     }
     for (let i = 0; i <= arches.length; i++) {
@@ -728,7 +1000,7 @@ export function buildTerrace(G, L, o) {
     }
     const eg = new THREE.ExtrudeGeometry(sh, { depth: PLAN.arcadeT, bevelEnabled: false, curveSegments: 18 });
     eg.translate(0, 0, -aF);
-    bag.add('sand', eg);
+    bag.add('sand', CP33B ? toCreasedNormals(eg, 0.75) : eg);   // CP33: the arches' soffits smooth over their 10-degree facets, the wall's faces and arrises crisp
     // the frieze and cornice (3'9") a foot over the crowns, the balustrade (2'6") on the upper terrace's edge over it
     bag.box('sandD', aF - 0.02, aF + 0.12, -W, W, crown + 0.3, crown + 0.42);
     { const n = Math.round((2 * W) / 1.3); for (let i = 0; i < n; i++) bag.box('carved', aF - 0.02, aF + 0.06, -W + (2 * W * i) / n, -W + (2 * W * (i + 1)) / n, crown + 0.42, yu - 0.32); }
@@ -788,7 +1060,7 @@ export function buildTerrace(G, L, o) {
       }
       const eg2 = new THREE.ExtrudeGeometry(sh2, { depth: 0.9, bevelEnabled: false, curveSegments: 16 });
       eg2.translate(0, 0, -tA1);
-      bag.add('sand', eg2);
+      bag.add('sand', CP33B ? toCreasedNormals(eg2, 0.75) : eg2);
       bag.box('sandL', tA1 - 1.0, tA1 + 0.02, -PW - 0.1, PW + 0.1, yu + 1.0, yu + 1.16);
     }
   }
@@ -797,7 +1069,7 @@ export function buildTerrace(G, L, o) {
   {
     const UB = 25, uuv = (a, b) => [(b + UB) / (2 * UB), 1 + (a + 51) / 16.5];
     const up = [[PLAN.upperA1, -PLAN.wallOut[1]], [PLAN.upperA1, PLAN.wallOut[1]], [PLAN.stairTopA, PLAN.wallOut[1]], [PLAN.stairTopA, PLAN.wallIn[0]], [aB + 0.02, PLAN.wallIn[0]], [aB + 0.02, -PLAN.wallIn[0]], [PLAN.stairTopA, -PLAN.wallIn[0]], [PLAN.stairTopA, -PLAN.wallOut[1]]];
-    bag.add('upper', flatFace(up, [], yu, uuv));
+    bag.add(CP33B ? 'setts' : 'upper', CP33B ? flatFace(up, [], yu) : flatFace(up, [], yu, uuv));   // CP33: Terrace Drive's granite setts over the Arcade (review t4Crane)
     bag.add('sandD', skirt([up[0], up[1], up[2]], () => yl - 0.5, () => yu, true));
     bag.add('sandD', skirt([up[7], up[0]], () => yl - 0.5, () => yu, true));
     deck(PLAN.upperA1, PLAN.stairTopA, -PLAN.wallOut[1], PLAN.wallOut[1], yu);
@@ -814,8 +1086,7 @@ export function buildTerrace(G, L, o) {
     const fls = [[a0, ys], [PLAN.mallTopA + fl, ys + h2]];
     for (const [fa0, fy] of fls) for (let k = 0; k < n2 - 1; k++) {
       const A0 = fa0 - k * t2, A1 = fa0 - (k + 1) * t2, y = fy + (k + 1) * r2;
-      bag.box('gran', A1, A0 + 0.03, -B2, B2, fy - 0.45 + k * r2 * 0.5, y);
-      bag.box('granD', A0 - 0.02, A0 + 0.035, -B2 + 0.02, B2 - 0.02, y - 0.035, y - 0.012);
+      step(A0, A1, -B2, B2, y, fy - 0.45 + k * r2 * 0.5);
       deck(A1, A0, -B2, B2, y);
     }
     bag.box('gran', PLAN.mallTopA + fl, a0 - fl, -B2, B2, ys + h2 - 0.5, ys + h2);
@@ -989,8 +1260,50 @@ function cherubGeo(v) {
 // 2.9 m across, its rim at wl + 5.35; the rock; the angel, 8 ft, her feet at wl + 5.75 (her crown 8.7 m over the
 // pool's floor: 26 ft published, 32 ft to the wing's tip on the design). The
 // water falls in a sheet off the upper basin's rim into the lower basin and off the lower basin's lobes into the pool.
+// CP33 an octagonal lathe: the profile [[apothem, y], ...] up the outside, eight flat sides (crisp corners, the corners at
+// pi/8 + k pi/4 as (sin, cos), the columns' corners), the profile's own normals smooth along it
+export function octLathe(pts, sides = 8, phase = Math.PI / 8) {
+  const P = [], N = [], cr = 1 / Math.cos(Math.PI / sides);
+  const n2 = pts.map((_, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dr = b[0] - a[0], dy = b[1] - a[1], l = Math.hypot(dr, dy) || 1; return [dy / l, -dr / l]; });
+  const v = (r, y, t) => [r * cr * Math.sin(t), y, r * cr * Math.cos(t)];
+  for (let k = 0; k < sides; k++) {
+    const t0 = phase + (k * 2 * Math.PI) / sides, t1 = t0 + (2 * Math.PI) / sides, tc = (t0 + t1) / 2, fx = Math.sin(tc), fz = Math.cos(tc);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = v(pts[i][0], pts[i][1], t0), b = v(pts[i][0], pts[i][1], t1), c = v(pts[i + 1][0], pts[i + 1][1], t1), d = v(pts[i + 1][0], pts[i + 1][1], t0);
+      const na = [fx * n2[i][0], n2[i][1], fz * n2[i][0]], nb = [fx * n2[i + 1][0], n2[i + 1][1], fz * n2[i + 1][0]];
+      P.push(...a, ...b, ...c, ...a, ...c, ...d); N.push(...na, ...na, ...nb, ...na, ...nb, ...nb);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
+  return g;
+}
+// CP33 a carved frieze round an octagon (apothem A, y0..y1): Mould's scroll (reliefMaps' height) as real relief, depth d,
+// each side a grid displaced out from its face, four panels a side; the recesses darker (vertex colour)
+export function friezeBand(A, y0, y1, d, sides = 8, phase = Math.PI / 8, nu = 144, nv = 26) {
+  const R = reliefMaps(), H = R.H, W = R.W, Hh = R.Hh, P = [], C = [], I = [], half = A * Math.tan(Math.PI / sides);
+  const hAt = (u, v) => { const x = Math.min(W - 1.001, Math.max(0, u * (W - 1))), y = Math.min(Hh - 1.001, Math.max(0, v * (Hh - 1))), xi = x | 0, yi = y | 0, fx = x - xi, fy = y - yi;
+    const a = H[yi * W + xi], b = H[yi * W + xi + 1], c = H[(yi + 1) * W + xi], e = H[(yi + 1) * W + xi + 1]; return a + (b - a) * fx + (c - a) * fy + (a - b - c + e) * fx * fy; };
+  const per = 4;
+  for (let k = 0; k < sides; k++) {
+    const tc = phase + ((k + 0.5) * 2 * Math.PI) / sides, nx = Math.sin(tc), nz = Math.cos(tc), tx = Math.cos(tc), tz = -Math.sin(tc), base = P.length / 3;
+    for (let j = 0; j <= nv; j++) for (let i = 0; i <= nu; i++) {
+      const s = i / nu, t = j / nv, uu = (s * per) % 1, h = (i === 0 || i === nu || j === 0 || j === nv) ? 0 : hAt(uu === 0 && s > 0 ? 1 : uu, 1 - t);
+      const off = A + d * (h - 0.25), x = -half + 2 * half * s, y = y0 + (y1 - y0) * t;
+      P.push(nx * off + tx * x, y, nz * off + tz * x);
+      const g = 0.5 + 0.5 * Math.min(1, h * 1.3); C.push(g, g, g * 0.98);
+    }
+    for (let j = 0; j < nv; j++) for (let i = 0; i < nu; i++) { const a = base + j * (nu + 1) + i, b = a + 1, c = a + nu + 1, e = c + 1; I.push(a, b, e, a, e, c); }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.setIndex(I);
+  g.computeVertexNormals();
+  return g;
+}
 export const FOUNT = { wl: 0.30, floor: -0.25, rim: 0.45, base: { R: 2.515, top: 0.85 }, cols: { r: 2.02, top: 1.95 }, lower: { R: 2.75, rim: 2.55 },
   plinth: { R: 1.0, top: 3.1 }, rock: 3.35, upper: { R: 1.45, bot: 4.9, rim: 5.35 }, feet: 5.75, angel: 2.44 };
+// the lower and upper basins' water over the pool's (the ring meshes below: Y(LB.rim - 0.1), Y(UBs.rim - 0.035))
+const LB_REL = (F) => F.lower.rim - 0.1, UB_REL = (F) => F.upper.rim - 0.035;
 export function buildFountain(G, L, o) {
   const M = mats(), FG = new THREE.Group(), yl = L.low, F = FOUNT;
   FG.name = 'cp32b:fountain';
@@ -998,18 +1311,70 @@ export function buildFountain(G, L, o) {
   const R = PLAN.basinR, Ri = R - 0.62, rimTop = yl + F.rim, wl = yl + F.wl, floor = yl + F.floor, seg = 128;
   const part = (geo, mat, cast = true) => { const m = new THREE.Mesh(geo, mat); m.castShadow = cast; m.receiveShadow = true; FG.add(m); return m; };
   const Y = (h) => wl + h;
+  // CP33: the lower basin's eight streams leave its corner spouts at vs m/s and land rS + vs tS from the axis (below); the pool's ring
+  // waves and foam are centred on that circle (they sat at the old curtain's 3.1 m)
+  const fallT = (h, v0) => (-v0 + Math.sqrt(v0 * v0 + 19.62 * h)) / 9.81;
+  const vs = 1.05, rS = F.lower.R + 0.15, ys = Y(F.lower.rim - 0.11), Hs = ys - wl, tS = fallT(Hs, 0.15), landR = CP33B ? rS + vs * tS : F.lower.R + 0.35;
   // the pool's rim: the outer face, the rounded coping people sit on, the inner face down to the floor
   part(lathe([[R + 0.02, yl - 0.2], [R + 0.02, yl + 0.05], [R + 0.08, yl + 0.09], [R + 0.08, yl + 0.14], [R, yl + 0.17], [R, rimTop - 0.08], [R + 0.03, rimTop - 0.03], [R, rimTop], [Ri + 0.04, rimTop], [Ri, rimTop - 0.04], [Ri, wl - 0.05], [Ri - 0.02, floor]], seg), M.gran);
   const floorG = new THREE.CircleGeometry(Ri, 64); floorG.rotateX(-Math.PI / 2); floorG.translate(0, floor, 0); part(floorG, M.granD, false);
-  const poolMat = waterMat(9);
-  const setPool = FW25 ? poolRings(poolMat, { impR: F.lower.R + 0.35, amp: FW26 ? 0.06 : 0.12, k: 14, foam: 1, foamIn: 0.6, foamOut: 1.1,
+  // the fountain as the pools see it (m over each one's water): the veils, the rock, the angel and her wings
+  const LBW = LB_REL(F), UBW = UB_REL(F);
+  // CP33: the lower basin (eight streams now, the stone between them) is left out of the pool's mirror (review t4Crane:
+  // its veil cylinder drew a dark slab wider than the basin); the scanned angel's wings are folded behind her, 1 m across
+  const tiersOver = (h0) => [CP33B ? [0, 0, 0, 0] : [F.lower.R + 0.25, 0 - h0, F.lower.rim + 0.01 - h0, 0], [F.upper.R + 0.2, F.lower.rim - 0.1 - h0, F.upper.rim + 0.02 - h0, 0],
+    [0.6, F.upper.rim - 0.3 - h0, F.feet - h0, 1], [0.36, F.feet - h0, F.feet + F.angel - h0, 1]].filter((t) => t[2] > 0.02).map((t) => [t[0], Math.max(0, t[1]), t[2], t[3]]);
+  const wingOver = (h0) => CP33B ? [0.25, 0.5, F.feet + 1.1 - h0, F.feet + 2.35 - h0] : [0.25, 1.55, F.feet + 1.7 - h0, F.feet + 2.1 - h0];
+  const poolAt = { c: C0, ax: [NA[0], NA[1], EB[0], EB[1]], probeY: wl + 1.6, ell: [150, 52, 32], col: [0.026, 0.042, 0.038] };
+  const poolMat = CPFW ? cpPoolWaterMat({ ...poolAt, name: 'cp32b:pool', level: wl, rimR: Ri, pedR: F.base.R, depth: F.wl - F.floor, cope: rimTop - wl, amp: 0.045, bed: 0.09, lam: 0.3,
+    ring: { impR: landR, amp: 0.06, k: 14, chop: 0.8 }, foam: { s: 1, in: 0.6, out: 1.1 }, tiers: tiersOver(0), wing: wingOver(0) }) : waterMat(9);
+  const setPool = !CPFW && FW25 ? poolRings(poolMat, { impR: F.lower.R + 0.35, amp: FW26 ? 0.06 : 0.12, k: 14, foam: 1, foamIn: 0.6, foamOut: 1.1,
     basin: { R: Ri, depth: 2.4, ped: F.base.R, veilR: F.lower.R + 0.2, veilH: F.lower.rim, copeH: rimTop - wl, floor: 0.05, chop: 0.8 } }) : null;   // the floor's albedo low: the pool reads dark green-grey from the terrace, as it does
   if (setPool) setPool(C0[0], C0[1]);
   const poolG = new THREE.RingGeometry(F.base.R - 0.05, Ri + 0.01, seg, 1); poolG.rotateX(-Math.PI / 2); poolG.translate(0, wl, 0);
   const pool = part(poolG, poolMat, false);
   // the octagonal base: a plain block in the water, a carved frieze band, a moulded top
   const oct = (r, y0, y1, mat, cast = true) => { const g = new THREE.CylinderGeometry(r, r, y1 - y0, 8, 1); g.rotateY(Math.PI / 8); g.translate(0, (y0 + y1) / 2, 0); return part(g, mat, cast); };
-  oct(F.base.R / Math.cos(Math.PI / 8), floor, Y(F.base.top - 0.45), M.sandD);
+  const LB = F.lower;
+  let lobe = (x, z) => { const an = Math.atan2(z, x); return 1 + 0.06 * Math.cos(an * 8); };
+  if (CP33B) {
+    // CP33 (the photographs): the base a dark granite octagon with arrised edges and a moulded top over a carved frieze
+    // (Mould's scroll as real relief, 3.5 cm deep); eight pink-red granite columns on the corners with bronze bases and
+    // capitals round a granite drum; the lower basin an octagonal pink-tan bowl (its corners over the columns) with a
+    // bronze rim and a bronze spout at each corner
+    const A = F.base.R, yb = Y(F.base.top);
+    part(octLathe([[A + 0.02, floor], [A + 0.02, Y(-0.06)], [A, Y(0.0)], [A, yb - 0.5], [A + 0.025, yb - 0.475], [A + 0.025, yb - 0.45], [A - 0.05, yb - 0.43]]), M.granDk);
+    part(friezeBand(A - 0.05, yb - 0.45, yb - 0.12, 0.035), M.carvedDk);
+    part(octLathe([[A - 0.06, yb - 0.13], [A + 0.0, yb - 0.115], [A + 0.05, yb - 0.09], [A + 0.07, yb - 0.05], [A + 0.07, yb - 0.02], [A + 0.05, yb], [A - 0.1, yb + 0.005], [F.cols.r + 0.3, yb + 0.01], [F.cols.r + 0.29, yb + 0.1], [F.cols.r + 0.2, yb + 0.11], [0.001, yb + 0.11]]), M.granDk);
+    lobe = (x, z) => { const an = Math.atan2(z, x), q = Math.PI / 4, d = ((((an - Math.PI / 8) % q) + q) % q) - Math.PI / 8; return Math.cos(Math.PI / 8) / Math.cos(d); };
+  } else oct(F.base.R / Math.cos(Math.PI / 8), floor, Y(F.base.top - 0.45), M.sandD);
+  if (CP33B) {
+    const colH = F.cols.top - F.base.top - 0.11, y0 = Y(F.base.top + 0.11);
+    for (let k = 0; k < 8; k++) {
+      const t = (k / 8) * Math.PI * 2 + Math.PI / 8, cx = Math.sin(t) * F.cols.r, cz = -Math.cos(t) * F.cols.r;
+      const base = lathe([[0.001, 0], [0.2, 0], [0.2, 0.05], [0.19, 0.065], [0.185, 0.08], [0.17, 0.095], [0.15, 0.11], [0.15, 0.13], [0.135, 0.145], [0.125, 0.16], [0.001, 0.16]], 40);
+      const shaft = lathe([[0.001, 0.15], [0.124, 0.15], [0.122, 0.3], [0.113, colH - 0.28], [0.112, colH - 0.2], [0.001, colH - 0.2]], 40);
+      const cap = lathe([[0.001, colH - 0.21], [0.13, colH - 0.21], [0.135, colH - 0.19], [0.122, colH - 0.17], [0.15, colH - 0.12], [0.19, colH - 0.07], [0.215, colH - 0.04], [0.215, colH], [0.001, colH]], 40);
+      for (const [g, m] of [[base, M.bronze], [shaft, M.granRed], [cap, M.bronze]]) { g.translate(cx, y0, cz); part(g, m); }
+    }
+    part(lathe([[0.001, y0 - 0.01], [0.95, y0 - 0.01], [0.95, Y(F.cols.top) + 0.02], [0.001, Y(F.cols.top) + 0.02]], 64), M.granDk);
+    // the bowl: the rim's circumradius LB.R (corner), plan octagonal (lobe() above); a bead under the rim, the rim in bronze
+    const lbG = lathe([[0.9, Y(F.cols.top)], [1.9, Y(F.cols.top + 0.05)], [2.42, Y(F.cols.top + 0.22)], [LB.R - 0.08, Y(LB.rim - 0.36)], [LB.R - 0.02, Y(LB.rim - 0.3)], [LB.R + 0.02, Y(LB.rim - 0.27)], [LB.R + 0.02, Y(LB.rim - 0.22)], [LB.R - 0.01, Y(LB.rim - 0.19)], [LB.R - 0.01, Y(LB.rim - 0.08)], [LB.R - 0.2, Y(LB.rim - 0.08)], [LB.R - 0.22, Y(LB.rim - 0.14)], [1.6, Y(LB.rim - 0.3)], [0.001, Y(LB.rim - 0.32)]], 96);
+    const lp = lbG.attributes.position;
+    for (let i = 0; i < lp.count; i++) { const x = lp.getX(i), z = lp.getZ(i), r = Math.hypot(x, z); if (r > 1.0) { const k = lobe(x, z); lp.setX(i, x * k); lp.setZ(i, z * k); } }
+    lbG.computeVertexNormals(); part(lbG, M.basinTan);
+    const rimG = lathe([[LB.R + 0.005, Y(LB.rim - 0.09)], [LB.R + 0.035, Y(LB.rim - 0.075)], [LB.R + 0.045, Y(LB.rim - 0.04)], [LB.R + 0.03, Y(LB.rim - 0.008)], [LB.R + 0.0, Y(LB.rim)], [LB.R - 0.12, Y(LB.rim + 0.002)], [LB.R - 0.2, Y(LB.rim - 0.02)], [LB.R - 0.215, Y(LB.rim - 0.09)]], 96);
+    const rp2 = rimG.attributes.position;
+    for (let i = 0; i < rp2.count; i++) { const x = rp2.getX(i), z = rp2.getZ(i), k = lobe(x, z); rp2.setX(i, x * k); rp2.setZ(i, z * k); }
+    rimG.computeVertexNormals(); part(rimG, M.bronze);
+    for (let k = 0; k < 8; k++) {   // the spouts: a bronze lip at each corner, the stream's source
+      const t = (k / 8) * Math.PI * 2 + Math.PI / 8, sp = lathe([[0.001, 0], [0.055, 0.0], [0.07, 0.06], [0.06, 0.16], [0.045, 0.2], [0.001, 0.2]], 24, 0, Math.PI * 2);
+      sp.rotateX(Math.PI / 2 + 0.25); sp.rotateY(Math.PI - t);
+      sp.translate(Math.sin(t) * (LB.R - 0.04), Y(LB.rim - 0.06), -Math.cos(t) * (LB.R - 0.04));
+      part(sp, M.bronze, false);
+    }
+  }
+  if (!CP33B) {
   { const m = oct(F.base.R / Math.cos(Math.PI / 8) - 0.05, Y(F.base.top - 0.45), Y(F.base.top - 0.12), M.carved), uv = m.geometry.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setX(i, uv.getX(i) * 8); }
   oct(F.base.R / Math.cos(Math.PI / 8) + 0.06, Y(F.base.top - 0.12), Y(F.base.top), M.sandL);
   oct(F.cols.r + 0.32, Y(F.base.top), Y(F.base.top + 0.1), M.sandD);
@@ -1022,51 +1387,87 @@ export function buildFountain(G, L, o) {
     part(sh, M.sandL);
   }
   // the lower basin: a lobed stone bowl on the columns (eight lobes), a moulded rim, water in it
-  const LB = F.lower, lobe = (x, z) => { const an = Math.atan2(z, x); return 1 + 0.06 * Math.cos(an * 8); };
   const lbG = lathe([[0.9, Y(F.cols.top)], [1.9, Y(F.cols.top + 0.05)], [2.45, Y(F.cols.top + 0.25)], [LB.R - 0.06, Y(LB.rim - 0.3)], [LB.R + 0.04, Y(LB.rim - 0.18)], [LB.R + 0.02, Y(LB.rim - 0.05)], [LB.R - 0.04, Y(LB.rim)], [LB.R - 0.2, Y(LB.rim)], [LB.R - 0.22, Y(LB.rim - 0.14)], [1.6, Y(LB.rim - 0.3)], [0.001, Y(LB.rim - 0.32)]], 96);
   const lp = lbG.attributes.position;
   for (let i = 0; i < lp.count; i++) { const x = lp.getX(i), z = lp.getZ(i), r = Math.hypot(x, z); if (r > 1.8) { const k = lobe(x, z); lp.setX(i, x * k); lp.setZ(i, z * k); } }
   lbG.computeVertexNormals(); part(lbG, M.sandL);
-  const lbw = waterMat(3);
-  const setLB = FW25 ? poolRings(lbw, { impR: F.upper.R + 0.3, amp: 0.05, k: 18, foam: 0.8, foamIn: 0.5, foamOut: 1.6, basin: { R: LB.R - 0.25, depth: 0.28, ped: F.plinth.R, veilR: F.upper.R + 0.12, veilH: F.upper.rim - LB.rim + 0.1, copeH: 0.1, floor: 0.2, chop: 0.8 } }) : null;
+  }
+  const lbw = CPFW ? cpPoolWaterMat({ ...poolAt, name: 'cp32b:lowerBasin', level: wl + LBW, rimR: LB.R - 0.25, pedR: F.plinth.R, depth: 0.28, cope: 0.1, amp: 0.03, bed: 0.2, lam: 0.22,
+    ring: { impR: F.upper.R + 0.3, amp: 0.05, k: 18, chop: 0.8 }, foam: { s: 0.8, in: 0.5, out: 1.6 }, tiers: tiersOver(LBW).filter((t) => t[0] < 2), wing: wingOver(LBW) }) : waterMat(3);
+  const setLB = !CPFW && FW25 ? poolRings(lbw, { impR: F.upper.R + 0.3, amp: 0.05, k: 18, foam: 0.8, foamIn: 0.5, foamOut: 1.6, basin: { R: LB.R - 0.25, depth: 0.28, ped: F.plinth.R, veilR: F.upper.R + 0.12, veilH: F.upper.rim - LB.rim + 0.1, copeH: 0.1, floor: 0.2, chop: 0.8 } }) : null;
   if (setLB) setLB(C0[0], C0[1]);
   const lwG = new THREE.RingGeometry(F.plinth.R - 0.02, LB.R - 0.2, 96, 1); lwG.rotateX(-Math.PI / 2); lwG.translate(0, Y(LB.rim - 0.1), 0);
   const lwp = lwG.attributes.position; for (let i = 0; i < lwp.count; i++) { const x = lwp.getX(i), z = lwp.getZ(i); if (Math.hypot(x, z) > 1.8) { const k = lobe(x, z); lwp.setX(i, x * k); lwp.setZ(i, z * k); } }
   const lowerPool = part(lwG, lbw, false);
   // the plinth (dark stone, a pale cap), the rock mound, the bronze stem
+  if (CP33B) {
+    const P0 = F.plinth.R, ya = Y(LB.rim - 0.3), yt = Y(F.plinth.top);
+    part(octLathe([[P0, ya], [P0, yt - 0.14], [P0 + 0.02, yt - 0.125], [P0 + 0.02, yt - 0.1], [P0 + 0.06, yt - 0.08], [P0 + 0.075, yt - 0.04], [P0 + 0.06, yt - 0.005], [P0 + 0.03, yt], [0.001, yt]]), M.granDk);
+    const mound = rockGeo(0.98, F.rock - F.plinth.top + 0.02, 0.98, 7, 6); mound.translate(0, yt - 0.02, 0);
+    const mp = mound.attributes.position; for (let i = 0; i < mp.count; i++) if (mp.getY(i) < yt - 0.02) mp.setY(i, yt - 0.02 - (yt - 0.02 - mp.getY(i)) * 0.05);
+    mound.computeVertexNormals(); part(mound, M.bronzeD);
+    part(lathe([[0.001, Y(F.rock - 0.1)], [0.34, Y(F.rock - 0.1)], [0.31, Y(F.rock + 0.1)], [0.29, Y(F.rock + 0.35)], [0.25, Y(F.upper.bot - 0.62)], [0.27, Y(F.upper.bot - 0.56)], [0.25, Y(F.upper.bot - 0.5)], [0.27, Y(F.upper.bot - 0.38)], [0.33, Y(F.upper.bot - 0.22)], [0.41, Y(F.upper.bot - 0.08)], [0.45, Y(F.upper.bot)], [0.001, Y(F.upper.bot)]], 48), M.bronzeD);
+  } else {
   oct(F.plinth.R / Math.cos(Math.PI / 8), Y(LB.rim - 0.3), Y(F.plinth.top - 0.1), M.sandD);
   oct(F.plinth.R / Math.cos(Math.PI / 8) + 0.06, Y(F.plinth.top - 0.1), Y(F.plinth.top), M.sandL);
   const rock = new THREE.SphereGeometry(0.95, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2); rock.scale(1, (F.rock - F.plinth.top) / 0.95, 1); rock.translate(0, Y(F.plinth.top), 0);
   const rp = rock.attributes.position; for (let i = 0; i < rp.count; i++) { const x = rp.getX(i), z = rp.getZ(i), n = 1 + 0.08 * Math.sin(x * 7.1 + z * 3.3) + 0.05 * Math.sin(z * 11 - x * 4); rp.setX(i, x * n); rp.setZ(i, z * n); }
   rock.computeVertexNormals(); part(rock, M.bronzeD);
   part(lathe([[0.001, Y(F.rock - 0.1)], [0.34, Y(F.rock - 0.1)], [0.3, Y(F.rock + 0.4)], [0.24, Y(F.upper.bot - 0.5)], [0.3, Y(F.upper.bot - 0.25)], [0.45, Y(F.upper.bot)], [0.001, Y(F.upper.bot)]], 20), M.bronzeD);
+  }
   // the four cherubs on the rock at the diagonals, facing out
+  const cherubMasses = [];
   for (let k = 0; k < 4; k++) {
     const t = Math.PI / 4 + (k * Math.PI) / 2, r = 0.62;
     const c = part(cherubGeo(k), M.bronze);
     c.scale.setScalar(1.1);
     c.position.set(Math.sin(t) * r, Y(F.rock - 0.06), -Math.cos(t) * r);
     c.rotation.y = Math.PI - t;
+    cherubMasses.push(c);
   }
+  // CP33: the scanned putti (two hands, 70k / 12k / 2.5k triangles to 22 m / 60 m / beyond) take the mass models' places once
+  // they have loaded, their fish's head pointing out from the stem
+  if (CP33B) cherubScan().then(({ A, B, mat }) => {
+    for (let k = 0; k < 4; k++) {
+      const t = Math.PI / 4 + (k * Math.PI) / 2, r = 0.74, lod = new THREE.LOD(); lod.name = 'cp33b:cherub' + k;
+      (k % 2 ? B : A).forEach((g, i) => { if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = i < 2; m.receiveShadow = true; m.name = `cp33b:cherub${k}L${i}`; lod.addLevel(m, [0, 22, 60][i]); });
+      lod.position.set(Math.sin(t) * r, Y(F.rock - 0.17), -Math.cos(t) * r);
+      lod.rotation.y = Math.PI - t;
+      FG.add(lod); cherubMasses[k].visible = false;
+    }
+  }).catch((e) => console.warn('[cp33b] the cherub scan is unavailable; the mass models stay', e));
   // the upper basin: a broad bronze saucer with a gadrooned rim
   const UBs = F.upper, ubG = lathe([[0.4, Y(UBs.bot)], [0.9, Y(UBs.bot + 0.12)], [1.25, Y(UBs.rim - 0.22)], [UBs.R, Y(UBs.rim - 0.12)], [UBs.R + 0.05, Y(UBs.rim - 0.04)], [UBs.R, Y(UBs.rim)], [UBs.R - 0.12, Y(UBs.rim - 0.01)], [UBs.R - 0.14, Y(UBs.rim - 0.1)], [0.8, Y(UBs.rim - 0.2)], [0.001, Y(UBs.rim - 0.2)]], 96);
   const up2 = ubG.attributes.position; for (let i = 0; i < up2.count; i++) { const x = up2.getX(i), z = up2.getZ(i), r = Math.hypot(x, z); if (r > UBs.R - 0.2) { const k = 1 + 0.018 * Math.cos(Math.atan2(z, x) * 40); up2.setX(i, x * k); up2.setZ(i, z * k); } }
   ubG.computeVertexNormals(); part(ubG, M.bronze);
-  const ubw = waterMat(1.6);
-  const setUB = FW25 ? poolRings(ubw, { impR: 0.45, amp: 0.04, k: 22, foam: 0.5, foamIn: 0.4, foamOut: 2.4, basin: { R: UBs.R - 0.14, depth: 0.15, ped: 0.45, copeH: 0.03, floor: 0.2, chop: 0.5 } }) : null;
+  const ubw = CPFW ? cpPoolWaterMat({ ...poolAt, name: 'cp32b:upperBasin', level: wl + UBW, rimR: UBs.R - 0.14, pedR: 0.45, depth: 0.15, cope: 0.03, amp: 0.025, bed: 0.12, lam: 0.16,
+    ring: { impR: 0.45, amp: 0.04, k: 22, chop: 0.5 }, foam: { s: 0.5, in: 0.4, out: 2.4 }, tiers: tiersOver(UBW).filter((t) => t[0] < 1), wing: wingOver(UBW) }) : waterMat(1.6);
+  const setUB = !CPFW && FW25 ? poolRings(ubw, { impR: 0.45, amp: 0.04, k: 22, foam: 0.5, foamIn: 0.4, foamOut: 2.4, basin: { R: UBs.R - 0.14, depth: 0.15, ped: 0.45, copeH: 0.03, floor: 0.2, chop: 0.5 } }) : null;
   if (setUB) setUB(C0[0], C0[1]);
   const uwG = new THREE.RingGeometry(0.42, UBs.R - 0.13, 72, 1); uwG.rotateX(-Math.PI / 2); uwG.translate(0, Y(UBs.rim - 0.035), 0); part(uwG, ubw, false);
   // the rock the angel alights on
+  if (CP33B) {   // CP33: a smooth cast rock, its top broad enough for the scanned figure's hem (0.6 x 0.5 m)
+    const rk = rockGeo(0.6, (F.feet - UBs.rim + 0.3) / 2, 0.55, 3, 6); rk.translate(0, Y(UBs.rim + (F.feet - UBs.rim) / 2 - 0.12), 0);
+    part(rk, M.bronzeD);
+  } else {
   const rk = new THREE.DodecahedronGeometry(0.55, 1); rk.scale(1, (F.feet - UBs.rim + 0.25) / 1.1, 1); rk.translate(0, Y(UBs.rim + (F.feet - UBs.rim) / 2 - 0.1), 0);
   const rkp = rk.attributes.position; for (let i = 0; i < rkp.count; i++) { const x = rkp.getX(i), z = rkp.getZ(i), n = 1 + 0.1 * Math.sin(x * 9 + z * 5); rkp.setX(i, x * n); rkp.setZ(i, z * n); }
   rk.computeVertexNormals(); part(rk, M.bronzeD);
+  }
   // the angel, 8'7": her front to the south, toward the Arcade and the Mall (the photographs from the terrace)
   const ang = part(angelGeo(), M.bronze);
   ang.position.set(0, Y(F.feet - 0.05), 0);
   ang.scale.setScalar(F.angel / 2.15);
   ang.rotation.y = 0;
+  // CP33: the scanned figure (three LODs: 220k triangles to 55 m, 50k to 150 m, 19k beyond) takes the mass model's
+  // place once it has loaded; the mass model stays if it cannot load
+  if (CP33B) angelScan().then(({ geos, mat }) => {
+    const lod = new THREE.LOD(); lod.name = 'cp33b:angel';
+    geos.forEach((g, i) => { if (!g) return; const m = new THREE.Mesh(g, mat); m.castShadow = i < 2; m.receiveShadow = true; m.name = 'cp33b:angelL' + i; lod.addLevel(m, [0, 55, 150][i]); });
+    lod.position.set(0, Y(F.feet - 0.03), 0);
+    FG.add(lod); ang.visible = false;
+  }).catch((e) => console.warn('[cp33b] the angel scan is unavailable; the mass model stays', e));
   // the water: a sheet off the upper basin's rim into the lower basin, another off the lower basin's lobes into the pool
-  const fallT = (h, v0) => (-v0 + Math.sqrt(v0 * v0 + 19.62 * h)) / 9.81;
   const veil = (r0, y0, y1, spread, lob, key) => {
     const H = y0 - y1, pts = [];
     for (let i = 0; i <= 12; i++) { const t = i / 12; pts.push([r0 + spread * Math.sqrt(t), y0 - H * t]); }
@@ -1075,13 +1476,35 @@ export function buildFountain(G, L, o) {
     const vm = veilMat(FW27 ? { y0, dir: 1, v0: 0.35, tMax: fallT(H, 0.35), aer: [0.3, 0.95], holes: 0.45, body: 0.2, freq: 7 } : { y0, dir: 1, v0: 0.35, tMax: fallT(H, 0.35), aer: [0.4, 1.0], holes: 0.5, body: 0.26, freq: 5 }, LT);
     const m = part(g, vm, false); m.renderOrder = 2; m.name = key;
   };
-  if (FW26) {
+  // CP33 (the photographs): the upper basin's water leaves the gadrooned rim as a fringe that breaks into drops within a
+  // few centimetres; the lower basin pours from its eight corner spouts as separate streams that thicken and aerate
+  if (FW26 && CP33B) {
+    const H = Y(UBs.rim + 0.02) - Y(LB.rim - 0.1), pts = [];
+    for (let i = 0; i <= 14; i++) { const t = i / 14; pts.push([UBs.R + 0.05 + 0.32 * Math.sqrt(t), Y(UBs.rim + 0.02) - H * t]); }
+    const vmU = veilMat({ y0: Y(UBs.rim + 0.02), dir: 1, v0: 0.3, tMax: fallT(H, 0.3), aer: [0.1, 0.7], holes: 0.8, body: 0.22, freq: 11, tear0: 0.0 }, LT);
+    const mu = part(lathe(pts, 192), vmU, false); mu.renderOrder = 2; mu.name = 'cp32b:veilUpper';
+    const vmL = veilMat({ y0: ys, dir: 1, v0: 0.15, tMax: tS, aer: [0.22, 0.9], holes: 0.32, body: 0.34, freq: 9, tear0: 0.3 }, LT);
+    const tubes = [];
+    for (let k = 0; k < 8; k++) {
+      const t = (k / 8) * Math.PI * 2 + Math.PI / 8, ox = Math.sin(t), oz = -Math.cos(t), P = [];
+      for (let i = 0; i <= 16; i++) { const tt = (i / 16) * tS, r = rS + vs * tt, y = ys - 0.15 * tt - 4.905 * tt * tt; P.push(new THREE.Vector3(ox * r, Math.max(y, wl - 0.04), oz * r)); }
+      const curve = new THREE.CatmullRomCurve3(P), nu = 40, nr = 14, tg = new THREE.TubeGeometry(curve, nu, 1, nr, false), tp = tg.attributes.position, c = new THREE.Vector3();
+      for (let i = 0; i <= nu; i++) {
+        curve.getPointAt(i / nu, c);
+        const f = i / nu, rad = 0.042 + 0.05 * f * f, flat = 1 + 0.5 * f;   // 4 cm at the spout to 9 cm, spreading across
+        for (let j = 0; j <= nr; j++) { const v = i * (nr + 1) + j; tp.setXYZ(v, c.x + (tp.getX(v) - c.x) * rad * flat, c.y + (tp.getY(v) - c.y) * rad, c.z + (tp.getZ(v) - c.z) * rad * flat); }
+      }
+      tg.deleteAttribute('uv'); tg.computeVertexNormals(); tubes.push(tg);
+    }
+    const ml = part(mergeGeometries(tubes, false), vmL, false); ml.renderOrder = 2; ml.name = 'cp32b:veilLower';
+  } else if (FW26) {
     veil(UBs.R + 0.05, Y(UBs.rim + 0.02), Y(LB.rim - 0.1), 0.32, false, 'cp32b:veilUpper');
     veil(LB.R + 0.04, Y(LB.rim + 0.01), wl, 0.42, true, 'cp32b:veilLower');
   }
   if (FW25) {
-    FG.add(fountainSpray({ lipR: UBs.R + 0.05, lipY: Y(UBs.rim + 0.02), wl: Y(LB.rim - 0.1), impR: UBs.R + 0.33, jetY: Y(UBs.rim - 0.03), jetH: 0.25, bowlY: Y(UBs.rim - 0.03), bowlR: UBs.R - 0.3, seed: 1873, sheet: 1400, splash: 1200, jet: 200, bowl: 300, mist: 200 }));
-    FG.add(fountainSpray({ lipR: LB.R + 0.06, lipY: Y(LB.rim + 0.01), wl, impR: LB.R + 0.45, jetY: Y(LB.rim - 0.1), jetH: 0.05, bowlY: Y(LB.rim - 0.1), bowlR: LB.R - 0.4, seed: 1874, sheet: 2200, splash: 2000, jet: 50, bowl: 200, mist: 300 }));
+    FG.add(fountainSpray({ lipR: UBs.R + 0.05, lipY: Y(UBs.rim + 0.02), wl: Y(LB.rim - 0.1), impR: UBs.R + 0.33, jetY: Y(UBs.rim - 0.03), jetH: 0.25, bowlY: Y(UBs.rim - 0.03), bowlR: UBs.R - 0.3, seed: 1873, sheet: CP33B ? 3400 : 1400, splash: 1200, jet: 200, bowl: 300, mist: 200 }));
+    FG.add(fountainSpray(CP33B ? { lipR: rS, lipY: ys, wl, impR: rS + vs * tS, jetY: Y(LB.rim - 0.1), jetH: 0.05, bowlY: Y(LB.rim - 0.1), bowlR: LB.R - 0.4, seed: 1874, sheet: 900, splash: 1500, jet: 0, bowl: 200, mist: 260, spouts: 8, spA0: Math.PI / 8, spW: 0.03 }
+      : { lipR: LB.R + 0.06, lipY: Y(LB.rim + 0.01), wl, impR: LB.R + 0.45, jetY: Y(LB.rim - 0.1), jetH: 0.05, bowlY: Y(LB.rim - 0.1), bowlR: LB.R - 0.4, seed: 1874, sheet: 2200, splash: 2000, jet: 50, bowl: 200, mist: 300 }));
   }
   if (FW27) fountainProbe(pool, FG, [poolMat, lbw, ubw], wl + 1.6);
   if (o.colliders && typeof o.addPrism === 'function') o.addPrism(circlePts(R + 0.02, 40), yl, rimTop, false);
@@ -1104,7 +1527,9 @@ export function buildCherry(M) {
   const rim = lathe([[R + 0.04, -0.05], [R + 0.04, 0.12], [R - 0.02, 0.2], [R + 0.03, 0.34], [R + 0.1, 0.46], [R + 0.08, 0.56], [R - 0.05, 0.62], [Ri + 0.1, 0.62], [Ri, 0.54], [Ri, 0.1]], 72);
   const rp = rim.attributes.position; for (let i = 0; i < rp.count; i++) { const x = rp.getX(i), z = rp.getZ(i), q = 1 + 0.012 * Math.cos(Math.atan2(z, x) * 12); rp.setX(i, x * q); rp.setZ(i, z * q); }
   rim.computeVertexNormals(); part(rim, M.sandD);
-  const wm = waterMat(2); const wg = new THREE.RingGeometry(0.5, Ri + 0.01, 64, 1); wg.rotateX(-Math.PI / 2); wg.translate(0, 0.45, 0); part(wg, wm, false);
+  const wm = CPFW ? cpPoolWaterMat({ name: 'cp32b:cherryBasin', c: [CHERRY.x, CHERRY.z], level: 0.45, rimR: Ri, pedR: 0.5, depth: 0.37, cope: 0.17, amp: 0.012, bed: 0.12, lam: 0.3,
+    ring: { impR: 1.3, amp: 0.04, k: 16, chop: 0.6 }, foam: { s: 0.7, in: 0.4, out: 1.8 } }) : waterMat(2);
+  const wg = new THREE.RingGeometry(0.5, Ri + 0.01, 64, 1); wg.rotateX(-Math.PI / 2); wg.translate(0, 0.45, 0); part(wg, wm, false);
   const fg = new THREE.CircleGeometry(Ri, 48); fg.rotateX(-Math.PI / 2); fg.translate(0, 0.08, 0); part(fg, M.granD, false);
   // the buff stone plinth and vase, the granite dome
   part(lathe([[0.5, 0.05], [0.5, 0.78], [0.56, 0.84], [0.42, 0.92], [0.24, 1.05], [0.2, 1.3], [0.3, 1.55], [0.42, 1.75], [0.4, 1.88], [0.001, 1.9]], 4, Math.PI / 4), M.sandL);

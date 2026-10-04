@@ -34,6 +34,7 @@ function kitColliders() {
 import { tpPromenades, tpSeats } from '../city/tsqPlaza.js';
 import { bpPromenades, bpSeats } from '../city/bryantPark.js';
 import { cpPromenades, cpSeats, cpWater, cpKeepOut } from '../city/centralPark.js';
+import { vg37Blocked } from '../world/vg37.js';   // VG37 (GROUND): the mapped hedges and planted beds are no walk
 import { areaPromenades, areaSeats } from '../city/areas.js';
 
 const PED_NEAR = typeof location !== 'undefined' && new URLSearchParams(location.search).has('pednear');
@@ -276,7 +277,7 @@ export class Peds {
           for (let k = i === 1 ? 0 : 1; k <= n; k++) {
             const t = k / n, p = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, A[2] + (B[2] - A[2]) * t];
             // CP32: nor over Central Park's water (its bridges' own lines carry the walkers over their decks)
-            if (onStreet(p[0], p[2]) || cpWater(p[0], p[2], 0.3) || cpKeepOut(p[0], p[2])) { if (cur.length >= 2) runs.push(cur); cur = []; } else cur.push(p);
+            if (onStreet(p[0], p[2]) || cpWater(p[0], p[2], 0.3) || cpKeepOut(p[0], p[2]) || vg37Blocked(p[0], p[2])) { if (cur.length >= 2) runs.push(cur); cur = []; } else cur.push(p);
           }
         }
         if (cur.length >= 2) runs.push(cur);
@@ -623,6 +624,17 @@ export class Peds {
             }
           }
         }
+      }
+      // a walk line inside a building prism (a sidewalk shed's hoarding out on the walk: the Lexington-Third site, EAST's siteKeepOut)
+      // steps back toward the kerb, 0.3 m at a time to 2.4 m, never onto the carriageway; none there: cut like a stranded vertex
+      if (PD26 && !stranded && kind !== 'path' && this._inBuilding(wx, wz, pts[i][1])) {
+        let found = false;
+        for (let m = 1; m <= 8 && !found; m++) {
+          const px = wx - nx * side * m * 0.3, pz = wz - nz * side * m * 0.3;
+          if (road(px, pz)) break;
+          if (!this._inBuilding(px, pz, pts[i][1])) { wx = px; wz = pz; found = true; }
+        }
+        if (!found) stranded = true;
       }
       onRoad.push(stranded);
       // `+ 0.16` was a guess at the curb height above the road centreline: it put

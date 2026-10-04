@@ -40,7 +40,7 @@ await new Promise((r) => setTimeout(r, 700));
 const browser = await chromium.launch({
   headless: true,
   args: [
-    '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist',
+    (process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan'), '--enable-gpu', '--ignore-gpu-blocklist',
     '--enable-webgl', '--disable-software-rasterizer',
     '--force_high_performance_gpu',
   ],

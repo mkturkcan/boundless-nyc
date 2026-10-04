@@ -9,6 +9,9 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 // AR32W: the Manhattan Valley Viaduct's arch over W 125th St (city/w125wKit.js mvvBuild) carries the IRT deck across the
 // street, so the plain bents that stood in its span are left out (?ar32w=0 keeps them)
 import { mvvArchSkip } from './w125wData.js';   // AR32W
+// AR33: the viaduct part (vk/viaducts.js) may take over a stretch of an elevated line: globalThis.__AR33VK.skipBent(x, z)
+// and .skipTrack(x, z) (world metres) leave those bents and track segments to it; the parts load before this builds
+import { areasReady } from './areas.js';
 
 const EL14 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('el14') === '0');
 const STEEL = 0x34383b;    // the els are painted a near-black green that weathers to rust-brown streaks
@@ -23,6 +26,8 @@ function boxAt(list, w, h, d, x, y, z, rotY = 0) {
 
 export async function buildElevated(scene) {
   if (!EL14) return null;
+  try { await areasReady; } catch {}
+  const VK = globalThis.__AR33VK || null;   // AR33
   let D;
   try { D = await (await fetch('data/elevated.json')).json(); } catch { return null; }
   if (!D || !D.tracks || !D.tracks.length) return null;
@@ -36,6 +41,7 @@ export async function buildElevated(scene) {
       const dx = B[0] - A[0], dz = B[2] - A[2], L = Math.hypot(dx, dz);
       if (L < 0.3) continue;
       const cx = (A[0] + B[0]) / 2, cz = (A[2] + B[2]) / 2, cy = (A[1] + B[1]) / 2;   // cy = top of rail
+      if (VK && VK.skipTrack && VK.skipTrack(cx, cz)) continue;   // AR33
       const rot = Math.atan2(-dz, dx);                 // turns local +X into the track direction
       const nx = -dz / L, nz = dx / L;                 // lateral unit
       const ext = L + 0.08;                            // overlap so segment joints do not open at bends
@@ -53,6 +59,7 @@ export async function buildElevated(scene) {
     const h = b.y1 - b.y0;
     if (h < 3) continue;
     if (mvvArchSkip(b.x, b.z)) continue;   // AR32W: in the span of the Manhattan Valley arch at 125th St
+    if (VK && VK.skipBent && VK.skipBent(b.x, b.z)) continue;   // AR33: a stretch the viaduct part builds itself
     for (const off of [-b.a, b.b]) {
       const x = b.x + c * off, z = b.z + s * off;
       boxAt(steel, 0.55, h, 0.55, x, b.y0 + h / 2, z, b.rot);                 // column

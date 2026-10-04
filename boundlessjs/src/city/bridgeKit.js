@@ -318,6 +318,7 @@ export function buildBridges(bridges, scene, streamer) {
     const L = deckLength(br.deck);
     const [w0, w1] = br.waterRun;
     const t0 = Math.max(0.02, w0 / L), t1 = Math.min(0.98, w1 / L);
+    let swing = null;   // AR34 BRIDGES: the Willis Avenue Bridge's swing span's run (t0, t1)
     if (br.type === 'suspension') {
       for (const tw of br.towers) {
         const fn = br.tower === 'gothic' ? towerGothic : towerSteel;
@@ -329,6 +330,16 @@ export function buildBridges(bridges, scene, streamer) {
       for (const tw of br.towers) towerSteel(bg, tw.x, tw.z, tw.dirx, tw.dirz, tw.deckY, br.towerH * 0.6, W, hex);
     } else if (br.type === 'arch' || br.type === 'archRail') {
       archSpan(bg, br.deck, t0, t1, br.type === 'archRail' ? 34 : 22, hex, W + 2, br.type === 'archRail');
+    } else if (br.key === 'willis') {
+      // AR34 BRIDGES: the Willis Avenue Bridge's swing span of 2010, 350 ft (107 m) long, 77 ft wide, 65 ft high (Wikipedia,
+      // "Willis Avenue Bridge"), a through truss deepest over its pivot pier in mid-river, with a rest pier at each end (the
+      // generic recipe drew a 14 m truss and a row of piers every 24 m across the river)
+      const tm = (t0 + t1) / 2, th = 53.5 / L;
+      trussSpan(bg, br.deck, tm - th, tm + th, 17, hex, W + 1);
+      for (const t of [tm - th, tm + th]) { const e = sampleAt(br.deck, t); box(bg, W + 3, e.y + 1, 6, 0x8a8578, e.x, (e.y + 1) / 2 - 3.2, e.z, Math.atan2(e.dirx, e.dirz)); }
+      const mid = sampleAt(br.deck, tm);
+      box(bg, 14, mid.y + 1, 14, 0x8a8578, mid.x, (mid.y + 1) / 2 - 3.2, mid.z, Math.atan2(mid.dirx, mid.dirz));
+      swing = [tm - th, tm + th];
     } else if (br.type === 'swing' || br.type === 'lift' || br.type === 'bascule') {
       trussSpan(bg, br.deck, Math.max(0.3, t0), Math.min(0.7, t1), 9, hex, W + 1);
       // center pier
@@ -336,9 +347,11 @@ export function buildBridges(bridges, scene, streamer) {
       box(bg, 10, mid.y, 12, 0x8a8578, mid.x, mid.y / 2 - 1, mid.z, Math.atan2(mid.dirx, mid.dirz));
     }
     // approach piers
+    // (AR34 BRIDGES: none under the Willis Avenue Bridge's swing span, whose piers are drawn above)
     for (let d = 15; d < L - 10; d += 24) {
       const t = d / L;
       if (t > t0 - 0.02 && t < t1 + 0.02 && (br.type === 'suspension' || br.type === 'archRail')) continue;
+      if (swing && t > swing[0] - 0.01 && t < swing[1] + 0.01) continue;
       const s = sampleAt(br.deck, t);
       const ground = streamer ? 1.0 : 1.0;
       const h = s.y - 2.2;

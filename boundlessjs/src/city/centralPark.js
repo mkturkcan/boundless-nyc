@@ -199,9 +199,19 @@ function reliefApply(tile, ox, oz) {
 }
 
 // A compiled building footprint a part builds itself (or that is not a building): (cx, cz) its centroid, h its height
+// (CP33 LANDSCAPE, teaser 4 v2 review: "two four-storey red-brick apartment houses inside the park behind Bow Bridge's
+// west end"): the park's small structures that no part builds came through the compiler with no height or style, so it
+// drew them as 12 m tenements (punched windows, fire escapes, quoins). A footprint inside the park at that default
+// height and under 300 m2 is dropped, and so are the other unclaimed tenement-styled ones of the probe (tools/
+// probe_buildings.mjs over the park's tiles, 2026-09-30: comfort stations, kiosks, shelters); the Met, the zoo, the
+// rinks and the other civic-stone buildings stay.
+const CP_UNCLAIMED = [[791.1, -652.5], [21.0, 690.3], [-203.5, 796.0], [-223.2, 827.4], [-444.2, 1798.4], [1257.0, -1731.3],
+  [535.8, -36.9], [-122.9, 1660.7], [-147.1, 603.3]];   // (the last: a 28 m2 one-storey "tenement" in the Ramble, 07:55)
 export function cpSkipBuilding(cx, cz, h, area) {
   if (!CP32 || !inBox(cx, cz)) return false;
   for (const [n, P] of PARTS) { if (P.skipBuilding) try { if (P.skipBuilding(cx, cz, h, area)) return true; } catch (e) { warn(n, 'skipBuilding', e); } }
+  if (CP_UNCLAIMED.some(([x, z]) => Math.abs(cx - x) < 3 && Math.abs(cz - z) < 3)) return true;
+  try { if (Math.abs(h - 12) < 0.05 && area < 300 && flora.cpInPark && flora.cpInPark(cx, cz)) return true; } catch (e) { warn('flora', 'cpInPark', e); }
   return false;
 }
 

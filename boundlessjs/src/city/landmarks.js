@@ -13,6 +13,13 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { KIT } from './landmarkKit.js';
 import { applyLightTrim, applySkyGlass } from '../world/materials.js';
 import { boardMaterial, boardUVRect, BOARD_SLOTS } from './billboards.js';
+import { buildSteinway } from './lmSteinway.js';   // CP33: 111 West 57th on its lot (terracotta and bronze faces, glass faces, setbacks, the hall)
+import { buildPlazaRoof, buildHampshireRoof } from './lmPlaza.js';
+import { buildMetRoof, metFront } from './lmMet.js';   // CP33: the Met's roofscape (deck over the green slab, skylights, copper hips, plant)   // CP33: the Plaza's mansard, dormers, pavilions and chimneys on the compiled ring
+import { buildEssexSign } from './lmCps.js';   // CP33: the Essex House's red rooftop letters (and the Plaza's mansard)
+import { buildSanRemo } from './lmSanRemo.js';   // CP33: the San Remo on its footprint ring (facade tiles, mouldings, the temples)
+// CP33 (landmarks round): `?cp33lm=0` puts the old box builders back (the read-time overrides in shared/landmarkSpec.js follow the same flag)
+const CP33LM = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cp33lm') === '0');
 
 const {
   mat, box, cyl, sphere, disc, dome, prism, gable, wedge, pyramid, spire, steps,
@@ -1694,6 +1701,9 @@ export const BUILDERS = {
 
   // Ultra-thin tower, feathered setbacks stepping down one face, bronze stripes.
   steinway(ctx) {
+    if (CP33LM && ctx.footprint && ctx.footprint.length >= 4) {
+      try { return buildSteinway(ctx); } catch (e) { console.warn('steinway ring build failed', e); }
+    }
     const [g, r] = shell(ctx); const { W, D, H } = dims(ctx);
     const a = Math.min(D, 18), b = Math.min(W, 26);
     r.add(box(Math.min(W, 42), H * 0.16, D, TERRA));
@@ -2207,13 +2217,19 @@ export const BUILDERS = {
 
   // DECORATE: monumental staircase, facade slab, 4 paired-column bays, attic.
   metMuseum(ctx) {
-    const [g, r] = shell(ctx); const { W, D, H } = dims(ctx);
-    const F = Math.min(W * 0.6, 90), zf = D / 2;
+    const [g, r0] = shell(ctx); const { W, D, H } = dims(ctx);
+    let r = r0, F = Math.min(W * 0.6, 90), zf = D / 2;
+    // CP33: on the compiled ring the front goes on Fifth Avenue's front line (the OBB of a 63-sided ring put it off the corner)
+    const fr = CP33LM && ctx.footprint && ctx.footprint.length >= 4 ? metFront(ctx.footprint) : null;
+    if (fr) { r = new THREE.Group(); r.position.set(fr.x, 0, fr.z); r.rotation.y = fr.rot; g.add(r); F = Math.min(fr.len * 0.5, 84); zf = 0; }
     r.add(steps({ w: F * 0.5, d: 9, n: 6, rise: 0.35, inset: 0.55, hex: LIME, z: zf + 5 }));
     r.add(box(F, H * 0.85, 7, LIME, { z: zf + 2 }));
     for (const s of [-1.5, -0.5, 0.5, 1.5])
       r.add(colonnade({ count: 2, spacing: 3.4, colH: H * 0.5, colR: 0.9, hex: LIME2, x: s * F * 0.22, z: zf + 6.2, y: H * 0.12, entab: H * 0.06 }));
     r.add(box(F * 0.86, H * 0.14, 8, LIME, { z: zf + 2.5, y: H * 0.85 }));
+    if (CP33LM && ctx.footprint && ctx.footprint.length >= 4) {
+      try { const mr = buildMetRoof(ctx); if (mr) g.add(mr); } catch (e) { console.warn('met roof failed', e); }
+    }
     return g;
   },
 
@@ -2268,6 +2284,10 @@ export const BUILDERS = {
 
   // Twin towers on a shared base, each crowned by a round temple + cone.
   sanRemo(ctx) {
+    // CP33: built on the compiled footprint ring (lmSanRemo.js); the boxes below stay for `?cp33lm=0` and for a ring-less ctx
+    if (CP33LM && ctx.footprint && ctx.footprint.length >= 4) {
+      try { return buildSanRemo(ctx); } catch (e) { console.warn('sanRemo ring build failed', e); }
+    }
     const [g, r] = shell(ctx); const { W, D, H } = dims(ctx);
     const BG = 0xd2c8b0;
     r.add(box(W, H * 0.6, D, BG));
@@ -2290,6 +2310,9 @@ export const BUILDERS = {
 
   // DECORATE: green mansard roof cap, dormer row, corner turrets.
   plaza(ctx) {
+    if (CP33LM && ctx.footprint && ctx.footprint.length >= 4) {
+      try { const pr = buildPlazaRoof(ctx); if (pr) return pr; } catch (e) { console.warn('plaza ring roof failed', e); }
+    }
     const [g, r] = shell(ctx); const { W, D, H } = dims(ctx);
     const mh = Math.max(H * 0.1, 6);
     r.add(setbackTower({ hex: COPPER, y0: H, levels: [
@@ -2304,6 +2327,18 @@ export const BUILDERS = {
       r.add(spire(2.5, mh * 0.6, COPPER, { x: sx * W * 0.44, z: sz * D * 0.44, y: H + mh * 0.7 - 2, seg: 10 }));
     }
     return g;
+  },
+
+  // DECORATE (CP33): Hampshire House's steep verdigris hip with its dormers and chimney stacks, on the compiled ring
+  hampshireHouse(ctx) {
+    if (!CP33LM || !ctx.footprint || ctx.footprint.length < 4) return null;
+    return buildHampshireRoof(ctx);
+  },
+
+  // DECORATE (CP33): the red ESSEX HOUSE letters on their steel frame over the park front of 160 Central Park South
+  essexHouse(ctx) {
+    if (!CP33LM) return null;
+    return buildEssexSign(ctx);
   },
 
   // DECORATE: twin copper-green round-cap towers.

@@ -10,6 +10,7 @@
 // it expects a running dev server there).
 import { chromium } from 'playwright';
 import { acquireGpu } from './gpulock.mjs';
+import { installGuard, watchPage } from './harness_guard.mjs';
 import { spawn, spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -198,15 +199,26 @@ const PRESETS = {
 };
 
 // --cams <file.json>: more views without editing this file, { name: [cx, cz, alt, tx, tz, pitch] } in world metres (the
-// L() convention above) or { name: { x, y, z, yaw, pitch } }; a name there overrides a preset of the same name
+// L convention above) or { name: { x, y, z, yaw, pitch } }; a name there overrides a preset of the same name. A view may
+// carry its own lens: a 7th number (array form) or `hfov` (object form), the HORIZONTAL fov in degrees the way
+// it is set as the vertical fov for this render's aspect and wins over fov=
 if (opt('cams')) {
   const J = JSON.parse(await fs.readFile(path.resolve(opt('cams')), 'utf8'));
-  for (const [k, v] of Object.entries(J)) if (!k.startsWith('_')) PRESETS[k] = Array.isArray(v) ? L(...v) : v;
+  for (const [k, v] of Object.entries(J)) {
+    if (k.startsWith('_')) continue;
+    if (!Array.isArray(v)) { PRESETS[k] = v; continue; }
+    const o = L(...v.slice(0, 6));
+    if (v.length >= 7 && Number.isFinite(+v[6]) && +v[6] > 0) o.hfov = +v[6];
+    PRESETS[k] = o;
+  }
 }
 const views = (opt('views', 'harlem125')).split(',');
 // --onepage: every view after the first in the same page, the camera teleported there (window.__TELEPORT) and the frame
 // taken once the tiles under it and the dresser are in: one boot for the whole list instead of one per view (a view
 // costs ~40 s instead of ~2 min). The sims run on between views; each view keeps its own log.
+// Perf numbers in a long batch are not comparable: the streamer keeps the tiles of earlier views, so a later view can
+// draw 2.5-5x the triangles and calls of the same view first in a fresh page (BID4 / QA, 2026-10-01: qc_second 88.2 M as
+// a batch's 36th view, 16.5 M first). Compare a view with itself in the same slot, or the first views of fresh pages.
 const onepage = opt('onepage') === '1';
 let sharedPage = null;
 const cur = { logs: [], errors: [] };
@@ -231,6 +243,9 @@ const [W, H] = (opt('size', '1760x990')).split('x').map(Number);
 // and a Chromium while it waits — four queued jobs doing that paged the machine)
 // --nolock: skip the GPU lock for a quick verification still while another renderer holds it
 // (frames come out slower and fps numbers are meaningless; never use it for recordings or benches)
+// 2026-10-01 guardrails (tools/harness_guard.mjs): a deadline for the run (a boot and ~4 min a view, more with --onepage's
+// shared boot; HARNESS_MAX_MIN overrides), the Vite server and the browser killed on any way out, a hung page ends the run
+try { installGuard({ name: 'bshot ' + views.slice(0, 3).join(','), maxMin: 15 + 4 * views.length }); } catch (e) { console.log('[bshot] guard not installed:', e?.message || e); }
 const releaseGpu = opt('nolock') === '1' ? (() => {}) : await acquireGpu(process.argv.slice(2).join(" ").slice(0, 60)); // one renderer at a time
 let port = opt('port');
 let server = null;
@@ -245,7 +260,7 @@ const gpuState = () => { try { const r = spawnSync('nvidia-smi', ['--query-gpu=t
 const headed = opt('headed') === '1';   // headed Chromium lands on the discrete GPU on this laptop
 const browser = await chromium.launch({
   headless: !headed,
-  args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit', `--window-size=${W},${H}`],
+  args: [(process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan'), ...(process.platform === 'win32' ? [] : ['--js-flags=--max-old-space-size=16384']), '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit', `--window-size=${W},${H}`],
 });
 await fs.mkdir(outDir, { recursive: true });
 try {
@@ -254,17 +269,26 @@ try {
     if (!p) { console.log('unknown preset', name); continue; }
     const reuse = onepage && !!sharedPage;
     const page = reuse ? sharedPage : await browser.newPage({ viewport: { width: W, height: H } });
+    if (!reuse) { try { page.__guardW = watchPage(page, { label: `bshot ${name}` }); } catch {} }
     const errors = [], logs = [];
     cur.logs = logs; cur.errors = errors;
     if (!reuse) {
       page.on('console', (m) => { const t = `[${m.type()}] ${m.text().slice(0, 400)}`; cur.logs.push(t); if (m.type() === 'error') cur.errors.push(m.text().slice(0, 300)); });
       page.on('pageerror', (e) => { cur.errors.push('PAGEERROR ' + String(e).slice(0, 400)); cur.logs.push('PAGEERROR ' + String(e)); });
+      // 2026-10-01: Vite's client forwards some page errors over its HMR socket, which NYC_NOHMR turns off, so the logs
+      // kept only "Failed to send error to Vite server": log every window error and unhandled rejection here first
+      await page.addInitScript(() => {
+        addEventListener('error', (e) => console.warn('[pageerr] ' + (e.error && e.error.stack ? e.error.stack : e.message) + (e.filename ? ' @ ' + e.filename + ':' + e.lineno : '')));
+        addEventListener('unhandledrejection', (e) => { const r = e.reason; console.warn('[pagerej] ' + (r && r.stack ? r.stack : String(r))); });
+      }).catch(() => {});
     }
     if (onepage) sharedPage = page;
     // lmwait=150: a harness render must not assemble tiles before the landmarks module lands (decorate landmarks such as
     // Whittier Hall were missing from the final_v17 oblique when Vite served the module after main.js's 30 s boot cap)
     const lmq = /(^|&)lmwait=/.test(extraQ) ? '' : '&lmwait=150';
-    const url = `http://127.0.0.1:${port}/?shot=1&rel=1&x=${p.x}&y=${p.y}&z=${p.z}&yaw=${p.yaw}&pitch=${p.pitch}&time=${time}${nodress ? '&nodress=1' : ''}${extraQ ? '&' + extraQ : ''}${lmq}`;
+    const vfov = p.hfov ? (2 * Math.atan(Math.tan((p.hfov * Math.PI) / 360) / (W / H)) * 180) / Math.PI : null;
+    const fovq = vfov && !/(^|&)fov=/.test(extraQ) ? `&fov=${vfov.toFixed(2)}` : '';
+    const url = `http://127.0.0.1:${port}/?shot=1&rel=1&x=${p.x}&y=${p.y}&z=${p.z}&yaw=${p.yaw}&pitch=${p.pitch}&time=${time}${nodress ? '&nodress=1' : ''}${extraQ ? '&' + extraQ : ''}${lmq}${fovq}`;
     const tag = `${name}_${time}${nodress ? '_nodress' : ''}${label ? '_' + label : ''}`;
     const logFile = path.join(outDir, `${tag}.log`);
     const writeLog = () => fs.writeFile(logFile, logs.join('\n')).catch(() => {});
@@ -276,8 +300,14 @@ try {
         await new Promise((s) => setTimeout(s, 1500));
         try { await page.waitForFunction('(function(){ const s = window.__STREAMER; return !!(s && s.readyUnder && s.readyUnder()); })()', undefined, { timeout: 120000 }); } catch { console.log(name, ': tiles under the view not ready after 120 s'); }
         const yAbs = await page.evaluate(([x, y, z, yaw, pitch]) => {
-          const S = window.__STREAMER, g = S && S.terrainAt ? S.terrainAt(x, z) : null;
+          const S = window.__STREAMER, g0 = S && S.terrainAt ? S.terrainAt(x, z) : null;
           const qx = x - 447.2, qz = z - 82.2, park = Math.abs(qx * 0.4848 - qz * 0.8746) < 2084 && Math.abs(qx * 0.8746 + qz * 0.4848) < 451;
+          // RS34: the section under the lens where the terrain grid dips below it (as main.js FlyCam does)
+          const si = !park && g0 !== null && S.surfaceInfoAt ? S.surfaceInfoAt(x, z, 0.5) : null;
+          // RS35 (QA Q60): only a section within 3 m of the grid counts; a deck over the street is left to the view's height
+          // (as the film's PathCam stands keys over terrainAt); `rs35=0` in --flags lets decks count again
+          const sy = si && isFinite(si.y) ? si.y - (si.road ? 0.145 : 0.28) : null;
+          const g = sy !== null && (sy - g0 <= 3 || /[?&]rs35=0/.test(location.search)) ? Math.max(g0, sy) : g0;
           const yy = (g === null || !isFinite(g) ? 0 : park ? g : Math.max(g, 0.5)) + y;
           window.__TELEPORT(x, yy, z, yaw, pitch);
           return yy;
@@ -300,6 +330,11 @@ try {
       let worldOk = true;
       try { await page.waitForFunction('(function(){ const s = window.__STREAMER; if (!s || !s.tiles) return false; if (typeof s.readyUnder === "function" && s.readyUnder()) return true; let n = 0; for (const t of s.tiles.values()) if (t && t.state === "ready") n++; return n >= 6; })()', undefined, { timeout: 180000 }); }
       catch { worldOk = false; console.log(name, ': INVALID FRAME — no tiles loaded after 180 s, re-run it'); }
+      // the view's own lens (cams hfov): set after the teleport too, so --onepage views each keep theirs
+      if (vfov) {
+        await page.evaluate((f) => { const c = window.__ENGINE && window.__ENGINE.camera; if (c) { c.fov = f; c.updateProjectionMatrix(); } }, vfov).catch(() => null);
+        console.log(`  lens: hfov ${p.hfov} -> vertical fov ${vfov.toFixed(2)}`);
+      }
       if (nodeSnap) {
         // give the sims up to 30 s to come up so the snap can use the traffic junction graph
         try { await page.waitForFunction('!!(window.__gtRefs && window.__gtRefs.traffic && window.__gtRefs.traffic._nkGrid && window.__gtRefs.traffic._nkGrid.size > 0)', undefined, { timeout: 30000 }); } catch {}
@@ -435,6 +470,17 @@ try {
           if (sL < 40 || sR < 40) { const bad = file.replace(/.png$/, '_INVALID.png'); await fs.rename(file, bad); file = bad; console.log(name, `: INVALID FRAME — truncated capture (edge luma span L ${sL.toFixed(0)} R ${sR.toFixed(0)}), re-run it`); }
         } catch (e) { console.log('  edge-span check skipped:', String(e).split('\n')[0]); }
       }
+      // --jpg (2026-09-30, the disk had 7.8 GB left with a dozen workers rendering): a valid plate is re-encoded to JPEG q90
+      // (about a fifth of the PNG) and the PNG removed; an _INVALID plate stays a PNG
+      if (opt('jpg') === '1' && !file.endsWith('_INVALID.png')) {
+        try {
+          const { createRequire } = await import('node:module');
+          const sharp = createRequire(path.join(root, 'tools', 'assets', 'package.json'))('sharp');
+          const jf = file.replace(/\.png$/, '.jpg');
+          await sharp(file).jpeg({ quality: 90, mozjpeg: true }).toFile(jf);
+          await fs.unlink(file); file = jf;
+        } catch (e) { console.log('  jpg re-encode failed, PNG kept:', String(e).split('\n')[0]); }
+      }
       const uniq = [...new Set(errors)];
       console.log(`shot ${path.relative(root, file)}  ${perf ? `fps=${perf.fps} calls=${perf.calls} tris=${(perf.tris / 1e6).toFixed(1)}M progs=${perf.progs}` : ''}  gpu=${String(gpu).slice(0, 60)}`);
       if (dress) console.log('  dress:', JSON.stringify(dress));
@@ -450,9 +496,9 @@ try {
       const p2 = await page.evaluate(() => window.__PERF ? window.__PERF() : null).catch(() => null);
       console.log(JSON.stringify({ view: name, time, nodress, ...p2 }));
     }
-    if (!onepage) await page.close();
+    if (!onepage) { page.__guardW?.stop(); await page.close(); }
   }
-  if (sharedPage) await sharedPage.close();
+  if (sharedPage) { sharedPage.__guardW?.stop(); await sharedPage.close(); }
 } finally {
   await browser.close();
   releaseGpu();

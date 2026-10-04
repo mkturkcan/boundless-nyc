@@ -184,15 +184,16 @@ export function veilMat(o, trim) {
   const uV = { value: new THREE.Vector4(o.y0, o.dir ?? 1, o.v0 ?? 0.3, o.tMax ?? 0.6) };
   const uA = { value: new THREE.Vector4(o.aer?.[0] ?? 0.4, o.aer?.[1] ?? 1.0, o.holes ?? 0.5, o.body ?? 0.28) };
   const uF = { value: o.freq ?? 5.5 };
+  const uT0 = { value: o.tear0 ?? 0.22 };   // CP33: the fraction of the fall where the sheet starts to tear (0 = at the lip)
   mat.onBeforeCompile = (sh, r) => {
     prev?.call(mat, sh, r);
-    Object.assign(sh.uniforms, { fwT: ENV.time, fwV: uV, fwA: uA, fwF: uF, fwSunD: ENV.sunDir, fwSunC: ENV.sunColor, fwNight: ENV.night });
+    Object.assign(sh.uniforms, { fwT: ENV.time, fwV: uV, fwA: uA, fwF: uF, fwT0: uT0, fwSunD: ENV.sunDir, fwSunC: ENV.sunColor, fwNight: ENV.night });
     sh.vertexShader = sh.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vFwL; varying vec3 vFwW;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvFwL = transformed; vFwW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', `#include <common>
-        uniform float fwT; uniform vec4 fwV; uniform vec4 fwA; uniform float fwF;
+        uniform float fwT; uniform vec4 fwV; uniform vec4 fwA; uniform float fwF; uniform float fwT0;
         uniform vec3 fwSunD; uniform vec3 fwSunC; uniform float fwNight;
         varying vec3 vFwL; varying vec3 vFwW;${NOISE_GLSL}`)
       .replace('#include <color_fragment>', `#include <color_fragment>
@@ -210,7 +211,7 @@ export function veilMat(o, trim) {
         // FW27: a finer octave in the tearing field, so the sheet opens into thin ropes and drop-sized holes
         float fwN4 = fwN3(vec3(vFwL.xz * fwF * 7.3 + 2.1, fwAl * 34.0));
         fwN = mix(fwN, fwN4, 0.3);` : ''}
-        float fwThr = fwA.z * smoothstep(0.22, 1.0, fwU);                  // tears open as the sheet accelerates
+        float fwThr = fwA.z * smoothstep(fwT0, 1.0, fwU);                  // tears open as the sheet accelerates
         float fwCov = smoothstep(fwThr - 0.07, fwThr + 0.05, fwN);
         float fwEdge = (1.0 - smoothstep(0.0, 0.14, fwN - fwThr)) * step(0.015, fwThr);   // torn edges foam
         float fwAer = clamp(smoothstep(fwA.x, fwA.y, fwU) * (0.5 + 0.65 * fwN2) + fwEdge * 0.65, 0.0, 1.0);
@@ -253,12 +254,14 @@ const VS = /* glsl */ `
   attribute vec4 aSeed;        // x angle, y speed jitter, z life jitter, w phase
   attribute float aKind;       // 0 sheet breakup, 1 pool splash, 2 jet column, 3 bowl splash, 4 mist (FW27)
   uniform float uT, uLipR, uLipY, uWl, uImpR, uJetY, uJetH, uBowlY, uBowlR, uPx;
+  uniform float uSpouts, uSpA0, uSpW;   // CP33: n spouts at uSpA0 + k 2pi/n, each uSpW radians wide (0: the whole ring)
   uniform vec2 uRes; uniform vec3 uSunD;
   varying float vA; varying vec2 vQ; varying float vFwd; varying float vW; varying float vK;
   const float G = 9.81;
   float h1(float n) { return fract(sin(n * 91.3458) * 47453.5453); }
   void main() {
     float ang = aSeed.x * 6.2831853;
+    if (uSpouts > 0.5 && (aKind < 1.5 || aKind > 3.5)) ang = uSpA0 + floor(aSeed.x * uSpouts) * 6.2831853 / uSpouts + (fract(aSeed.x * uSpouts) - 0.5) * uSpW;
     vec2 dir = vec2(cos(ang), sin(ang));
     vec3 p0, v0; float life;
     if (aKind < 0.5) {                       // off the lip: radial throw, then gravity down to the pool
@@ -362,7 +365,7 @@ export function fountainSpray(o) {
     uniforms: {
       uT: ENV.time, uLipR: { value: o.lipR }, uLipY: { value: o.lipY }, uWl: { value: o.wl }, uImpR: { value: o.impR },
       uJetY: { value: o.jetY }, uJetH: { value: o.jetH }, uBowlY: { value: o.bowlY }, uBowlR: { value: o.bowlR },
-      uPx: { value: 1.0 }, uRes: { value: res },
+      uPx: { value: 1.0 }, uRes: { value: res }, uSpouts: { value: o.spouts || 0 }, uSpA0: { value: o.spA0 ?? 0 }, uSpW: { value: o.spW ?? 0.1 },
       uSunD: ENV.sunDir, uSunC: ENV.sunColor, uSky: ENV.skyAmbient, uNight: ENV.night,
     },
     vertexShader: VS, fragmentShader: FS,

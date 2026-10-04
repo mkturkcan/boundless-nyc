@@ -22,6 +22,8 @@ import * as LAND from './cpLand.js';
 import { PLAN, TH, C0, wld, loc, yawAB, buildTerrace, buildFountain, buildCherry, CHERRY, mats } from './cpBethesdaKit.js';
 
 export const CP32B = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('cp32b') === '0');
+// `?cpbpad=17`: the terrain pit's old 17 m margin round the sunk parts, for an A/B (CPZ34)
+const Q_PAD = typeof location !== 'undefined' && new URLSearchParams(location.search).get('cpbpad') ? +new URLSearchParams(location.search).get('cpbpad') : null;
 
 // ---- levels ---------------------------------------------------------------------------------------------------------
 // The lower terrace's paving 0.95 m over the Lake (LAND's surface, 3DEP 16.6 m NAVD88; the 1 m LiDAR: the Lake 54.4 ft, the
@@ -208,6 +210,7 @@ export function apply(tile, ox, oz) {
   if (walk.length) tile.S.sidewalk = cat(tile.S.sidewalk, walk);
   // 4. the terrain grid: lifted with the ground, lowered under the sunk parts and 17 m round them
   const res = tile.header.res, n = res + 1, cw = 512 / res, T = tile.S.terrain;
+  const SUNK_PAD = Q_PAD ?? Math.max(6, cw * 1.5);
   let lowered = 0;
   if (T) {
     const Tn = Float32Array.from(T);
@@ -215,7 +218,10 @@ export function apply(tile, ox, oz) {
       const x = ox + i * cw, z = oz + j * cw, k = j * n + i;
       if (L.ready) Tn[k] += cpbLift(x, z);
       const [a, b] = loc(x, z);
-      if (SUNK.some((B) => boxDist(a, b, B) < 17)) { const y = L.low - 0.45; if (Tn[k] > y) { Tn[k] = y; lowered++; } }
+      // CPZ34: a cell and a half round the sunk parts, enough that no grid cell under them keeps a raised corner; the old
+      // 17 m pit showed through every sliver between the lawn's sections as dark wedges east and west of the terrace
+      // (teaser 4 v2 review, t4Crane; fillHoles leaves gaps under a metre bare)
+      if (SUNK.some((B) => boxDist(a, b, B) < SUNK_PAD)) { const y = L.low - 0.45; if (Tn[k] > y) { Tn[k] = y; lowered++; } }
     }
     tile.S.terrain = Tn;
     // 5. the lawn over the lowered cells: every 1 m cell of a lowered terrain cell that no drawn section covers and the
@@ -238,6 +244,7 @@ function fillHoles(tile, ox, oz, Tn, res, L) {
   }
   if (i1 < 0) return;
   const X0 = i0 * cw, Z0 = j0 * cw, W = (i1 + 1 - i0) * cw, H = (j1 + 1 - j0) * cw, G = new Uint8Array(W * H);
+  const GY = new Float32Array(W * H).fill(1e9);   // CPZ34: the lowest drawn section at each covered cell's centre
   for (const name of SECTIONS) {
     const a = tile.S[name];
     if (!a) continue;
@@ -257,17 +264,31 @@ function fillHoles(tile, ox, oz, Tn, res, L) {
         const px = x + 0.5, pz = z + 0.5;
         const l0 = ((zs[1] - zs[2]) * (px - xs[2]) + (xs[2] - xs[1]) * (pz - zs[2])) / d, l1 = ((zs[2] - zs[0]) * (px - xs[2]) + (xs[0] - xs[2]) * (pz - zs[2])) / d, l2 = 1 - l0 - l1;
         if (l0 > -0.08 && l1 > -0.08 && l2 > -0.08) G[z * W + x] = 1;
+        // the triangle's plane at the cell's corners and centre, where it touches the cell: the backing below goes under
+        // its lowest point (a 1 m cell of a sloping bank must not poke through on the downhill side)
+        let touch = false, ymin = 1e9;
+        for (const [qx, qz] of [[x, z], [x + 1, z], [x, z + 1], [x + 1, z + 1], [px, pz]]) {
+          const m0 = ((zs[1] - zs[2]) * (qx - xs[2]) + (xs[2] - xs[1]) * (qz - zs[2])) / d, m1 = ((zs[2] - zs[0]) * (qx - xs[2]) + (xs[0] - xs[2]) * (qz - zs[2])) / d, m2 = 1 - m0 - m1;
+          if (m0 > -0.08 && m1 > -0.08 && m2 > -0.08) touch = true;
+          const yq = m0 * a[t + 1] + m1 * a[t + 4] + m2 * a[t + 7];
+          if (yq < ymin) ymin = yq;
+        }
+        if (touch && ymin < GY[z * W + x]) GY[z * W + x] = ymin;
       }
     }
   }
   const out = [];
   for (let z = 0; z < H; z++) for (let x = 0; x < W; x++) {
-    if (G[z * W + x]) continue;
     const lx = X0 + x, lz = Z0 + z, wx = lx + ox + 0.5, wz = lz + oz + 0.5;
     const [a, b] = loc(wx, wz);
     if (onStructure(a, b)) continue;                                                     // the terrace's own
     if (a > PLAN.lakeA - 4) { try { if (typeof LAND.cpWaterY === 'function' && LAND.cpWaterY(wx, wz) !== null) continue; } catch (e) { /* no water data */ } }   // the Lake's
-    const y = (L.ready ? CP_DATUM + cpRelief(wx, wz) + cpbLift(wx, wz) : CP_DATUM) - 0.005;
+    const yG = L.ready ? CP_DATUM + cpRelief(wx, wz) + cpbLift(wx, wz) : CP_DATUM;
+    // CPZ34: a covered cell gets a backing 6 cm under its lowest section, so the slivers between the sections (under a
+    // metre, which the centre test counts as covered) close over the lowered grid instead of opening onto the 6 m pit and
+    // the river plane under it (the teaser's "dark blue shards" on the lawns beside the terrace)
+    const gy = GY[z * W + x];
+    const y = G[z * W + x] ? Math.min(yG, gy) - 0.06 : gy < 1e8 ? Math.min(yG - 0.005, gy - 0.06) : yG - 0.005;
     out.push(lx, y, lz, lx, y, lz + 1, lx + 1, y, lz + 1, lx, y, lz, lx + 1, y, lz + 1, lx + 1, y, lz);
   }
   if (out.length) tile.S.grass = cat(tile.S.grass, out);
@@ -341,8 +362,10 @@ const P3 = (a, b) => { const [x, z] = wld(a, b); return [x, 0, z]; };
 export function promenades() {
   if (!CP32B) return [];
   const out = [];
-  // round the fountain, two rings
-  for (const [r, busy] of [[16.4, 4], [19.5, 3]]) {
+  // round the fountain, two rings. CP33 (review t4Angel: walkers stood shin-deep in the pool): the pool's coping ends at
+  // PLAN.basinR + 0.45 = 15.1 m and peds.js lets a promenade walker spread 2.2 m off its line wherever the ground is paved, so
+  // the inner ring sits at 18.2 m (its inner edge 16.0 m, a metre clear of the coping and of the people seated on it)
+  for (const [r, busy] of [[18.2, 4], [19.5, 3]]) {
     const pts = [];
     for (let k = 0; k <= 36; k++) { const t = (k / 36) * Math.PI * 2; pts.push(P3(Math.cos(t) * r, Math.sin(t) * r)); }
     out.push({ pts, busy });

@@ -169,7 +169,7 @@ if (!port) {
 const browser = await chromium.launch({
   headless: !headed,
   args: [
-    '--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist',
+    (process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan'), '--enable-gpu', '--ignore-gpu-blocklist',
     '--force_high_performance_gpu', '--disable-gpu-vsync', '--disable-frame-rate-limit',
     `--window-size=${W},${H}`,
   ],

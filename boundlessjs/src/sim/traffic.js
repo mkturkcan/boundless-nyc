@@ -104,6 +104,8 @@ const FG31 = typeof location === 'undefined' || new URLSearchParams(location.sea
 let VLEN_FLEET = null;
 const vlen = (c) => (VLEN_FLEET && VLEN_FLEET[c.kind]) || VLEN[c.kind] || 4.6;
 const followGap = (a, b) => (vlen(a) + vlen(b)) / 2 + 0.4;   // centre-to-centre distance at which bumpers touch (+0.4 m)
+// VC36: the centre distance a lane change needs from a body in the new lane: `base` m, or the two bodies' reach + 1.5 m
+const lcNeed = (o, car, base) => Math.max(base, ((o.d - car.d) * car.dir >= 0 ? followGap(o, car) : followGap(car, o)) + 1.5);
 
 const nk = (x, z) => `${Math.round(x)}_${Math.round(z)}`;
 // PY25 pedestrian yield (see _pedGap); `?py25=0` restores the straight-ahead box and the unbucketed walker check
@@ -245,6 +247,194 @@ const cpDrive = (r) => {
   const q = r.pts[r.pts.length >> 1];
   return q[0] > -960 && q[0] < 1900 && q[2] > -2000 && q[2] < 2150;
 };
+// PK34. Three causes, measured with tools/ar34/vehicles/sim/park_probe.mjs on the
+// compiled tiles: (1) the occupancy hash |sin(...)| > 0.74 is not uniform (|sin| piles up near 1) and refused 283 of 588
+// slots on 125th (48 %, not the 26 % its comment said); (2) the slots on the compiled `busred` were refused (76 of 588),
+// and from Frederick Douglass to ACP and from Third to Second Avenue the compiled red lane lies AT the kerb, where the
+// real street parks; (3) the
+// parked LOD rebucket kept the first 320 records per kind in tile-load order, so in a batch render the tiles streamed for
+// earlier views took the cap and the camera's own block got none. On 125th Street (CSCL "W 125 ST" / "E 125 ST") the kerb
+// no car in a bus-stop zone (PROPS' surveyed stop signs and shelters, and the MTA GTFS stops, BUS125 below) or within
+// 15 ft of a hydrant (PROPS' survey); each kind stands off the kerb by its own wheel track. The rebucket keeps the
+// records nearest the camera, everywhere. `?pk34=0` restores all of it.
+const PK34 = typeof location === 'undefined' || new URLSearchParams(location.search).get('pk34') !== '0';
+// STREET's repaint of the kerbside red (sk/skBus.js SK_BUS_ON: off with `?skbus=0` or `?sk=0`, the compiled paint): with
+// the compiled paint the red stays a lane
+const SKBUS = typeof location === 'undefined' || !['skbus', 'sk'].some((k) => new URLSearchParams(location.search).get(k) === '0');
+const C125 = /^(W|E) 125 ST$/;
+// 125th Street's parked mix (weights; a kind missing from the loaded fleet drops out)
+// NV34 (fleet24.js): the high-roof cargo van, the 26 ft box truck and
+// the NYPD's Police Interceptor Utility join it (their weights are rules too)
+const PARK125 = { suv: 22, charger: 9, impala: 4, mercedes: 10, mini: 4, model3: 8, lincoln: 10, van: 3, cargovan: 2, boxtruck: 1, boxtruck26: 2, taxi2: 1, police: 0, nypd: 1, auditt: 1 };
+// NV34: 125th Street's moving traffic carries more working vehicles than the city's mix: a share of the spawns on its edges
+// comes from this bag
+// and its lanes carry more of the traffic than a side street: a share of all spawns picks a 125th Street edge (the
+// captures show queues in every lane at midday, the twin's spawns were spread evenly over every street in reach; a rule,
+// not a count). `?c125sp=0` off.
+const C125_SPAWN = typeof location !== 'undefined' && new URLSearchParams(location.search).get('c125sp') === '0' ? 0 : 0.3;
+const MOVE125 = { share: 0.22, bag: { cargovan: 5, stepvan: 4, boxtruck26: 3, uspsllv: 2, uspsngdv: 1, dsny: 1, schoolbus: 1, nypd: 1, taxinv200: 1 } };
+// double-parking: the share of each kind that stops in the kerb travel lane on 125th Street and elsewhere (the vans' old 6 %)
+const DP125 = { van: 0.2, boxtruck: 0.2, cargovan: 0.2, stepvan: 0.35, boxtruck26: 0.25, uspsllv: 0.5, uspsngdv: 0.5 };
+const DPK = new Set(['vwvan', 'sprinter', 'van', 'cargovan', 'stepvan', 'boxtruck26', 'uspsllv', 'uspsngdv']);
+// BUS125: the bus stops on 125th Street from MTA's Manhattan bus GTFS (feed of 2026-08-24, stops.txt / stop_times.txt;
+// docs/notes/ar34-vehicles.md): [x, z, direction of travel (E/W, from the trips' direction_id and headsign), routes].
+// Routes on 125th in that feed: the M60 SBS (Amsterdam to Second Avenue), the M101 (Amsterdam to Third / Lexington), the
+// M125 (the whole street, 12th Avenue to First Avenue and on to The Hub; BUS40's 19:53 request) and the M100 (Amsterdam
+// to St Nicholas); the Bx15 runs in the Bronx only. A stop's point lies anywhere from the centreline to the walk (2.8-8.1 m
+// off it), so its kerb comes from its direction: eastbound stops on the south kerb, westbound north.
+const BUS125 = [
+  [963.0, -3774.6, 'E', 'M125'], [985.9, -3789.8, 'W', 'M125'], [1064.7, -3675.7, 'W', 'M125'],
+  [1110.0, -3567.1, 'E', 'M125'], [1147.4, -3553.1, 'W', 'M125'], [1248.2, -3399.9, 'W', 'M125'],
+  [1307.1, -3278.6, 'E', 'M100 M101 M125'], [1434.3, -3145.3, 'E', 'M101 M125'],
+  [1533.5, -3101.1, 'W', 'M100 M101 M125'], [1603.7, -3047.9, 'E', 'M60'], [1634.8, -3030.7, 'E', 'M101 M125'],
+  [1649.6, -3034.1, 'W', 'M60'], [1652.3, -3034.1, 'W', 'M101 M125'], [1727.5, -2979.2, 'E', 'M101 M125'],
+  [1889.7, -2903.7, 'W', 'M101 M125'], [1969.4, -2845.0, 'E', 'M101 M125'], [2127.1, -2770.1, 'W', 'M101 M125'],
+  [2130.2, -2770.1, 'W', 'M60'], [2202.1, -2713.2, 'E', 'M60'], [2206.2, -2713.2, 'E', 'M101 M125'],
+  [2424.2, -2605.2, 'W', 'M101 M125'], [2473.7, -2567.3, 'E', 'M101 M125'], [2545.6, -2542.6, 'W', 'M101 M125'],
+  [2604.9, -2493.0, 'E', 'M101 M125'], [2606.3, -2492.8, 'E', 'M60'], [2674.1, -2467.2, 'W', 'M101 M125'],
+  [2676.9, -2467.2, 'W', 'M60'], [2681.5, -2448.1, 'E', 'M101'], [2742.6, -2414.3, 'E', 'M125'],
+  [2818.6, -2387.6, 'W', 'M101 M125'], [2821.1, -2387.6, 'W', 'M60'], [2889.9, -2335.1, 'E', 'M60'],
+  [2948.4, -2315.4, 'W', 'M101 M125'], [3014.5, -2265.4, 'E', 'M125'], [3127.9, -2213.0, 'W', 'M60'],
+  [3134.8, -2211.6, 'W', 'M125'], [3145.6, -2193.5, 'E', 'M125'], [3154.1, -2188.5, 'E', 'M60'],
+  [3342.1, -2077.5, 'E', 'M125'],
+];
+// BUS34 (AR34 VEHICLES): route buses on 125th Street. A bus is spawned on a 125th edge in the kerb lane of travel (the red
+// lane; STREET repaints the compiled kerbside red one parking lane out, where the sim's kerb travel lane already runs),
+// keeps that lane and keeps to 125th at every junction, pulls up with its front at each stop of its route (BUS125) and
+// dwells there (SBS: all-door boarding, off-board fares; locals: front-door boarding), and leaves the corridor like any
+// car at its end. Kinds per route: the MTA models when they are in the fleet (BUS60: the M60's articulated XD60; BUS40:
+// the 40 ft XD40 and LFS of the locals), the fleet's minibus until then. `?bus34=0` turns it off.
+const BUS34 = typeof location === 'undefined' || new URLSearchParams(location.search).get('bus34') !== '0';
+// TP34 (AR34 VEHICLES): after the camera jumps (a teleport: bshot's --onepage views, a map jump) the streets around it get
+// the first-20-s fill again for 20 s (cars from 25 m, weighted toward the camera, up to 30 % over the target while the cars
+// left behind drive out of the despawn ring): the later views of a batch showed 125th Street's lanes nearly empty. Never while a recording guards spawns. `?tp34=0` off.
+const TP34 = typeof location === 'undefined' || new URLSearchParams(location.search).get('tp34') !== '0';
+// BL34 (AR34 VEHICLES, QA Q57 2026-10-02: in the teaser key t5ApolloDive_k1 about ten cars, vans and a cab stood nose to tail
+// in the westbound red bus lane in front of the Apollo while the general lane beside them held three). Three causes in the
+// lane choice: every car was spawned in a random lane of its direction, the red one included (half of 125th Street's
+// traffic); a right turn put the car in the kerb lane from the moment it picked the turn (VQ31: up to 160 m out); and a car
+// that came up behind a standing vehicle (a double-parked van, a bus at its stop) never passed it: the pass asked for a gap
+// under 14 m and, with the leader standing, over the change's own room (18-30 m), both at once. Where a direction's kerb
+// travel lane is a red bus lane (the surface under the lane's centre along the edge, after STREET's repaint), a vehicle
+// that is not a bus now spawns in the other lanes, moves into the red lane only for a right turn at the next corner (from
+// BL_RIGHT m out), leaves it otherwise and never passes into it; route buses keep it but pass a double-parked vehicle in
+// the next lane and come back. Everywhere, a car closing on a double-parked vehicle or a dwelling bus standing in its lane
+// moves out while it still has the room for the change (from BL_LOOK m back). `?bl34=0` restores.
+const BL34 = typeof location === 'undefined' || new URLSearchParams(location.search).get('bl34') !== '0';
+const BL_RIGHT = 60, BL_LOOK = 60, DP_RED = 0.33;
+// VC36 (AR34 VEHICLES, owner 2026-10-02: "I also see in one of the shots a vehicle colliding into the back of a truck"). An
+// audit of every pair of DRAWN bodies (tools/ar34/vehicles/sim/ov36_audit.js: each kind's LOD0 plan box with its own
+// overhangs, the articulated rear body at the angle fleet24 draws, parked records; every fixed 1/30 s step of a take's
+// warm-up, path and 10 s more, run as record.mjs runs it) found the drawn lengths right (every kind's model is centred on
+// its pose; the MTA buses reach 0.3 m past their nominal half length) and these causes, worst first:
+//   (1) spawns inside a junction's mouth: a car spawned within a mouth of the end of its edge went straight to the box
+//       test, was pinned on the mouth trigger and took its connector from there, at s 0 in the very spot the car before it
+//       had taken; the spawn test looks only at cars on the same edge, and those had left it. The stacked bodies each saw
+//       the other as a body on its path (OV32), so the stack never moved and every spawn there joined it (Broadway /
+//       125th: ten vans, a step van, a minibus and SUVs in one place for the whole t5ValleyArch take, 65 m from the lens);
+//       the warm-up's fill and TP34's refill spawn from 25-40 m, so these stacks stood in the takes. Spawns now keep 9 m
+//       clear of either mouth and need a clear box (the new body grown 2.5 m each end, 0.4 m each side) among every
+//       body near, connectors included;
+//   (2) a body already inside the car ahead was dropped as its leader (the gap had to be over -2 m) and was driven
+//       through: a leader whose centre is ahead counts however deep the overlap;
+//   (3) an OV32 sweep that met a body it already overlapped at its start (a stack, a spawn) waited for it for ever: a body
+//       level with or behind the start is not in the way; of two level ones the lower (kind, idx) goes first;
+//   (4) a car on its edge followed a turning truck by the distance along the path, so it drove into the truck's rear,
+//       still across its lane in the turn (125th & Lenox: a step van turning, a Charger 2.6 m into its side): near the
+//       mouth an edge car now also stands short of any other body in the lane ahead of it (its own body swept forward);
+//   (5) lane changes asked 11-13 m between centres, which a bus or a long truck fills (an articulated bus and a car touch
+//       at 12.1 m): the room is now the two bodies' own reach plus 1.5 m where that is more;
+//   (6) parked records standing in a travel lane (Hunters Point, a skewed corner near Broadway): left out (_parkIntrudes).
+// `?vc36=0` restores all of it.
+const VC36 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vc36') !== '0';
+// NP36 (STATIONS 2026-10-02): no parked record over the 1 train station's laid east sidewalk on Broadway (the compiled east
+// kerb lane runs ~3.5 m too wide there: recompile item 16); boxes [x0, z0, x1, z1]. `?np36=0` as before
+const NP36 = VC36 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('np36') !== '0');
+const NOPARK36 = [[1060, -3590, 1095, -3548]];
+// VN36 (the lead's safety net, 2026-10-02 09:23): whatever a rule above let through, a car's body never moves INTO another:
+// before a car on its edge or on its connector is placed, its body at the new pose (mirrors aside) is tested against the
+// bodies near it that lie ahead of its motion; if it would enter one, it stays where it was this frame and stops. Out of
+// sight, a car held so for 6 s goes on (a jam no camera sees clears; in sight it stands). `?vn36=0` off.
+const VN36 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vn36') !== '0';
+// VF36 (AR34 VEHFIX, 2026-10-02; found measuring teaser 8's t8StNickDiveE, where a cab seemed to stand inside a 26 ft box truck
+// at the light on 125th at St Nicholas, most likely a cab queued behind the box and hidden by it): a DEAD car (no connector out
+// of a one-way edge's end, a connector refused as a routing fault, or stranded on a fragment) stayed drawn until the lens was
+// 260 m away, and every body test
+// skipped it (OV32's grid and sweeps, VN36, the spawn test, the recorder's check): cars drove and spawned into it. Its sim
+// place was not its drawn one either: it was never placed again, while IDM crept its d on to the edge's end, so a follower
+// stood at its follow gap from a point up to 5 m ahead of the body (60 s at the take's key 0: a van dead at d 107 drawn 3.7 m
+// ahead of an ambulance's centre, 2.5 m deep, in view at 221 m; a dead taxi2 1.6 m into a box truck's nose at 112 m). Now a
+// dead car is recycled as soon as no camera sees it (and during a recorder's warm-up, when spawning in view is allowed too),
+// one in sight stands where it is drawn with its d taken from that pose, and every body test counts it. `?vf36=0` as before.
+const VF36 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vf36') !== '0';
+const VF_REC = typeof location !== 'undefined' && new URLSearchParams(location.search).get('record') === '1';
+// VC36 (g): OV32's last resort let a car held 20 s by a standing body drive through it, in sight too, and a car behind a
+// queue standing across the junction is held that long by a body that is no deadlock at all: FILM 09:13, the owner's case
+// in teaser 4 v3's t4Sheep, a Lincoln on its connector driven into the rear of a box truck standing in a queue (frames
+// 35-70). A body ahead going my way is a queue and is waited for; in sight nothing is passed through.
+// `?busat=<x>,<z>[,<route>[,<kind>]]`: one route bus of that route
+// (else the routes' weights) stands in its kerb lane with its front at the 125th Street point nearest (x, z), on the kerb
+// of that side, for good (staged again if it despawns while the camera is away). Off by default.
+// `?vehat=<kind>,<x>,<z>[;<kind>,<x>,<z>...]` (stills, like busat): a vehicle of that kind stands double-parked for good in
+// the kerb travel lane of the street nearest (x, z), its centre there, travelling on that side's direction. Off by default.
+const VEHAT = (() => {
+  if (typeof location === 'undefined') return [];
+  return (new URLSearchParams(location.search).get('vehat') || '').split(';').map((t) => t.split(','))
+    .filter((v) => v.length >= 3 && Number.isFinite(+v[1]) && Number.isFinite(+v[2]) && v[1] !== '')
+    .map((v) => ({ kind: v[0], x: +v[1], z: +v[2], car: null }));
+})();
+const BUSAT = (() => {
+  if (typeof location === 'undefined') return null;
+  const v = (new URLSearchParams(location.search).get('busat') || '').split(',');
+  return v.length >= 2 && Number.isFinite(+v[0]) && Number.isFinite(+v[1]) && v[0] !== '' ? { x: +v[0], z: +v[1], route: v[2] || null, kind: v[3] || null } : null;
+})();
+// route weights: the same feed's trips an hour past W 125 St / Malcolm X, E 125 St / Lexington and W 125 St / Amsterdam,
+// 12:00-13:00 on 2026-10-01 (the service ids active that day only; counting every weekday calendar doubled them): M60 SBS
+// 6 each way, M101 6-8, M125 7 (the M100's weight is a guess: its 125th stops were not counted). [route, weight, kinds,
+// x from, x to] (the stretch of 125th it runs on, from its stops in BUS125)
+// The M60's bus: the Nova LFS Articulated or the XD60,
+// half each (one capture is one bus: the share is not measured)
+const BUS_ROUTES = [['M60', 6, ['mtalfsa', 'mtaxd60'], 1290, 3200], ['M101', 7, ['mtalfsal', 'mtaxd40', 'mtalfs'], 1290, 3000], ['M125', 7, ['mtalfsal', 'mtaxd60', 'mtalfs'], 900, 3400],
+  ['M100', 2, ['mtaxd40', 'mtalfs'], 1290, 1560]];
+const BUS_PER_KM = 2.0;   // per direction: ~20 buses an hour (the feed) at an assumed ~10 km/h (the speed is not measured)
+// a no-standing zone per stop along the kerb, metres from the stop point against / with the flow (the bus pulls up with
+// its front at the sign; an articulated bus is 18.3 m)
+const STOP_ZONE = [30, 7];
+// one space in PK_FREE left free on a packed kerb (Q53: the packed faces of the counted crops had a free space every 8-15
+// cars, besides the stops, hydrants and the clear kerbs below; it was one in 25)
+const PK_FREE = 0.08;
+// the kerb, metres), kerb 'N' | 'S', source]
+const NOSTAND125 = [
+  // EAST 02:20: the south kerb from 118 E 125th (NMRC) to Lexington Avenue, corridor stations 2551-2610 (sk/skGeom.js LINE,
+  // 8 m south): a stop with a NO STANDING ANYTIME plate in front of Popeyes and an empty kerb along the mural hoarding
+  [2782.6, -2392.0, 2834.2, -2363.4, 'S', 'EAST 02:20'],
+  // Q53 (session 2), each read off one levelled crop: the Apollo's frontage, north kerb, stations ~1374-1398
+  [1761.7, -2978.0, 1782.7, -2966.3, 'N', 'Q53 2024-08 8TfYv918'],
+  // Lexington - Third, south kerb along the mural hoarding and the shelter, ~2625-2690
+  [2847.3, -2356.1, 2904.2, -2324.5, 'S', 'Q53 2026-08 SPzcJJuT'],
+  // Lexington - Third, north kerb along the planted walk, ~2695-2750
+  [2916.3, -2336.1, 2964.4, -2309.4, 'N', 'Q53 2026-08 SPzcJJuT'],
+  // Third - Second, north kerb along the filling station, ~2915-2966
+  [3108.5, -2229.0, 3153.0, -2204.2, 'N', 'Q53 2026-08 yDVJtToU'],
+];
+// integer hash -> [0, 1) (uniform, unlike |sin|)
+const hash01 = (a, b = 0, c = 0) => {
+  let h = Math.imul((a | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b | 0, 0xc2b2ae35) ^ Math.imul(c | 0, 0x27d4eb2f);
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+};
+// PROPS' surveyed hydrants on 125th (city/pk/pkData.js, read-only): loaded once, a missing or broken module costs nothing
+// ...and its surveyed bus-stop signs and shelters: a GTFS stop point lies up to ~28 m from the real sign (E 125 St / 2 Av
+// westbound: GTFS 3127.9 vs the sign at 3099.8), so the kerb zones and the dwell points follow the signs where there is one
+let HYDRANTS = null, BUSSIGNS = [], SHELTERS = [];
+const HYD_P = import('../city/pk/pkData.js')
+  .then((m) => {
+    const it = m.PK_ITEMS || [];
+    HYDRANTS = it.filter((q) => q[0] === 'hydrant').map((q) => [q[1], q[2]]);
+    BUSSIGNS = it.filter((q) => q[0] === 'busSign').map((q) => [q[1], q[2]]);
+    SHELTERS = it.filter((q) => q[0] === 'shelter').map((q) => [q[1], q[2], (q[4] && q[4].len) || 4.5]);
+  })
+  .catch(() => { HYDRANTS = []; });
 // its parts, for the A/Bs: `?vq31e=0` picks the turn 34 m out as before, `?vq31t=0` keeps the 8 deg path at a crawl
 const VQ31E = VQ31 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31e') !== '0');
 const VQ31T = VQ31 && (typeof location === 'undefined' || new URLSearchParams(location.search).get('vq31t') !== '0');
@@ -253,6 +443,8 @@ const VQ31T = VQ31 && (typeof location === 'undefined' || new URLSearchParams(lo
 const lcTan = (v) => (VQ31T ? 0.268 - (0.268 - 0.1405) * Math.max(0, Math.min(1, (v - 3) / 5)) : 0.1405);
 const lcRoom = (v, lw, lanes = 1) => (Math.abs(lw) * lanes) / lcTan(v) + 6;
 const CG = 10;   // car grid cell (m)
+// for the offline probes (tools/ar34/vehicles/sim/): the tables the corridor rules read
+export const PK34_TABLES = { VLEN, PARK125, BUS125, STOP_ZONE, hydrants: () => HYDRANTS, ready: () => HYD_P };
 
 export class Traffic {
   constructor(scene, streamer, fleet = null) {
@@ -396,6 +588,25 @@ export class Traffic {
         if (!this.parked[k]) this.parked[k] = { ...mkPool(fleet[k].paint, fleet[k].dark, 320, fleet[k].parts), shell: fleet[k].shell ? mkShell(fleet[k].shell, 320) : null };
         this.parkedKinds.push(k);
       }
+      // PK34: 125th Street's weighted parked bag (a kind it lists that has no parked pool yet gets one) and each kind's
+      // wheel track (the hubs' |x|), so a wide body stands as far off the kerb as a car does
+      this._hubX = {};
+      for (const [k, f] of Object.entries(fleet)) {
+        const hubs = f?.f24?.meta?.hubs;
+        if (hubs && hubs.length) this._hubX[k] = Math.max(...hubs.map((q) => Math.abs(q.p[0])));
+      }
+      if (PK34) {
+        this._bag125 = [];
+        for (const [k, w] of Object.entries(PARK125)) {
+          if (!fleet[k]) continue;
+          if (!this.parked[k]) this.parked[k] = { ...mkPool(fleet[k].paint, fleet[k].dark, 320, fleet[k].parts), shell: fleet[k].shell ? mkShell(fleet[k].shell, 320) : null };
+          for (let i = 0; i < w; i++) this._bag125.push(k);
+        }
+        if (!this._bag125.length) this._bag125 = null;
+        this._move125 = [];
+        for (const [k, w] of Object.entries(MOVE125.bag)) if (this.pools[k]) for (let i = 0; i < w; i++) this._move125.push(k);
+        if (!this._move125.length) this._move125 = null;
+      }
     } else {
       this.parked = { sedan: { ...mkPool(geos.sedanBody, geos.sedanDark, 5200), shell: null }, van: { ...mkPool(geos.vanBody, geos.vanDark, 800), shell: null } };
       this.parkedKinds = null;
@@ -425,14 +636,33 @@ export class Traffic {
     for (const n of data.nodes) if (n.signal) this.signals.set(this._canon(n.x, n.z), true);
     this.tileEdges.set(key, ids);
     this._compDirty = true;
+    this._edgeVer = (this._edgeVer | 0) + 1;   // VC36: the parked-record lane test redoes its records
     // parked cars along curb parking lanes — stored as RECORDS; the LOD
     // rebucketer writes them into full-res or shell pools by camera distance
+    this._parkTile(key, data);
+    if (!this._bridgesAdded && this.streamer.bridgeRoads) {
+      this._bridgesAdded = true;
+      for (const br of this.streamer.bridgeRoads) {
+        // decks that carry no cars: the E 103 St footbridge and the Hell Gate rail arch were
+        // traffic edges, so cars climbed 18-43 m into the air over the East River (2026-09-04)
+        if (br.type === 'archRail' || /FOOT ?BRIDGE|PEDESTRIAN|RAIL/i.test(br.name || '')) continue;
+        this._addEdge(br.pts.map((p) => [...p]), br, '__bridges');
+      }
+    }
+  }
+  _parkTile(key, data) {
     const recs = [];
+    // PK34: a 125th Street tile parks again once PROPS' hydrant table has loaded (it decides the gaps)
+    if (PK34 && HYDRANTS === null && data.roads.some((r) => C125.test(r.name || ''))) {
+      (this._hydWait || (this._hydWait = new Map())).set(key, data);
+      if (!this._hydHooked) { this._hydHooked = true; HYD_P.then(() => { for (const [k, d] of this._hydWait) if (this.parkedRecs.has(k)) this._parkTile(k, d); this._hydWait.clear(); }); }
+    }
     for (const r of data.roads) {
       if (r.rclass > 2 || r.level > 0 || !r.park || r.pts.length < 2 || cpDrive(r)) continue;
       const e = { pts: r.pts, cum: [0] };
       for (let i = 1; i < r.pts.length; i++) e.cum.push(e.cum[i - 1] + Math.hypot(r.pts[i][0] - r.pts[i - 1][0], r.pts[i][2] - r.pts[i - 1][2]));
       e.len = e.cum[e.cum.length - 1];
+      if (PK34 && this._bag125 && C125.test(r.name || '')) { this._park125(r, e, recs); continue; }
       const sides = r.park >= 2 ? [1, -1] : [((r.segId || 0) % 2) ? 1 : -1];
       for (const side of sides) {
         // no standing past the junction mouth (crosswalk + stop bar + hydrant zone): with
@@ -484,13 +714,87 @@ export class Traffic {
     }
     this.parkedRecs.set(key, recs);
     this._parkDirty = true;
-    if (!this._bridgesAdded && this.streamer.bridgeRoads) {
-      this._bridgesAdded = true;
-      for (const br of this.streamer.bridgeRoads) {
-        // decks that carry no cars: the E 103 St footbridge and the Hell Gate rail arch were
-        // traffic edges, so cars climbed 18-43 m into the air over the East River (2026-09-04)
-        if (br.type === 'archRail' || /FOOT ?BRIDGE|PEDESTRIAN|RAIL/i.test(br.name || '')) continue;
-        this._addEdge(br.pts.map((p) => [...p]), br, '__bridges');
+  }
+  // nearest point of a polyline edge {pts, cum} to (x, z): distance along it, lateral distance, and the side (+1 = right of
+  // its +d direction, the kerb whose cars face +d)
+  _projEdge(e, x, z) {
+    let best = null;
+    for (let i = 1; i < e.pts.length; i++) {
+      const A = e.pts[i - 1], B = e.pts[i], dx = B[0] - A[0], dz = B[2] - A[2], L2 = dx * dx + dz * dz;
+      if (L2 < 1e-6) continue;
+      const t = Math.max(0, Math.min(1, ((x - A[0]) * dx + (z - A[2]) * dz) / L2));
+      const qx = A[0] + dx * t, qz = A[2] + dz * t, lat = Math.hypot(x - qx, z - qz);
+      if (!best || lat < best.lat) {
+        const L = Math.sqrt(L2);
+        // right of (dx, dz) is (-dz, dx) in this frame (x east, z south): the side placement below uses the same sign
+        best = { d: e.cum[i - 1] + t * L, lat, side: ((x - qx) * -dz + (z - qz) * dx) >= 0 ? 1 : -1, end: (i === 1 && t <= 0) || (i === e.pts.length - 1 && t >= 1) };
+      }
+    }
+    return best;
+  }
+  _park125(r, e, recs) {
+    const bag = this._bag125;
+    const nsz = XW_DEPTH(r.rclass, r.width) + 2.4;
+    const d0 = Math.max(9, (r.mouthA || 0) + nsz), d1 = e.len - Math.max(9, (r.mouthB || 0) + nsz);
+    const back0 = (r.oneway | 0) !== 0 ? (r.oneway | 0) < 0 : null;
+    for (const side of (r.park >= 2 ? [1, -1] : [((r.segId || 0) % 2) ? 1 : -1])) {
+      // no-standing zones on this kerb, as [from, to] along d: bus stops (the zone runs back against the kerb's flow from the
+      // stop point) and 15 ft either side of a hydrant
+      const zones = [];
+      const eastPlus = e.pts[e.pts.length - 1][0] > e.pts[0][0];   // +d runs east: its right (side +1) is the eastbound kerb
+      for (const [sx, sz, dir] of BUS125) {
+        const p = this._projEdge(e, sx, sz);
+        if (!p || p.lat > 16 || ((dir === 'E') === eastPlus ? 1 : -1) !== side) continue;
+        zones.push(side > 0 ? [p.d - STOP_ZONE[0], p.d + STOP_ZONE[1]] : [p.d - STOP_ZONE[1], p.d + STOP_ZONE[0]]);
+      }
+      for (const [hx, hz] of HYDRANTS || []) {
+        const p = this._projEdge(e, hx, hz);
+        if (!p || p.lat > 16 || p.side !== side) continue;
+        zones.push([p.d - 4.6, p.d + 4.6]);
+      }
+      // PROPS' surveyed stop signs (on the walk, so their side is sure): the zone runs back against this kerb's flow
+      for (const [bx, bz] of BUSSIGNS) {
+        const p = this._projEdge(e, bx, bz);
+        if (!p || p.lat > 16 || p.lat < 6 || p.side !== side) continue;
+        zones.push(side > 0 ? [p.d - STOP_ZONE[0], p.d + STOP_ZONE[1]] : [p.d - STOP_ZONE[1], p.d + STOP_ZONE[0]]);
+      }
+      for (const [x0, z0, x1, z1, kerb] of NOSTAND125) {
+        if (((kerb === 'S') === eastPlus ? 1 : -1) !== side) continue;
+        const p0 = this._projEdge(e, x0, z0), p1 = this._projEdge(e, x1, z1);
+        if (!p0 || !p1 || (p0.lat > 16 && p1.lat > 16) || (p0.end && p1.end && Math.abs(p0.d - p1.d) < 1)) continue;
+        zones.push([Math.min(p0.d, p1.d), Math.max(p0.d, p1.d)]);
+      }
+      for (const [sx2, sz2, sl] of SHELTERS) {
+        const p = this._projEdge(e, sx2, sz2);
+        if (!p || p.lat > 16 || p.lat < 6 || p.side !== side) continue;
+        zones.push([p.d - sl / 2 - 4, p.d + sl / 2 + 4]);
+      }
+      let n = 0;
+      for (let d = d0 + hash01(r.segId, side, 99) * 1.2; d < d1;) {
+        const h = hash01(r.segId, side, n), h2 = hash01(r.segId + 7, side, n), h3 = hash01(r.segId + 13, side, n);
+        n++;
+        const kind = bag[(h * bag.length) | 0];
+        const L = vlen({ kind }), gap = 0.6 + h2;
+        if (d + L > d1) break;
+        if (h3 < PK_FREE) { d += 5.5 + gap; continue; }   // a free space
+        let z = null;
+        for (const q of zones) if (d + L > q[0] && d < q[1]) { z = q; break; }
+        if (z) { d = z[1] + 0.3; continue; }
+        const s = this.sampleEdge(e, d + L / 2);
+        const off = (r.width / 2 - Math.max(1.30, (this._hubX[kind] || 0.85) + 0.45)) * side;
+        const cxp = s.x - s.dirz * off, czp = s.z + s.dirx * off;
+        const si = this.streamer.surfaceInfoAt ? this.streamer.surfaceInfoAt(cxp, czp, 0.4) : null;
+        // off the roadway (a plaza, a lawn): no car; the compiled kerbside red is the parking lane STREET repaints, so with the
+        // repaint on (SKBUS) a red left at the kerb is real and no standing; with the compiled paint
+        // (`skbus=0` / `sk=0`) its kerbside red is the parking lane and parks as before
+        if ((si && !si.road) || (si && si.kind === 'busred' && SKBUS)) { d += L + gap; continue; }
+        this._v.set(cxp, s.y + (NO_DATUM ? 0.03 : 0.002), czp);
+        const back = back0 !== null ? back0 : side < 0;
+        this._e.set(0, Math.atan2(s.dirx, s.dirz) + (back ? Math.PI : 0) + (h2 - 0.5) * 0.03, 0);
+        this._q.setFromEuler(this._e);
+        this._m.compose(this._v, this._q, this._s);
+        recs.push({ kind, x: this._v.x, z: this._v.z, m: Float32Array.from(this._m.elements), color: fleetColor(() => (h * 7.13) % 1) });
+        d += L + gap;
       }
     }
   }
@@ -539,6 +843,17 @@ export class Traffic {
     };
     if (e.len < 4) return id;
     if (e.a === e.b && e.len < 14) return id; // degenerate junction-interior loop
+    // BUS34: a 125th Street edge, and its bus stops: { d (the stop point along the edge), dir (the travel direction that
+    // serves it), routes }
+    if ((BUS34 || PK34) && C125.test(r.name || '')) e.c125 = true;
+    if (BUS34 && e.c125) {
+      e.stops = [];
+      const eastPlus = pts[pts.length - 1][0] > pts[0][0];
+      for (const [sx, sz, dr, routes] of BUS125) {
+        const p = this._projEdge(e, sx, sz);
+        if (p && p.lat <= 16 && !p.end) e.stops.push({ d: p.d, dir: (dr === 'E') === eastPlus ? 1 : -1, routes, x: sx, z: sz });
+      }
+    }
     this.edges.set(id, e);
     for (const [dir, node] of [[1, e.a], [-1, e.b]]) {
       let n = this.nodes.get(node);
@@ -564,6 +879,7 @@ export class Traffic {
     }
     this.tileEdges.delete(key);
     this._compDirty = true;
+    this._edgeVer = (this._edgeVer | 0) + 1;
   }
   sampleEdge(e, d) {
     d = Math.max(0, Math.min(e.len, d));
@@ -672,8 +988,20 @@ export class Traffic {
   spawnCar(px, pz) {
     if (this._compDirty) this._relabelComponents();
     const keys = [...this.edges.keys()];
+    // C125_SPAWN: the 125th Street edges within the spawn ring, listed again every 5 s or after a 100 m move (none away from
+    // 125th Street, so nothing changes elsewhere)
+    if (PK34 && (this._c125T === undefined || this.time - this._c125T > 5 || Math.hypot(px - this._c125X, pz - this._c125Z) > 100)) {
+      this._c125T = this.time; this._c125X = px; this._c125Z = pz;
+      this._c125ids = [];
+      for (const [id, e] of this.edges) {
+        if (!e.c125 || e.minor || e.len < 25) continue;
+        const q = e.pts[e.pts.length >> 1];
+        if (Math.hypot(q[0] - px, q[2] - pz) < SPAWN_R1) this._c125ids.push(id);
+      }
+    }
     for (let tries = 0; tries < 14; tries++) {
-      const e = this.edges.get(keys[(Math.random() * keys.length) | 0]);
+      const c125 = PK34 && C125_SPAWN > 0 && this._c125ids && this._c125ids.length && Math.random() < C125_SPAWN;
+      const e = this.edges.get(c125 ? this._c125ids[(Math.random() * this._c125ids.length) | 0] : keys[(Math.random() * keys.length) | 0]);
       if (!e || e.len < 25 || e.minor) continue;
       const d = e.len * Math.random();
       const s = this.sampleEdge(e, d);
@@ -681,8 +1009,8 @@ export class Traffic {
       // INITIAL FILL (PV2): spawning only 240-720 m out left the camera's own blocks nearly empty for the first minutes
       // (the first frames are the ones a capture takes); for the first 20 s, while under 75 % of the target, cars may
       // appear from 25 m, after which the out-of-sight ring takes over again
-      const filling = !spawnGuard.on && this.time < 20 && this.cars.length < this.target * 0.75;
-      const r0 = filling ? Math.min(SPAWN_R0, 25) : SPAWN_R0;
+      const filling = !spawnGuard.on && ((this.time < 20 && this.cars.length < this.target * 0.75) || (TP34 && this.time < (this._refill || 0)));
+      const r0 = filling ? Math.min(SPAWN_R0, this.time < 20 ? 25 : 40) : SPAWN_R0;
       if (dist < r0 || dist > SPAWN_R1) continue;
       // ...weighted toward the camera (half acceptance at 150 m), so the first frames look like a street, not a ring road
       if (filling && Math.random() > 1 / (1 + (dist / 150) ** 2)) continue;
@@ -696,26 +1024,40 @@ export class Traffic {
       }
       const dir = e.oneway !== 0 ? e.oneway : Math.random() < 0.5 ? 1 : -1;
       const r = Math.random();
-      const kind = this.kindBag
+      let kind = this.kindBag
         ? (this.pools.bus && ((e.rclass === 3 && r < 0.1) || r < 0.03) ? 'bus' : this.kindBag[(Math.random() * this.kindBag.length) | 0])
         : (e.rclass === 3 && r < 0.1 ? 'bus' : r < 0.13 ? 'van' : r < 0.155 ? 'bus' : 'sedan');
+      if (PK34 && e.c125 && this._move125 && Math.random() < MOVE125.share) kind = this._move125[(Math.random() * this._move125.length) | 0];
       const pool = this.pools[kind];
       if (pool.n >= pool.cap) continue;
       let clash = false;
-      for (const o of e.cars) if (o.dir === dir && Math.abs(o.d - d) < 10) { clash = true; break; }
+      // (VC36: or nearer than the two bodies' own reach plus 2.5 m: a school bus and a 26 ft box truck touch at 11.0 m)
+      for (const o of e.cars) if (o.dir === dir && Math.abs(o.d - d) < (VC36 ? Math.max(10, Math.max(followGap(o, { kind }), followGap({ kind }, o)) + 2.5) : 10)) { clash = true; break; }
       if (clash) continue;
       const lanesDir = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
       // taxi yellow only on taxi-type bodies (crown / prius / tesla / the placeholder sedan):
       // yellow Cybertrucks and Harleys were in the film (fleet-qa.md open item 3)
       let color = fleetColor(Math.random);
       if (color === 0xf7b500 && !/^(crown|prius|tesla|sedan)$/.test(kind)) color = fleetColor(() => 0.17 + Math.random() * 0.83);
-      const car = { e, d, dir, lane: (Math.random() * lanesDir) | 0, v: 4, kind, color, idx: pool.n++,
+      // BL34: not in a red bus lane (a double-parking van still takes the kerb lane below)
+      const blS = BL34 && kind !== 'bus' && lanesDir > 1 && this._busLane(e, dir);
+      const lane0 = (Math.random() * (blS ? lanesDir - 1 : lanesDir)) | 0;
+      // VC36: out of the junction mouths and clear of every body near (the lane a double-parker takes is tested too)
+      if (VC36 && (!this._spawnClear(e, d, dir, lane0, kind) || (lane0 !== lanesDir - 1 && (PK34 && e.c125 ? DP125[kind] : DPK.has(kind)) && !this._spawnClear(e, d, dir, lanesDir - 1, kind)))) continue;
+      const car = { e, d, dir, lane: lane0, v: 4, kind, color, idx: pool.n++,
         laneF: undefined, _lfv: 0, _cp: undefined, _cpF: undefined, _hsx: undefined, _hcz: undefined, _pg: undefined, _pgS: undefined, _pk: undefined, _pkF: undefined, _pyHold: undefined };
       car.laneF = car.lane;
       // lane 0 is the LEFT lane of travel (next to the centreline on a two-way street); the curb
       // lane is lanesDir - 1 — double-parked vans used to sit in the middle of two-way streets
-      // ...and never within 18 m of a junction, where the curb lane is the turning cars' entry
-      if ((kind === 'vwvan' || kind === 'sprinter' || kind === 'van') && Math.random() < 0.06 && d > 18 && d < e.len - 18) { car._parkT = 25 + Math.random() * 35; car.lane = lanesDir - 1; car.laneF = car.lane; }
+      // and never within 18 m of a junction, where the curb lane is the turning cars' entry
+      // PK34: on 125th Street delivery vans and box trucks double-park in the kerb travel lane (the red lane) far more often
+      // the share
+      // is a rule, not a count
+      // (BL34: a third of that where the kerb lane is a red bus lane: the census of session 2 counted 3-5 vans standing in the
+      // red lanes within 220 m of the Apollo at once (lane_eval.js, s2_q57a), the twelve counted crops show about one per
+      // three to four crops (a UPS truck at 1656, a van at 2694), none on the Apollo's block)
+      const dp = (PK34 && e.c125 ? DP125[kind] || 0 : DPK.has(kind) ? 0.06 : 0) * (blS ? DP_RED : 1);
+      if (dp > 0 && Math.random() < dp && d > 18 && d < e.len - 18) { car._parkT = 25 + Math.random() * 35; car.lane = lanesDir - 1; car.laneF = car.lane; }
       e.cars.add(car);
       this.cars.push(car);
       this._c.set(car.color);
@@ -725,6 +1067,119 @@ export class Traffic {
       for (const m of pool.mx) m.count = pool.mb.count;
       return;
     }
+  }
+  // BUS34: keep about BUS_PER_KM route buses per direction on the 125th Street edges within reach of the camera (spawned
+  // the way spawnCar spawns: outside the near ring and out of frame once the first 20 s of fill are over)
+  _spawnBus(px, pz) {
+    if (this._compDirty) this._relabelComponents();
+    // (only with the point inside the despawn ring: a bus staged out there was despawned and staged again every 0.8 s)
+    if (BUSAT && Math.hypot(BUSAT.x - px, BUSAT.z - pz) < DESPAWN_R * 0.8 && !(this._busAt && this.cars.includes(this._busAt))) this._stageBus();
+    for (const V of VEHAT) if (Math.hypot(V.x - px, V.z - pz) < DESPAWN_R * 0.8 && !(V.car && this.cars.includes(V.car))) this._stageVeh(V);
+    const near = [];
+    let len = 0, have = 0;
+    for (const e of this.edges.values()) {
+      if (!e.c125 || e.minor) continue;
+      const s = this.sampleEdge(e, e.len / 2);
+      if (Math.hypot(s.x - px, s.z - pz) > SPAWN_R1) continue;
+      near.push(e); len += e.len;
+    }
+    for (const c of this.cars) if (c.route) have++;
+    const want = Math.round((len / 1000) * BUS_PER_KM * 2);
+    if (have >= want || !near.length) return;
+    const filling = !spawnGuard.on && (this.time < 20 || (TP34 && this.time < (this._refill || 0)));
+    for (let tries = 0; tries < 10; tries++) {
+      const e = near[(Math.random() * near.length) | 0];
+      if (e.len < 30) continue;
+      const d = 8 + (e.len - 16) * Math.random();
+      const s = this.sampleEdge(e, d);
+      const dist = Math.hypot(s.x - px, s.z - pz);
+      if (dist < (filling ? 25 : SPAWN_R0) || dist > SPAWN_R1) continue;
+      if (spawnGuard.on && spawnGuard.inView(s.x, s.y + 1.5, s.z, 7)) continue;
+      const dir = e.oneway !== 0 ? e.oneway : Math.random() < 0.5 ? 1 : -1;
+      // route by weight among the routes that run on 125th at this point (west of Amsterdam only the M125)
+      const here = BUS_ROUTES.filter((q) => s.x >= q[3] && s.x <= q[4]);
+      if (!here.length) continue;
+      let r = Math.random() * here.reduce((a, q) => a + q[1], 0), route = here[0];
+      for (const q of here) { if (r < q[1]) { route = q; break; } r -= q[1]; }
+      const kinds = route[2].filter((k) => this.pools[k]);
+      const kind = kinds.length ? kinds[(Math.random() * kinds.length) | 0] : (this.pools.minibus ? 'minibus' : null);
+      if (!kind) return;
+      const pool = this.pools[kind];
+      if (pool.n >= pool.cap) continue;
+      const lanesDir = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
+      const lane = lanesDir - 1;
+      let clash = false;
+      for (const o of e.cars) if (o.dir === dir && Math.abs(o.d - d) < (VC36 ? Math.max(16, Math.max(followGap(o, { kind }), followGap({ kind }, o)) + 2.5) : 16)) { clash = true; break; }
+      if (clash) continue;
+      if (VC36 && !this._spawnClear(e, d, dir, lane, kind)) continue;   // VC36
+      const car = { e, d, dir, lane, v: 4, kind, color: 0xffffff, idx: pool.n++, route: route[0],
+        laneF: lane, _lfv: 0, _cp: undefined, _cpF: undefined, _hsx: undefined, _hcz: undefined, _pg: undefined, _pgS: undefined, _pk: undefined, _pkF: undefined, _pyHold: undefined };
+      e.cars.add(car);
+      this.cars.push(car);
+      this._c.set(car.color);
+      pool.mb.setColorAt(car.idx, this._c);
+      pool.mb.instanceColor.needsUpdate = true;
+      pool.mb.count = pool.md.count = Math.max(pool.mb.count, pool.n);
+      for (const m of pool.mx) m.count = pool.mb.count;
+      return;
+    }
+  }
+  // BUSAT: the staged bus (see BUSAT), placed once the 125th Street edge under the point has streamed in
+  _stageBus() {
+    let best = null;
+    for (const e of this.edges.values()) {
+      if (!e.c125 || e.minor) continue;
+      const p = this._projEdge(e, BUSAT.x, BUSAT.z);
+      if (p && !p.end && (!best || p.lat < best.p.lat)) best = { e, p };
+    }
+    if (!best || best.p.lat > 14) return;
+    const { e, p } = best;
+    const dir = e.oneway !== 0 ? e.oneway : p.side;
+    const here = BUS_ROUTES.filter((q) => (BUSAT.route ? q[0] === BUSAT.route : BUSAT.x >= q[3] && BUSAT.x <= q[4]));
+    const route = here[0] || BUS_ROUTES[0];
+    const kinds = BUSAT.kind && this.pools[BUSAT.kind] ? [BUSAT.kind] : route[2].filter((k) => this.pools[k]);
+    const kind = kinds.length ? kinds[(Math.random() * kinds.length) | 0] : null;
+    if (!kind || this.pools[kind].n >= this.pools[kind].cap) return;
+    const pool = this.pools[kind];
+    const lanesDir = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
+    const d = Math.max(1, Math.min(e.len - 1, p.d - dir * vlen({ kind }) / 2));
+    const car = { e, d, dir, lane: lanesDir - 1, v: 0, kind, color: 0xffffff, idx: pool.n++, route: route[0], _dwell: 1e9,
+      laneF: lanesDir - 1, _lfv: 0, _cp: undefined, _cpF: undefined, _hsx: undefined, _hcz: undefined, _pg: undefined, _pgS: undefined, _pk: undefined, _pkF: undefined, _pyHold: undefined };
+    this._busAt = car;
+    e.cars.add(car);
+    this.cars.push(car);
+    this._c.set(car.color);
+    pool.mb.setColorAt(car.idx, this._c);
+    pool.mb.instanceColor.needsUpdate = true;
+    pool.mb.count = pool.md.count = Math.max(pool.mb.count, pool.n);
+    for (const m of pool.mx) m.count = pool.mb.count;
+    console.log('[bus34] staged', route[0], kind, 'at', BUSAT.x, BUSAT.z, 'edge', e.segId ?? '', 'd', d.toFixed(1), 'dir', dir);
+  }
+  // VEHAT: one staged vehicle (see VEHAT)
+  _stageVeh(V) {
+    const pool = this.pools[V.kind];
+    if (!pool || pool.n >= pool.cap) return;
+    let best = null;
+    for (const e of this.edges.values()) {
+      if (e.minor) continue;
+      const p = this._projEdge(e, V.x, V.z);
+      if (p && !p.end && (!best || p.lat < best.p.lat)) best = { e, p };
+    }
+    if (!best || best.p.lat > 14) return;
+    const { e, p } = best;
+    const dir = e.oneway !== 0 ? e.oneway : p.side;
+    const lanesDir = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
+    const car = { e, d: Math.max(1, Math.min(e.len - 1, p.d)), dir, lane: lanesDir - 1, v: 0, kind: V.kind, color: fleetColor(() => 0.45), idx: pool.n++, _parkT: 1e9,
+      laneF: lanesDir - 1, _lfv: 0, _cp: undefined, _cpF: undefined, _hsx: undefined, _hcz: undefined, _pg: undefined, _pgS: undefined, _pk: undefined, _pkF: undefined, _pyHold: undefined };
+    V.car = car;
+    e.cars.add(car);
+    this.cars.push(car);
+    this._c.set(car.color);
+    pool.mb.setColorAt(car.idx, this._c);
+    pool.mb.instanceColor.needsUpdate = true;
+    pool.mb.count = pool.md.count = Math.max(pool.mb.count, pool.n);
+    for (const m of pool.mx) m.count = pool.mb.count;
+    console.log('[vehat] staged', V.kind, 'at', V.x, V.z, 'edge', e.segId ?? '', 'd', car.d.toFixed(1), 'dir', dir);
   }
   _pickNext(car, nodeKey, exitDirx, exitDirz, straightOnly = false, accept = null) {   // accept(turn): VQ31's lane-kept fallback
     // merged junction cluster when one exists (scattered CSCL arms), else the
@@ -758,6 +1213,12 @@ export class Traffic {
       opts.push({ o, ne, w, turn });
     }
     if (!opts.length) return null;
+    // BUS34: a route bus stays on 125th Street (straight on, through a divided avenue's median link)
+    if (car.route && car.e && (car.e.c125 || car.e.len < 26)) {
+      const keep = opts.filter((q) => q.ne.c125 && q.turn === 'straight').sort((a, b) => b.w - a.w)[0]
+        || opts.filter((q) => q.turn === 'straight' && q.ne.len < 26).sort((a, b) => b.w - a.w)[0];
+      if (keep) return keep;
+    }
     // external API route plan (vehicle.set_autopilot(route=[...])): take the planned turn when this junction has it
     if (car.routePlan && car.routePlan.length) {
       const want = car.routePlan[0];
@@ -847,6 +1308,184 @@ export class Traffic {
       if (this.fleet24 || !dm) cache[car.kind] = h;   // before fleet24 is installed, do not cache the fallback
     }
     return h;
+  }
+  // VC36: does a parked record's body stand in a travel lane? Hunters Point's streets put a school bus, a step van and SUVs
+  // 0.6-1.6 m into parked vans and cars for whole takes (t6GantryArc, in view), a skewed corner near Broadway a parked Mini
+  // 2.1 m into a queue on 125th: the parked slots are laid out from the road's width and the lanes from the edge's, and a
+  // cross street's kerb runs on into the junction. A record is dropped when its body (its own plan box, mirrors included,
+  // turned to the street) comes more than 0.5 m into a 2.5 m wide body on the centre of any lane of a street within 20 m at
+  // its level (a mirror over the next lane is left: a 10 m street with both kerbs parked has 0.2 m of that).
+  _parkIntrudes(rec) {
+    if (NP36 && NOPARK36.some((b) => rec.x > b[0] && rec.x < b[2] && rec.z > b[1] && rec.z < b[3])) return true;   // NP36
+    const G = this._vcEdgeGrid();
+    const m = rec.m, yaw = Math.atan2(m[8], m[10]), h = this.carHalf({ kind: rec.kind }), y = m[13];
+    const fx = Math.sin(yaw), fz = Math.cos(yaw);
+    const seen = new Set();
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+      const L = G.get((Math.floor(rec.x / 40) + i) * 100003 + (Math.floor(rec.z / 40) + j));
+      if (!L) continue;
+      for (const e of L) {
+        if (seen.has(e) || !this.edges.has(e.id)) continue;
+        seen.add(e);
+        const p = this._projEdge(e, rec.x, rec.z);
+        if (!p || p.end || p.lat > 20) continue;
+        const s = this.sampleEdge(e, p.d);
+        if (Math.abs(s.y - y) > 3) continue;   // a deck over the street, a street under the deck
+        const cA = Math.abs(fx * s.dirx + fz * s.dirz), sA = Math.sqrt(Math.max(0, 1 - cA * cA));
+        const hwP = h[0] * cA + h[1] * sA, latR = p.side * p.lat;
+        const lanesDir = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
+        for (const dir of e.oneway !== 0 ? [e.oneway] : [1, -1]) for (let lane = 0; lane < lanesDir; lane++) {
+          if (Math.abs(latR - dir * this._laneOffsetAt(e, { dir, lane }, lane)) < hwP + 1.25 - 0.5) return true;
+        }
+      }
+    }
+    return false;
+  }
+  // VC36: the edges by 40 m cell (bounding box grown 20 m), rebuilt when tiles come or go
+  _vcEdgeGrid() {
+    if (this._vcG && this._vcGv === this._edgeVer) return this._vcG;
+    const G = new Map();
+    for (const e of this.edges.values()) {
+      if (e.minor) continue;
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (const q of e.pts) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[2] < z0) z0 = q[2]; if (q[2] > z1) z1 = q[2]; }
+      for (let i = Math.floor((x0 - 20) / 40); i <= Math.floor((x1 + 20) / 40); i++) for (let j = Math.floor((z0 - 20) / 40); j <= Math.floor((z1 + 20) / 40); j++) {
+        const k = i * 100003 + j;
+        let L = G.get(k);
+        if (!L) G.set(k, (L = []));
+        L.push(e);
+      }
+    }
+    this._vcG = G; this._vcGv = this._edgeVer;
+    return G;
+  }
+  // VC36: room for a new `kind` body at d in lane `lane` of e, travelling dir: 9 m clear of either junction mouth (a car
+  // spawned in a mouth was pinned on its trigger and took its connector where the car before it had), and its box, grown
+  // 2.5 m each end and 0.4 m each side, clear of every body near it (cars on connectors included: they have left the edge)
+  _spawnClear(e, d, dir, lane, kind) {
+    const h = this.carHalf({ kind }), mA = Math.max(0, e.mouthA || 0), mB = Math.max(0, e.mouthB || 0);
+    if (d - h[1] < mA + 9 || d + h[1] > e.len - mB - 9) return false;
+    const s = this.sampleEdge(e, d), off = this._laneOffsetAt(e, { dir, lane }, lane);
+    const x = s.x - s.dirz * dir * off, z = s.z + s.dirx * dir * off, yaw = Math.atan2(s.dirx * dir, s.dirz * dir);
+    const hw = h[0] + 0.4, hl = h[1] + 2.5;
+    for (const oc of this._ovNear(x, z, hl + 14)) if ((!oc.dead || VF36) && oc._pose && this._ovHit(x, z, yaw, hw, hl, oc)) return false;
+    for (const oc of e.cars) if (oc._pose && this._ovHit(x, z, yaw, hw, hl, oc)) return false;
+    return true;
+  }
+  // VN36: would `car`'s body at (x, z, yaw) enter another body lying ahead of its motion? (its own box less 0.2 m each side for
+  // the mirrors, the other's whole plan box). Held 6 s out of sight of every camera, it may (counted: vnUnseen)
+  _vnBlocked(car, x, z, yaw, dt) {
+    const q = car._pose, mx = x - q[0], mz = z - q[2];
+    if (mx * mx + mz * mz < 1e-8) return false;
+    const h = this.carHalf(car), hw = Math.max(0.5, h[0] - 0.2), hl = h[1];
+    for (const oc of this._ovNear(x, z, hl + 12)) {
+      if (oc === car || (oc.dead && !VF36) || !oc._pose) continue;   // VF36: a dead car is a body too
+      if ((oc._pose[0] - q[0]) * mx + (oc._pose[2] - q[2]) * mz <= 0) continue;   // not ahead of my motion
+      if (!this._ovHit(x, z, yaw, hw, hl, oc)) continue;
+      if (car._vnBy === oc && (car._vnT || 0) > 6 && !this._ovSeen(car) && !this._ovSeen(oc)) { this.vnUnseen = (this.vnUnseen || 0) + 1; continue; }
+      car._vnT = car._vnBy === oc ? (car._vnT || 0) + dt : dt;
+      car._vnBy = oc;
+      this.vnHeld = (this.vnHeld || 0) + 1;
+      return true;
+    }
+    // parked bodies: one the car would run into is dropped during a warm-up (nothing is filmed; a kerb slot in a turning
+    // path: 12th Avenue's corner of 125th Street, FILM 09:13), in a take the car stands
+    const PG = this._vnPG;
+    if (PG) {
+      const r = hl + 6;
+      for (let i = Math.floor((x - r) / 16); i <= Math.floor((x + r) / 16); i++) for (let j = Math.floor((z - r) / 16); j <= Math.floor((z + r) / 16); j++) {
+        const L = PG.get(i * 100003 + j);
+        if (!L) continue;
+        for (const rec of L) {
+          if (rec._vcHit) continue;
+          const m = rec.m, po = rec._ovp || (rec._ovp = { kind: rec.kind, _pose: [m[12], m[13], m[14], Math.atan2(m[8], m[10])] });
+          if (Math.abs(po._pose[1] - (q[1] || 0)) > 3 || (po._pose[0] - q[0]) * mx + (po._pose[2] - q[2]) * mz <= 0) continue;
+          if (!this._ovHit(x, z, yaw, hw, hl, po)) continue;
+          if (!spawnGuard.on) { rec._vcHit = true; this._parkDirty = true; this.vnParkDropped = (this.vnParkDropped || 0) + 1; continue; }
+          // in a take a car stands only for a parked body in front of it (its own box 0.5 m narrower each side): one it
+          // brushes in passing (a mirror over the lane line) held whole lanes still (junction passes -15 %)
+          if (!this._ovHit(x, z, yaw, Math.max(0.4, hw - 0.3), hl, po)) continue;
+          car._vnT = car._vnBy === po ? (car._vnT || 0) + dt : dt;
+          car._vnBy = po;
+          this.vnHeld = (this.vnHeld || 0) + 1;
+          return true;
+        }
+      }
+    }
+    car._vnT = 0; car._vnBy = null;
+    return false;
+  }
+  // VC36: of two bodies level with each other (a stack), which goes first: the lower (kind, idx)
+  _vcFirst(a, b) { return (a.kind || '') < (b.kind || '') || ((a.kind || '') === (b.kind || '') && (a.idx ?? 0) < (b.idx ?? 0)); }
+  // VC36: how far `car`, on its edge, can drive on in its lane before its body (swept straight along the lane, mirrors
+  // aside) touches another body that is not its own lane's queue (IDM keeps that one): a turning truck's rear still across
+  // the lane, a body across the mouth. Up to its stopping distance + 3 m and no further than 1 m past the mouth.
+  _ovSweepEdge(car, e, endD, mEnd) {
+    const q0 = car._pose;
+    if (!q0) return 1e9;
+    const run = Math.min((car.v * car.v) / (2 * IDM.b) + 3, Math.max(0, endD - Math.max(0, mEnd || 0)) + 1);
+    if (run < 0.3) return 1e9;
+    const h = this.carHalf(car), hw = Math.max(0.6, h[0] - 0.15), hl = h[1] + OV_M;
+    const s = this.sampleEdge(e, car.d), ux = s.dirx * car.dir, uz = s.dirz * car.dir, yaw = q0[3];
+    const cx = q0[0] + (ux * run) / 2, cz = q0[2] + (uz * run) / 2;
+    let best = 1e9;
+    for (const oc of this._ovNear(cx, cz, run / 2 + hl + 10)) {
+      if (oc === car || (oc.dead && !VF36) || !oc._pose) continue;   // VF36: a dead car is a body too
+      // a body settled in a lane of my own edge: my lane's queue is IDM's, the others are beside me, not in my way (a box
+      // truck's mirrors reach 0.2 m over a 3 m lane line; VT29's rule keeps a body crossing the line my leader)
+      if (oc.e === e && !oc.turn && Math.abs((oc.laneF ?? oc.lane) - oc.lane) < 0.15) continue;
+      const rx = oc._pose[0] - q0[0], rz = oc._pose[2] - q0[2], al = rx * ux + rz * uz;
+      if (al < 0.3 && !(al > -0.3 && this._vcFirst(oc, car))) continue;   // level with or behind me (a stack: one goes first)
+      if (!this._ovHit(cx, cz, yaw, hw, hl + run / 2, oc)) continue;
+      for (let ds = 0; ds <= run; ds += 0.5) if (this._ovHit(q0[0] + ux * ds, q0[2] + uz * ds, yaw, hw, hl, oc)) { best = Math.min(best, ds - 0.5); car._vcBy = oc; break; }
+    }
+    return best;
+  }
+  // BL34: is the kerb travel lane of this edge's `dir` side a red bus lane? The surface under the lane's centre, sampled
+  // once per edge and side every ~8 m between the junction mouths (red under 40 % of it or more); a side whose surface is
+  // not all in yet answers from what is in and is sampled again 3 s later
+  _busLane(e, dir) {
+    if (!BL34 || !this.streamer || !this.streamer.surfaceInfoAt) return false;
+    const k = dir > 0 ? '_blP' : '_blN', v = e[k];
+    if (v === true || v === false) return v;
+    if (v !== undefined && this.time < v[0]) return v[1];
+    const lanesDir = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
+    if (lanesDir < 2) return (e[k] = false);
+    const off = this._laneOffsetAt(e, { dir }, lanesDir - 1);
+    const a = Math.max(3, e.mouthA || 0), b = e.len - Math.max(3, e.mouthB || 0);
+    if (b - a < 4) return (e[k] = false);
+    const N = Math.max(2, Math.min(32, Math.round((b - a) / 8)));
+    let n = 0, red = 0;
+    for (let i = 0; i < N; i++) {
+      const s = this.sampleEdge(e, a + ((i + 0.5) / N) * (b - a));
+      const si = this.streamer.surfaceInfoAt(s.x - s.dirz * dir * off, s.z + s.dirx * dir * off, 0.3);
+      if (!si) continue;
+      n++;
+      if (si.kind === 'busred') red++;
+    }
+    const isBus = n > 0 && red / n >= 0.4;
+    if (n < N) { e[k] = [this.time + 3, isBus]; return isBus; }
+    return (e[k] = isBus);
+  }
+  // BL34: the double-parked vehicle standing in lane `kl` of this edge nearest ahead of the car, from BL_LOOK m ahead until
+  // the car's tail is past it: { o, g (the gap to its rear, negative once alongside) } or null
+  _dpAhead(car, e, kl) {
+    let best = null;
+    for (const o of e.cars) {
+      if (o === car || o.dir !== car.dir || o.lane !== kl || !(o._parkT > 0) || o.turn) continue;
+      const fg = followGap(o, car), g = (o.d - car.d) * car.dir - fg;
+      if (g < BL_LOOK && g > -2 * fg - 2 && (!best || g < best.g)) best = { o, g };
+    }
+    return best;
+  }
+  // BL34: no body in lane nl (or still in it) alongside the car, bumper to bumper plus 2 m
+  _sideClear(car, e, nl) {
+    for (const o of e.cars) {
+      if (o === car || o.dir !== car.dir) continue;
+      if (o.lane !== nl && !(Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;
+      if (Math.abs(o.d - car.d) < followGap(o, car) + 2) return false;
+    }
+    return true;
   }
   // VQ30: how far lane nl of edge e is clear ahead of the car (to the nearest body in or still across that lane, less
   // its follow gap); 1e9 when nothing is ahead on this edge
@@ -1120,17 +1759,29 @@ export class Traffic {
     dt = Math.min(dt, 0.05);
     if (FG31 && this.vehDims && this._vdSeen !== this.vehDims) {   // FG31: the lengths the follow gap uses, once per fleet
       this._vdSeen = this.vehDims;
-      VLEN_FLEET = Object.fromEntries(Object.entries(this.vehDims).filter(([, d]) => d && d[2] > 2).map(([k, d]) => [k, d[2]]));
+      // (VC36: or twice the drawn body's longer reach from its pose: the MTA buses' fronts reach 0.3 m past half their length)
+      VLEN_FLEET = Object.fromEntries(Object.entries(this.vehDims).filter(([, d]) => d && d[2] > 2).map(([k, d]) => [k, VC36 && this.fleet24 ? Math.max(d[2], 2 * this.carHalf({ kind: k })[1]) : d[2]]));
     }
     this._frame = (this._frame || 0) + 1;
     if (PY25) this._pedPass(dt);
     if (this._compDirty) this._relabelComponents();
     { // parked LOD: rebucket when tiles changed or the camera moved 24m
-      const mx = px - this._pbX, mz = pz - this._pbZ;
-      if (this._parkDirty || mx * mx + mz * mz > 576) this._rebucketParked(px, pz);
+      // FP37 (core/engine.js, the film policy): while recording, once per take, by the take's nearest approach to each car
+      const fp = typeof window !== 'undefined' && window.__FP37 && window.__FP37.pts ? window.__FP37 : null;
+      if (fp) { if (this._parkDirty || this._pbV !== fp.v) { this._pbV = fp.v; this._rebucketParked(px, pz, fp); } }
+      else {
+        this._pbV = -1;
+        const mx = px - this._pbX, mz = pz - this._pbZ;
+        if (this._parkDirty || mx * mx + mz * mz > 576) this._rebucketParked(px, pz);
+      }
     }
+    // TP34: a camera jump of more than 150 m between updates opens a 20 s refill window
+    if (TP34 && this._lpx !== undefined && Math.hypot(px - this._lpx, pz - this._lpz) > 150) this._refill = this.time + 20;
+    this._lpx = px; this._lpz = pz;
+    const tgt = this.target * (TP34 && this.time < (this._refill || 0) ? 1.3 : 1);
     // cars spawned through the external API (src/api/bridge.js, car.api) are extra, never part of the ambient target
-    if (this.cars.length - (this.apiCount || 0) < this.target && this.edges.size > 30) for (let i = 0; i < 8; i++) this.spawnCar(px, pz);
+    if (this.cars.length - (this.apiCount || 0) < tgt && this.edges.size > 30) for (let i = 0; i < 8; i++) this.spawnCar(px, pz);
+    if (BUS34 && this.edges.size > 30 && (this._busT = (this._busT || 0) - dt) <= 0) { this._busT = this.time < 20 ? 0.1 : 0.8; this._spawnBus(px, pz); }
     if (OV32) this._ovGrid();
     for (let ci = this.cars.length - 1; ci >= 0; ci--) {
       const car = this.cars[ci];
@@ -1145,6 +1796,18 @@ export class Traffic {
       }
       const e = car.e;
       if (e.minor) car.dead = true; // stranded on a fragment: recycle onto the network
+      // VF36: a dead car is recycled once no camera can see it (and in a recorder's warm-up, when spawning in view is allowed
+      // too); in sight it stands where it is drawn (its d from that pose, once) and the body tests count it
+      if (VF36 && car.dead && !car.api) {
+        if (!this._ovSeen(car) || (VF_REC && !spawnGuard.on)) { this.vfRecycled = (this.vfRecycled || 0) + 1; this._remove(ci); continue; }
+        if (!e.minor && car._pose) {
+          const q = car._pose;
+          if (!car._vfHeld) { car._vfHeld = true; const p = this._projEdge(e, q[0], q[2]); if (p) car.d = Math.max(0.1, Math.min(e.len - 0.1, p.d)); this.vfHeld = (this.vfHeld || 0) + 1; }
+          car.v = 0;
+          this._placeCar(car, q[0], q[1], q[2], q[3], dt);
+          continue;
+        }
+      }
       // ---- curved intersection turn in progress
       if (car.turn) {
         const T = car.turn;
@@ -1159,7 +1822,8 @@ export class Traffic {
             // OV32: on two connectors into this lane the one with less of its connector left leads (s is metres along each
             // car's own connector: a car 1.3 m into a 26.7 m one took the lead over one standing at the start of an 18.9 m
             // one, which then waited for it while the first was held by its body)
-            if (OV32) { const rO = oc.turn.len - oc.turn.s, rM = T.len - T.s; if (rO < rM) gapT = Math.min(gapT, rM - rO - followGap(oc, car)); }
+            // (VC36: of two level, a stack on one connector, the one second follows the one first)
+            if (OV32) { const rO = oc.turn.len - oc.turn.s, rM = T.len - T.s; if (rO < rM || (VC36 && Math.abs(rO - rM) < 0.3 && this._vcFirst(oc, car))) gapT = Math.min(gapT, rM - rO - followGap(oc, car)); }
             else if (oc.turn.s > T.s) gapT = Math.min(gapT, oc.turn.s - T.s - followGap(oc, car));
             continue;
           }
@@ -1182,6 +1846,7 @@ export class Traffic {
         // PY25: a car that slowed in the box for a walker pulls away (IDM a), it does not jump back to 3.5 m/s in one frame
         else if (car._pyHold && car.v < 3.5) car.v = Math.min(capT, car.v + IDM.a * dt);
         else { car._pyHold = false; car.v = Math.max(VT28 ? Math.min(3.5, T.vCap) : 3.5, Math.min(car.v, capT)); }
+        const sS = T.s;   // VN36
         T.s = Math.min(T.len, T.s + car.v * dt);
         const t = TW26 && T.lut ? this._turnT(T, T.s) : T.s / T.len;
         const omt = 1 - t;
@@ -1195,6 +1860,8 @@ export class Traffic {
         let tz2 = d0 * (T.c1[2] - T.p0[2]) + d1 * (T.c2[2] - T.c1[2]) + d2 * (T.p2[2] - T.c2[2]);
         if (Math.abs(tx2) + Math.abs(tz2) < 1e-6) { tx2 = T.p2[0] - T.p0[0]; tz2 = T.p2[2] - T.p0[2]; } // degenerate (straight chord, k = 0) endpoints
         const yaw = Math.atan2(tx2, tz2);
+        // VN36: never into another body
+        if (VN36 && dt > 0 && car._pose && this._vnBlocked(car, bx, bz, yaw, dt)) { T.s = sS; car.v = 0; const q = car._pose; this._placeCar(car, q[0], q[1], q[2], q[3], dt); continue; }
         this._placeCar(car, bx, by, bz, yaw, dt);
         if (T.s >= T.len) { car.turn = null; if (BX27) car._tail = this.carHalf(car)[1] + 0.6; car._ovT = 0; car._ovBy = car._ovPrev = car._ovForcedBy = null; }   // BX27: its rear is still in the box
         continue;
@@ -1233,9 +1900,16 @@ export class Traffic {
       if (PY25 && car.lane > Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1)) car.lane = Math.max(0, (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1);
       // VQ30: a car moves over for its turn only while rolling and into a gap (10 m of its new lane clear ahead); one
       // standing in a queue waits for the queue to move
-      if (car.turnLaneWant >= 0 && car.lane !== car.turnLaneWant && !car._lcT && endD > 6 && !car._dwell
+      // BL34: the red bus lane is the buses': a vehicle that is not one takes it only for a right turn at the next corner,
+      // from BL_RIGHT m out, and otherwise moves out of it (a double-parked van standing in it excepted)
+      let tlw = car.turnLaneWant, blOut = false;
+      if (BL34 && !car.route && car.kind !== 'bus' && !(car._parkT > 0)) {
+        const kl = (e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2))) - 1;
+        if (kl > 0 && (tlw === kl ? endD > BL_RIGHT : car.lane === kl) && this._busLane(e, car.dir)) { blOut = tlw !== kl; tlw = kl - 1; }
+      }
+      if (tlw >= 0 && car.lane !== tlw && !car._lcT && endD > 6 && !car._dwell
           && (!VQ30 || car.v > 0.5)) {
-        const nl = car.lane + (car.turnLaneWant > car.lane ? 1 : -1);
+        const nl = car.lane + (tlw > car.lane ? 1 : -1);
         // VQ31: the new lane free of slow bodies for the whole change, my own road too when my leader is slow, and the
         // change done before the junction's mouth (stopdev5: the cars still stopped at a steep angle all stood in its last 10 m)
         const room = VQ31 ? lcRoom(car.v, this._laneOffsetAt(e, car, car.lane + 1) - this._laneOffsetAt(e, car, car.lane) || 3.2) : 0;
@@ -1243,10 +1917,10 @@ export class Traffic {
         for (const o of e.cars) {
           if (o === car || o.dir !== car.dir) continue;
           if (o.lane !== nl && !(VT29 && Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;   // VT29: or still in it
-          if (Math.abs(o.d - car.d) < 11) { clear = false; break; }
+          if (Math.abs(o.d - car.d) < (VC36 ? lcNeed(o, car, 11) : 11)) { clear = false; break; }
         }
         if (clear) { car.lane = nl; car._lcT = 1.2; }
-        else if (endD < 16) car.v = Math.min(car.v, 2.5);   // could not get over: creep and wait for a gap
+        else if (endD < 16 && !blOut) car.v = Math.min(car.v, 2.5);   // could not get over: creep and wait for a gap
       }
       // ---- IDM longitudinal control: leader on my edge/lane
       let v0 = e.speed * (0.85 + ((car.idx * 37) % 10) / 40);
@@ -1274,7 +1948,9 @@ export class Traffic {
           if (VT29 ? dl * lwE > myW + this._latHalf(o) + 0.25 : dl >= 0.62) continue;
         }
         const g = (o.d - car.d) * car.dir - followGap(o, car);
-        if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = o.v; leadC = o; }
+        // VC36: a body already inside the one ahead is still following it (a centre ahead, or of two level the one second)
+        const ahC = (o.d - car.d) * car.dir;
+        if ((g > -2 || (VC36 && (ahC > 0.3 || (ahC > -0.3 && this._vcFirst(o, car))))) && g < gap) { gap = Math.max(0.05, g); leadV = o.v; leadC = o; }
       }
       // the car that just left my lane through the mouth is still my leader while it is on its
       // connector (audit: followers bumped the tail of a car 1 m into its turn)
@@ -1282,7 +1958,8 @@ export class Traffic {
         for (const oc of this.cars) {
           if (!oc.turn || oc.turnFrom !== e || oc.turnFromDir !== car.dir || oc.turnFromLane !== car.lane) continue;
           const g = (endD - mEnd) + oc.turn.s - followGap(oc, car);
-          if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = oc.v; leadC = oc; }
+          if ((g > -2 || VC36) && g < gap)   // VC36: it left my lane through the mouth: ahead of me however near
+             { gap = Math.max(0.05, g); leadV = oc.v; leadC = oc; }
         }
       }
       // queue look-ahead across the junction: nearest car on the chosen next edge
@@ -1297,14 +1974,36 @@ export class Traffic {
           if (g > -2 && g < gap) { gap = Math.max(0.05, g); leadV = oc.v; leadC = oc; }
         }
       }
+      // VC36: near the mouth, any other body in the lane ahead (a turning truck's rear still across it, a body over the mouth)
+      if (VC36 && OV32 && endD - Math.max(0, mEnd || 0) < 30 && Math.abs((car.laneF ?? car.lane) - car.lane) < 0.15) {
+        car._vcBy = null;
+        const gB = this._ovSweepEdge(car, e, endD, mEnd);
+        if (gB < gap) { gap = Math.max(0.05, gB); leadV = 0; leadC = car._vcBy; }
+      }
       car._leadCar = leadC;
       // ---- lane change: a blocked car slides to a clear adjacent lane
       const lanesDirNow = e.oneway !== 0 ? e.lanes : Math.max(1, Math.floor(e.lanes / 2));
       // VQ30: and only into a gap it can finish in (14 m of the new lane clear ahead)
-      if (lanesDirNow > 1 && gap < 14 && leadV < car.v * 0.65 && car.v > 2 && !car._lcT) {
+      // BUS34: a route bus keeps its red lane on 125th Street
+      // (BL34: but passes a double-parked vehicle standing in it: out into the next lane while it has the room for the
+      // change, back once its tail is past it and the red lane beside it is clear)
+      if (car.route && e.c125) {
+        const kl = lanesDirNow - 1, dpA = BL34 && kl > 0 && !car.turn ? this._dpAhead(car, e, kl) : null;
+        if (!dpA) { if (car.lane !== kl && !car.turn && (!BL34 || this._sideClear(car, e, kl))) car.lane = kl; }
+        else if (car.lane === kl && !car._lcT && car.v > 0.5 && !(car._dwell > 0)) {
+          const room = VQ31 ? lcRoom(car.v, this._laneOffsetAt(e, car, kl) - this._laneOffsetAt(e, car, kl - 1) || 3.2) : 0;
+          if (dpA.g > room && endD - (mEnd || 0) > room + 2 && this._freeAhead(car, e, kl - 1, true) > room + 2 && this._sideClear(car, e, kl - 1)) { car.lane = kl - 1; car._lcT = 1.2; }
+        }
+      }
+      // BL34: a car closing on a double-parked vehicle or a dwelling bus standing in its lane moves out from BL_LOOK m back,
+      // while it still has the room for the change
+      else if (lanesDirNow > 1 && !car._lcT && ((gap < 14 && leadV < car.v * 0.65 && car.v > 2)
+          || (BL34 && gap < BL_LOOK && car.v > 0.5 && leadC && leadC.e === e && !leadC.turn && leadC.lane === car.lane && (leadC._parkT > 0 || leadC._dwell > 0) && (leadC.v || 0) < 0.3))) {
+        const blK = BL34 && !car.route && car.kind !== 'bus' && this._busLane(e, car.dir);
         for (const dl of [1, -1]) {
           const nl = car.lane + dl;
           if (nl < 0 || nl >= lanesDirNow) continue;
+          if (blK && nl === lanesDirNow - 1) continue;   // BL34: never into the red bus lane to pass
           // VQ31: room for the whole change in the new lane and before the junction's mouth, and a leader still rolling or
           // far enough to finish behind
           const room = VQ31 ? lcRoom(car.v, this._laneOffsetAt(e, car, car.lane + 1) - this._laneOffsetAt(e, car, car.lane) || 3.2) : 0;
@@ -1312,7 +2011,7 @@ export class Traffic {
           for (const o of e.cars) {
             if (o === car || o.dir !== car.dir) continue;
             if (o.lane !== nl && !(VT29 && Math.abs((o.laneF ?? o.lane) - nl) < 0.6)) continue;   // VT29: or still in it
-            if (Math.abs(o.d - car.d) < 13) { clear = false; break; }
+            if (Math.abs(o.d - car.d) < (VC36 ? lcNeed(o, car, 13) : 13)) { clear = false; break; }
           }
           if (clear) { car.lane = nl; car._lcT = 1.2; break; }
         }
@@ -1329,6 +2028,41 @@ export class Traffic {
           car._dwell -= dt;
           if (car._dwell <= 0) car._dwell = 0;
           else { gap = Math.min(gap, 0.1); leadV = 0; } // doors open, hold
+        }
+      }
+      // ---- BUS34: a route bus pulls up with its front at each of its route's stops on this edge and dwells
+      if (car.route && ((e.stops && e.stops.length) || car._dwell > 0)) {
+        if (car._dwell > 0) {
+          car._dwell -= dt;
+          if (car._dwell <= 0) { car._dwell = 0; car._served = car._stopAt; }
+          else { gap = Math.min(gap, 0.1); leadV = 0; }
+        } else {
+          const hl = vlen(car) / 2;
+          let best = null, bestA = 1e9;
+          for (const st of e.stops) {
+            if (st.dir !== car.dir || st === car._served || !st.routes.includes(car.route)) continue;
+            if (st.snap === undefined && HYDRANTS !== null) {
+              // the surveyed sign on this kerb nearest the GTFS point (within 40 m along the street) is where the bus pulls up
+              st.snap = null;
+              let bd = 40;
+              for (const [bx, bz] of BUSSIGNS) {
+                const p = this._projEdge(e, bx, bz);
+                if (!p || p.lat > 16 || p.lat < 6 || p.side !== st.dir || Math.abs(p.d - st.d) >= bd) continue;
+                bd = Math.abs(p.d - st.d); st.snap = p.d;
+              }
+              if (st.snap !== null) st.d = st.snap;
+            }
+            const a = (st.d - car.dir * hl - car.d) * car.dir;   // metres until the front stands at the stop point
+            if (a > -1.5 && a < bestA) { bestA = a; best = st; }
+          }
+          if (best && bestA < 70) {
+            if (bestA < 1.2 && car.v < 0.5) {
+              car._stopAt = best;
+              // SBS (off-board fares, all-door boarding) dwells shorter than a local
+              car._dwell = car.route === 'M60' ? 9 + Math.random() * 12 : 14 + Math.random() * 22;
+              gap = Math.min(gap, 0.1); leadV = 0;
+            } else if (bestA + IDM.s0 - 0.3 < gap) { gap = Math.max(0.05, bestA + IDM.s0 - 0.3); leadV = 0; }   // IDM stands s0 short of a standing leader
+          }
         }
       }
       // ---- double-parked delivery: a few vans stop in the curb lane and sit
@@ -1375,6 +2109,7 @@ export class Traffic {
       const sStar = IDM.s0 + Math.max(0, car.v * IDM.T + (car.v * dv) / (2 * Math.sqrt(IDM.a * IDM.b)));
       const acc = IDM.a * (1 - Math.pow(car.v / Math.max(1, v0), IDM.delta) - (gap < 1e8 ? (sStar / Math.max(0.5, gap)) ** 2 : 0));
       car.v = Math.max(0, car.v + acc * dt);
+      const dS = car.d, lfS = car.laneF, lfvS = car._lfv;   // VN36
       car.d += car.v * dt * car.dir;
       if (car._tail > 0) car._tail -= car.v * dt;
       // ---- transition at the junction boundary (mouth), not the node center
@@ -1455,7 +2190,13 @@ export class Traffic {
         const bend = Math.abs(hA[0] * hB[1] - hA[1] * hB[0]); // |sin| of turn angle
         // a junction connector is 5-40 m; anything longer means the continuation is not at this
         // junction (a routing fault) — recycle the car rather than fly it across the city
-        if (chord > 60) { ne.cars.delete(car); car.dead = true; car.v = 0; e.cars.add(car); car.e = e; car.d = Math.max(0.1, Math.min(e.len - 0.1, exitD)); continue; }
+        if (chord > 60) {
+          ne.cars.delete(car); car.dead = true; car.v = 0; e.cars.add(car); car.e = e; car.d = Math.max(0.1, Math.min(e.len - 0.1, exitD));
+          // VF36: back on the edge it is drawn on, in its own direction and lane (it kept the next edge's: followers on this
+          // edge took it for a car going the other way)
+          if (VF36) { car.dir = dir0; car.lane = exLane; car.laneF = lf0; car._lfv = lfv0; }
+          continue;
+        }
         if (chord > 2) {
           // cubic arc with tangent-aligned controls (k = 0.36 chord approximates a circular arc).
           // The old quadratic put its control point at the lane-line intersection, which sits
@@ -1623,6 +2364,13 @@ export class Traffic {
         }
       }
       const off = this._laneOffset(e, car);
+      // VN36: never into another body (the car keeps its pose and its place this frame, and stops)
+      if (VN36 && dt > 0 && car._pose && this._vnBlocked(car, s.x - hz * off, s.z + hx * off, yawT, dt)) {
+        car.d = dS; car.laneF = lfS; car._lfv = lfvS; car.v = 0;
+        const q = car._pose;
+        this._placeCar(car, q[0], q[1], q[2], q[3], dt);
+        continue;
+      }
       this._placeCar(car, s.x - hz * off, s.y + (NO_DATUM ? 0.03 : 0.002), s.z + hx * off, yawT, dt);   // see the parked-car note: origin = contact patch
     }
     if (PY25) this._buildCarGrid();
@@ -1652,17 +2400,46 @@ export class Traffic {
   }
   // Parked-car LOD: full CARLA model inside 120m, collision-shell impostor
   // beyond. Rewrites all parked instance buffers from records — cheap, and
-  // preserves the old 320-per-kind population cap (first-streamed tiles win).
-  _rebucketParked(px, pz) {
+  // preserves the old 320-per-kind population cap (first-streamed tiles win;
+  // PK34: the records nearest the camera win).
+  _rebucketParked(px, pz, fp = null) {
     this._parkDirty = false;
+    // the squared distance a parked car is placed by: from the lens, or (FP37) the take's nearest approach to it
+    const near2 = (rec) => {
+      if (!fp) return (rec.x - px) ** 2 + (rec.z - pz) ** 2;
+      let q = Infinity;
+      for (let j = 0; j < fp.pts.length; j += 3) { const ax = rec.x - fp.pts[j], az = rec.z - fp.pts[j + 2]; q = Math.min(q, ax * ax + az * az); }
+      return q;
+    };
+    const PG = this._vnPG = new Map();   // VN36: the parked bodies drawn within 250 m, by 16 m cell
     this._pbX = px; this._pbZ = pz;
     const R2 = 120 * 120;
     for (const k of Object.keys(this.parked)) { const P = this.parked[k]; P._n = 0; P._f = 0; P._t = 0; }
-    for (const recs of this.parkedRecs.values()) {
+    let lists = this.parkedRecs.values();
+    if (PK34) {
+      const all = [];
+      for (const recs of this.parkedRecs.values()) for (const rec of recs) { rec._d2 = near2(rec); all.push(rec); }
+      all.sort((a, b) => a._d2 - b._d2);
+      lists = [all];
+    }
+    for (const recs of lists) {
       for (const rec of recs) {
         const P = this.parked[rec.kind];
         if (!P || P._t >= P.cap) continue; // same population cap as the old claim path
-        const dx = rec.x - px, dz = rec.z - pz;
+        const dd = PK34 ? rec._d2 : near2(rec), dx = Math.sqrt(dd), dz = 0;
+        // VC36: no parked body in a travel lane (tested within 400 m, again whenever the streets near change), nor one a moving
+        // body has run into (VN36: dropped during a warm-up)
+        if (VC36 && dx * dx + dz * dz < 160000) {
+          if (rec._vcHit) continue;
+          if (rec._vcV !== this._edgeVer) { rec._vc = this._parkIntrudes(rec); rec._vcV = this._edgeVer; }
+          if (rec._vc) continue;
+          if (VN36 && dx * dx + dz * dz < 62500) {
+            const k = Math.floor(rec.x / 16) * 100003 + Math.floor(rec.z / 16);
+            let L = PG.get(k);
+            if (!L) PG.set(k, (L = []));
+            L.push(rec);
+          }
+        }
         if (!P.shell || dx * dx + dz * dz < R2) {
           const i = P._n++;
           P.mb.instanceMatrix.array.set(rec.m, i * 16);
@@ -1932,6 +2709,11 @@ export class Traffic {
   // box goes. Each such pass is counted.
   _ovYield(car, oc) {
     if (car._ovForcedBy === oc) return true;   // once granted, for the rest of this connector
+    if (VC36) {
+      const q = car._pose, p = oc._pose;
+      if (q && p && (p[0] - q[0]) * Math.sin(q[3]) + (p[2] - q[2]) * Math.cos(q[3]) > 0 && Math.cos(p[3] - q[3]) > 0.5) return false;   // a queue
+      if (this._ovSeen(car) || this._ovSeen(oc)) return false;   // in sight: no pass through a body
+    }
     if (car._ovPrev !== oc || (oc.v || 0) > 0.2) return false;
     // out of sight: held 6 s by a standing body, pass the old way (a jam no camera sees dissolves); in sight, only after
     // 20 s (a jam that has not cleared by then is a deadlock the rules cannot see: the car squeezes by, counted)
@@ -1955,13 +2737,97 @@ export class Traffic {
     return true;
   }
   _ovSeen(c) { const q = c._pose; return !q || viewGuard.seen(q[0], q[1] + 1, q[2], this.carHalf(c)[1] + 1); }
+  // VF36: the recorder's CAR-OVERLAP check (main.js __CAR_OVERLAPS) on the bodies as DRAWN: every instance of the moving pools
+  // (a dead car included, and a slot no live car owns), the parked instances within 150 m of the lens, each the plan box of
+  // its kind's LOD0 parts (asymmetric overhangs, mirrors, plates), an articulated bus's rear body at its drawn bend. A pair
+  // counts when the bodies overlap by `min` m or more (separating axes, plan; a deck 3 m over a street is another level) and
+  // the middle of the overlap projects inside the frame. The old test took the live cars' carHalf boxes on their poses and
+  // skipped the dead ones, which stood drawn in the lanes (60 s at t8StNickDiveE's key 0: a van 2.5 m inside a dead one, unseen)
+  drawnOverlaps(min = 0.1) {
+    const F = this.fleet24, cam = this.camera;
+    if (!F || !F.kinds || !cam) return null;
+    const BB = this._vfBB || (this._vfBB = {});
+    const bbOf = (k) => {
+      if (BB[k] !== undefined) return BB[k];
+      const K = F.kinds[k];
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9, y1 = 0;
+      for (const p of (K && K.lods && K.lods[0]) || []) {
+        const g = p.geometry;
+        if (!g || !g.attributes || !g.attributes.position) continue;
+        if (!g.boundingBox) g.computeBoundingBox();
+        const b = g.boundingBox;
+        x0 = Math.min(x0, b.min.x); x1 = Math.max(x1, b.max.x); z0 = Math.min(z0, b.min.z); z1 = Math.max(z1, b.max.z); y1 = Math.max(y1, b.max.y);
+      }
+      if (!(x0 < x1)) { const h = this.carHalf({ kind: k }); x0 = -h[0]; x1 = h[0]; z0 = -h[1]; z1 = h[1]; y1 = 1.6; }
+      return (BB[k] = [x0, x1, z0, z1, y1]);
+    };
+    const L = [];
+    const add = (x, y, z, yaw, k, bb, tag, car) => {
+      const fx = Math.sin(yaw), fz = Math.cos(yaw), mx = (bb[0] + bb[1]) / 2, mz = (bb[2] + bb[3]) / 2;
+      L.push({ x: x + fz * mx + fx * mz, z: z - fx * mx + fz * mz, y, fx, fz, hw: (bb[1] - bb[0]) / 2, hl: (bb[3] - bb[2]) / 2, top: bb[4], k, tag, car });
+    };
+    const byIdx = new Map();
+    for (const c of this.cars) byIdx.set(c.kind + ':' + c.idx, c);
+    const cx = cam.position.x, cz = cam.position.z;
+    for (const [pools, moving] of [[this.pools || {}, true], [this.parked || {}, false]]) for (const [k, P] of Object.entries(pools)) {
+      if (!P || !P.mb || !P.mb.instanceMatrix) continue;
+      const A = P.mb.instanceMatrix.array, n = P.mb.count, bb = bbOf(k);
+      for (let i = 0; i < n; i++) {
+        const o = i * 16;
+        if (A[o] === 0 && A[o + 5] === 0 && A[o + 10] === 0) continue;
+        const x = A[o + 12], y = A[o + 13], z = A[o + 14];
+        if (!moving && (Math.abs(x - cx) > 150 || Math.abs(z - cz) > 150)) continue;
+        const car = moving ? byIdx.get(k + ':' + i) || null : null;
+        const tag = moving ? (car ? (car.dead ? ' (dead)' : car.turn ? ' (turning)' : '') : ' (no live car)') : ' (parked)';
+        add(x, y, z, Math.atan2(A[o + 8], A[o + 10]), k, bb, tag, car);
+        if (car && car.route && VC36) {
+          const rb = this._rearBody(car);
+          if (rb) { const fx = Math.sin(rb.yaw), fz = Math.cos(rb.yaw); L.push({ x: rb.x, z: rb.z, y, fx, fz, hw: rb.hw, hl: rb.hl, top: bb[4], k, tag: tag + ' (rear body)', car }); }
+        }
+      }
+    }
+    cam.updateMatrixWorld();
+    const m = cam.matrixWorldInverse.elements, pr = cam.projectionMatrix.elements;
+    const onScreen = (x, y, z) => {
+      const vx = m[0] * x + m[4] * y + m[8] * z + m[12], vy = m[1] * x + m[5] * y + m[9] * z + m[13], vz = m[2] * x + m[6] * y + m[10] * z + m[14];
+      if (vz > -0.3) return false;
+      const qx = pr[0] * vx + pr[4] * vy + pr[8] * vz + pr[12], qy = pr[1] * vx + pr[5] * vy + pr[9] * vz + pr[13], qw = pr[3] * vx + pr[7] * vy + pr[11] * vz + pr[15];
+      return Math.abs(qx / qw) < 1 && Math.abs(qy / qw) < 1;
+    };
+    const G = new Map();
+    for (let i = 0; i < L.length; i++) { const k = Math.floor(L[i].x / 16) * 100003 + Math.floor(L[i].z / 16); const a = G.get(k); if (a) a.push(i); else G.set(k, [i]); }
+    const out = [];
+    for (let i = 0; i < L.length; i++) {
+      const a = L[i], gx = Math.floor(a.x / 16), gz = Math.floor(a.z / 16);
+      for (let u = gx - 1; u <= gx + 1; u++) for (let w = gz - 1; w <= gz + 1; w++) for (const j of G.get(u * 100003 + w) || []) {
+        if (j <= i) continue;
+        const b = L[j];
+        if (a.car && a.car === b.car) continue;   // a bus's own two bodies
+        if (!a.car && !b.car && a.tag === ' (parked)' && b.tag === ' (parked)') continue;
+        if (Math.abs(a.y - b.y) > 3) continue;
+        const dx = b.x - a.x, dz = b.z - a.z;
+        let dep = 1e9;
+        for (const [ux, uz] of [[a.fx, a.fz], [a.fz, -a.fx], [b.fx, b.fz], [b.fz, -b.fx]]) {
+          const ra = a.hl * Math.abs(a.fx * ux + a.fz * uz) + a.hw * Math.abs(a.fz * ux - a.fx * uz);
+          const rb = b.hl * Math.abs(b.fx * ux + b.fz * uz) + b.hw * Math.abs(b.fz * ux - b.fx * uz);
+          dep = Math.min(dep, ra + rb - Math.abs(dx * ux + dz * uz));
+          if (dep < min) break;
+        }
+        if (dep < min) continue;
+        const mx = (a.x + b.x) / 2, mz = (a.z + b.z) / 2, my = Math.max(a.y, b.y) + 0.5 * Math.min(a.top, b.top);
+        if (!onScreen(mx, my, mz)) continue;
+        out.push(`${a.k}${a.tag} x ${b.k}${b.tag} ${dep.toFixed(2)} m deep ${Math.hypot(mx - cx, mz - cz).toFixed(0)} m away`);
+      }
+    }
+    return out.length ? out : null;
+  }
   // OV32: the cars' bodies in 12 m cells, once a frame (their poses are read live; a car moves under 0.5 m a frame)
   _ovGrid() {
     const G = this._ovG || (this._ovG = new Map());
     for (const a of G.values()) a.length = 0;
     for (const c of this.cars) {
       const q = c._pose;
-      if (!q || c.dead) continue;
+      if (!q || (c.dead && !VF36)) continue;   // VF36: a dead car stands drawn: a body like any other
       const k = Math.floor(q[0] / 12) * 65536 + Math.floor(q[2] / 12);
       let a = G.get(k);
       if (!a) G.set(k, (a = []));
@@ -1983,15 +2849,56 @@ export class Traffic {
   _ovHit(x, z, yaw, hw, hl, oc) {
     const q = oc._pose;
     if (!q) return false;
-    const hB = this.carHalf(oc), fx = Math.sin(yaw), fz = Math.cos(yaw), gx = Math.sin(q[3]), gz = Math.cos(q[3]);
-    const dx = q[0] - x, dz = q[2] - z;
-    if (dx * dx + dz * dz > (hl + hB[1] + hw + hB[0]) ** 2) return false;
+    const hB = this.carHalf(oc);
+    if (this._ovBox(x, z, yaw, hw, hl, q[0], q[2], q[3], hB[0], hB[1])) return true;
+    // VC36: an articulated bus's rear body, turned at its articulation (it stood across the next lanes after a turn, 125th &
+    // Broadway: a Lincoln drove into it; the front body's box alone missed it)
+    if (VC36 && oc.route) { const rb = this._rearBody(oc); if (rb && this._ovBox(x, z, yaw, hw, hl, rb.x, rb.z, rb.yaw, rb.hw, rb.hl)) return true; }
+    return false;
+  }
+  // VC36: an articulated bus's rear body as fleet24 draws it (its moving group's tow state), once a frame: { x, z, yaw, hw, hl }
+  _rearBody(oc) {
+    if (oc._rbF === this._frame) return oc._rb;
+    oc._rbF = this._frame; oc._rb = null;
+    const F = this.fleet24, K = F && F.kinds && F.kinds[oc.kind], q = oc._pose;
+    if (!K || !K.rear || !q) return null;
+    const RB = this._rbK || (this._rbK = {});
+    let b = RB[oc.kind];
+    if (b === undefined) {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (const part of K.rear.lods[0] || []) {
+        const g = part.geometry;
+        if (!g || !g.attributes || !g.attributes.position) continue;
+        if (!g.boundingBox) g.computeBoundingBox();
+        x0 = Math.min(x0, g.boundingBox.min.x); x1 = Math.max(x1, g.boundingBox.max.x); z0 = Math.min(z0, g.boundingBox.min.z); z1 = Math.max(z1, g.boundingBox.max.z);
+      }
+      b = RB[oc.kind] = x0 < x1 ? [x0, x1, z0, z1] : null;
+    }
+    if (!b) return null;
+    const G = (this._rbG || (this._rbG = Object.fromEntries((F.groups || []).filter((g) => g.moving).map((g) => [g.kind, g]))))[oc.kind];
+    const S = G && G.state, i = oc.idx, piv = K.rear.pivot, fx = Math.sin(q[3]), fz = Math.cos(q[3]);
+    let art = 0;
+    if (S && i < S.cap && S.ok[i]) {
+      let da = Math.atan2(q[0] + fx * piv[2] - S.rx[i], q[2] + fz * piv[2] - S.rz[i]) - q[3];
+      da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI;
+      art = Math.max(-0.75, Math.min(0.75, da));
+    }
+    const px = piv[0] || 0, mx = (b[0] + b[1]) / 2 - px, mz = (b[2] + b[3]) / 2 - piv[2], c = Math.cos(art), sn = Math.sin(art);
+    const rx = px + c * mx + sn * mz, rz = piv[2] - sn * mx + c * mz;
+    oc._rb = { x: q[0] + fz * rx + fx * rz, z: q[2] - fx * rx + fz * rz, yaw: q[3] + art, hw: (b[1] - b[0]) / 2, hl: (b[3] - b[2]) / 2 };
+    return oc._rb;
+  }
+  // the separating-axis test of two plan boxes: (x, z, yaw, hw, hl) and (X, Z, YAW, HW, HL)
+  _ovBox(x, z, yaw, hw, hl, X, Z, YAW, HW, HL) {
+    const fx = Math.sin(yaw), fz = Math.cos(yaw), gx = Math.sin(YAW), gz = Math.cos(YAW);
+    const dx = X - x, dz = Z - z;
+    if (dx * dx + dz * dz > (hl + HL + hw + HW) ** 2) return false;
     // the four axes: my forward and side, its forward and side (no allocation: this runs ~10^4 times a frame)
     const cfg = Math.abs(fx * gx + fz * gz), csg = Math.abs(fz * gx - fx * gz);   // |cos|, |sin| of the heading difference
-    if (Math.abs(dx * fx + dz * fz) > hl + hB[1] * cfg + hB[0] * csg) return false;
-    if (Math.abs(dx * fz - dz * fx) > hw + hB[1] * csg + hB[0] * cfg) return false;
-    if (Math.abs(dx * gx + dz * gz) > hB[1] + hl * cfg + hw * csg) return false;
-    if (Math.abs(dx * gz - dz * gx) > hB[0] + hl * csg + hw * cfg) return false;
+    if (Math.abs(dx * fx + dz * fz) > hl + HL * cfg + HW * csg) return false;
+    if (Math.abs(dx * fz - dz * fx) > hw + HL * csg + HW * cfg) return false;
+    if (Math.abs(dx * gx + dz * gz) > HL + hl * cfg + hw * csg) return false;
+    if (Math.abs(dx * gz - dz * gx) > HW + hl * csg + hw * cfg) return false;
     return true;
   }
   // OV32: how far `car` can drive along the rest of its connector (and on into its new lane past its end) before its body,
@@ -2008,14 +2915,15 @@ export class Traffic {
     cand.length = 0;
     const fx0 = Math.sin(q0[3]), fz0 = Math.cos(q0[3]);
     for (const oc of near) {
-      if (oc === car || oc.dead || !oc._pose) continue;
+      if (oc === car || (oc.dead && !VF36) || !oc._pose) continue;   // VF36: a dead car is a body too
       // a follower (behind, heading within 60 deg of mine) is not in my way: only my rear swinging round could reach it,
       // and it held a car turning out of a queue for the car queued behind it, which waited for it in turn
-      { const rx = oc._pose[0] - q0[0], rz = oc._pose[2] - q0[2]; if (rx * fx0 + rz * fz0 < 0 && Math.cos(oc._pose[3] - q0[3]) > 0.5) continue; }
+      // (VC36: of two bodies level with each other, a stack, the one second waits for the one first)
+      { const rx = oc._pose[0] - q0[0], rz = oc._pose[2] - q0[2], al = rx * fx0 + rz * fz0; if (al < 0 && Math.cos(oc._pose[3] - q0[3]) > 0.5 && !(VC36 && al > -0.3 && this._vcFirst(oc, car))) continue; }
       if (this._ovYield(car, oc)) continue;   // the last resort: this pair is deadlocked and car goes first
       if (this._ovHit(q0[0], q0[2], q0[3], hw, hl, oc)) {
         const rx = oc._pose[0] - q0[0], rz = oc._pose[2] - q0[2];
-        if (rx * fx0 + rz * fz0 <= 0) continue;   // touching from behind: not in the way
+        if (rx * fx0 + rz * fz0 <= 0 && !(VC36 && rx * fx0 + rz * fz0 > -0.3 && this._vcFirst(oc, car))) continue;   // touching from behind: not in the way (VC36: a level one first)
         car._ovBy = oc; oc._ovBlk = this._frame;
         return 0;
       }

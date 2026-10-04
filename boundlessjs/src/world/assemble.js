@@ -78,6 +78,110 @@ const CY_BID = 65535;   // CY12
 // the membrane id reaching the roof engine so its plant can be valued AGAINST the
 // membrane instead of at it.
 const R12 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('r12') === '0');
+// AR34 (TREES, 2026-10-01): the census species the compiled tiles lose. treeMode keeps nine classes, so the sophoras,
+// zelkovas, ashes and elms (75,704 trees) are class 0 and draw a form picked by a position hash (BID3's c120 sophora drew
+// a Norway maple). public/data/tree_species_extra.json (tools/pipeline/tree_species_extra.mjs) gives each its class 9-12
+// until a tile recompile carries them; `?tsx=0` draws the hashed forms again.
+const TSX = typeof location !== 'undefined' && new URLSearchParams(location.search).get('tsx') === '0' ? Promise.resolve(null)
+  : fetch('data/tree_species_extra.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+// the class of the overlay tree within 0.35 m of tile-local (x, z) (the list holds decimetres), 0 if none
+function tsxAt(a, x, z) {
+  const X = x * 10, Z = z * 10;
+  let best = 0, bd = 12.25;
+  for (let i = 0; i < a.length; i += 3) { const dx = a[i] - X, dz = a[i + 1] - Z, d = dx * dx + dz * dz; if (d < bd) { bd = d; best = a[i + 2]; } }
+  return best;
+}
+// AR34 (TREES, lead 2026-10-01): street trees inside the 125th Street and Hunters Point boxes follow NYC Parks' current
+// inventory (Forestry Tree Points, NYC Open Data hn5i-inap, fetched 2026-10-01; tools/pipeline/tree_forestry.mjs ->
+// public/data/tree_forestry.json) instead of the 2015 census in the tiles. A compiled street tree (a census tree or the
+// compiler's TI14 infill: both p2 & 1) takes the class and trunk of the live inventory tree it matches (the same point,
+// then within 5 m), and is dropped when none is left (felled since 2015, or never there); a live inventory tree with no
+// tree within 3 m is added where it stands at a sidewalk (the inventory also holds park trees, which the tiles draw from
+// their own data). Then TREES' rows apply (public/data/tree_overlay.json: { rows: [{ op:
+// 'remove' | 'move' | 'set' | 'add', x, z (world m), to: [x, z], cls, dbh, pit: 'guard' | 'none' }] }; remove / move / set
+// take the nearest street tree within 1.5 m). `?tfo=0` / `?tov=0` turn each off.
+const QS34 = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+const TFO = QS34 && QS34.get('tfo') === '0' ? Promise.resolve(null)
+  : fetch('data/tree_forestry.json').then((r) => (r.ok ? r.json() : null)).catch(() => null);
+const TOV = (QS34 && QS34.get('tov') === '0' ? Promise.resolve(null)
+  : fetch('data/tree_overlay.json').then((r) => (r.ok ? r.json() : null)).catch(() => null)).then((j) => {
+  if (!j || !Array.isArray(j.rows)) return null;
+  const by = {};
+  for (const r of j.rows) {
+    if (!r || !Number.isFinite(+r.x) || !Number.isFinite(+r.z)) continue;
+    (by[`${Math.floor(r.x / 512)}_${Math.floor(r.z / 512)}`] ||= []).push(r);
+  }
+  return by;
+});
+// the street-tree fixes of one tile: { drop: Set of record indices, edit: Map index -> { p0, p1, x, z, pit }, add: [records] }
+function treeFixes(list, ox, oz, F, rows, boxes, onWalk) {
+  const drop = new Set(), edit = new Map(), add = [];
+  const inBox = (x, z) => boxes.some((b) => x >= b[0] && x <= b[2] && z >= b[1] && z <= b[3]);
+  const street = [], every = [];
+  for (let i = 0; i < list.length; i++) {
+    const f = list[i];
+    if (f.k !== FURN.TREE) continue;
+    const x = f.x + ox, z = f.z + oz;
+    every.push(x, z);
+    if ((f.p2 & 1) && inBox(x, z)) street.push({ i, x, z, m: -1 });
+  }
+  if (F && F.length) {
+    const n = F.length / 4, used = new Uint8Array(n);
+    for (const r of [0.5, 5]) {
+      const pairs = [];
+      for (const s of street) {
+        if (s.m >= 0) continue;
+        for (let k = 0; k < n; k++) {
+          if (used[k]) continue;
+          const dx = F[k * 4] / 10 - s.x, dz = F[k * 4 + 1] / 10 - s.z, d = dx * dx + dz * dz;
+          if (d <= r * r) pairs.push([d, s, k]);
+        }
+      }
+      pairs.sort((a, b) => a[0] - b[0]);
+      for (const [, s, k] of pairs) { if (s.m < 0 && !used[k]) { s.m = k; used[k] = 1; } }
+    }
+    for (const s of street) {
+      if (s.m < 0) drop.add(s.i);
+      else edit.set(s.i, { p0: F[s.m * 4 + 2], p1: F[s.m * 4 + 3] });
+    }
+    for (let k = 0; k < n; k++) {
+      if (used[k]) continue;
+      const x = F[k * 4] / 10, z = F[k * 4 + 1] / 10;
+      if (x < ox || x >= ox + 512 || z < oz || z >= oz + 512 || !inBox(x, z)) continue;   // the tile it stands in adds it
+      let near = false;
+      for (let j = 0; j < every.length && !near; j += 2) { const dx = every[j] - x, dz = every[j + 1] - z; near = dx * dx + dz * dz < 9; }
+      if (near || !onWalk(x, z)) continue;
+      add.push({ k: FURN.TREE, x: x - ox, z: z - oz, y: null, rot: ((x * 12.9898 + z * 78.233) % 6.2832 + 6.2832) % 6.2832, p0: F[k * 4 + 2], p1: F[k * 4 + 3], p2: 1, tfo: true });
+    }
+  }
+  if (rows && rows.length) {
+    // the street trees after the inventory step, for the rows to find: kept compiled ones and the additions
+    const live = street.filter((s) => !drop.has(s.i)).map((s) => ({ s, x: s.x, z: s.z }));
+    for (const a of add) live.push({ a, x: a.x + ox, z: a.z + oz });
+    const nearest = (x, z) => { let b = null, bd = 2.25; for (const t of live) { const dx = t.x - x, dz = t.z - z, d = dx * dx + dz * dz; if (d < bd) { bd = d; b = t; } } return b; };
+    for (const r of rows) {
+      const x = +r.x, z = +r.z;
+      if (r.op === 'add') {
+        add.push({ k: FURN.TREE, x: x - ox, z: z - oz, y: null, rot: ((x * 12.9898 + z * 78.233) % 6.2832 + 6.2832) % 6.2832, p0: r.cls ?? 0, p1: r.dbh ?? 10, p2: 1, pit: r.pit, tov: true });
+        continue;
+      }
+      const t = nearest(x, z);
+      if (!t) continue;
+      if (r.op === 'remove') {
+        if (t.s) drop.add(t.s.i); else add.splice(add.indexOf(t.a), 1);
+        live.splice(live.indexOf(t), 1);
+        continue;
+      }
+      const e = t.s ? (edit.get(t.s.i) || {}) : t.a;
+      if (r.op === 'move' && Array.isArray(r.to)) { if (t.s) { e.x = +r.to[0]; e.z = +r.to[1]; } else { t.a.x = +r.to[0] - ox; t.a.z = +r.to[1] - oz; } }
+      if (r.cls !== undefined) e.p0 = r.cls;
+      if (r.dbh !== undefined) e.p1 = r.dbh;
+      if (r.pit !== undefined) e.pit = r.pit;
+      if (t.s) edit.set(t.s.i, e);
+    }
+  }
+  return { drop, edit, add };
+}
 // R12 DEAL CHANNELS. `b.__deal` is the building's ORDINAL along its block (the
 // dealer pass in assembleTile). A channel turns that ordinal into a [0,1) value,
 // and the point of the construction is what it GUARANTEES rather than what it
@@ -1505,6 +1609,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
   const group = new THREE.Group();
   group.name = 'tile_' + key;
   const claims = []; // [poolName, id]
+  const vgPits = [];  // VG36 (GROUND, world/vg36Pits.js): the street trees on the flags, [x, y, z, rot, guarded 0 / 1, ...]
   const buf = new GeoBuf();
   const landmarkBuilds = [];
   const heroRecs = [];
@@ -1618,7 +1723,13 @@ export async function assembleTile(key, arrayBuf, ctx) {
       if (l0 < 0) out = Math.max(out, -l0 * Math.abs(d) / Math.hypot(x1 - x2, z1 - z2));
       if (l1 < 0) out = Math.max(out, -l1 * Math.abs(d) / Math.hypot(x2 - x0, z2 - z0));
       if (l2 < 0) out = Math.max(out, -l2 * Math.abs(d) / Math.hypot(x0 - x1, z0 - z1));
-      if (out < bestD) { bestD = out; bestY = l0 * y0 + l1 * y1 + l2 * y2; }
+      if (out < bestD) {
+        bestD = out; bestY = l0 * y0 + l1 * y1 + l2 * y2;
+        // SY33 (docs/notes/central-park-fix.md): outside the triangle its plane is extrapolated, and a sliver's plane is
+        // unbounded (surfaceAt answered 115.6 m and -1864 m next to Central Park's clipped slivers): keep an outside
+        // answer to the triangle's own heights
+        if (out > 0) bestY = Math.min(Math.max(y0, y1, y2), Math.max(Math.min(y0, y1, y2), bestY));
+      }
       if (bestD === 0) break;
     }
     return bestD <= tol ? bestY : null;
@@ -2489,13 +2600,32 @@ export async function assembleTile(key, arrayBuf, ctx) {
     return null;
   };
   // BP28: Bryant Park's allee planes join this tile's furniture (and its compiled scatter trees are dropped below)
+  const tsxT = (await TSX)?.[`${Math.round(ox / 512)}_${Math.round(oz / 512)}`] || null;   // AR34 TREES: census species 9-12
+  // AR34 TREES: the tile's records once (furnitureOf yields fresh objects), and the street-tree fixes keyed by index
+  const furn0 = [];
+  for (const f of furnitureOf(tile)) { f.ix = furn0.length; furn0.push(f); }
+  const tfo = await TFO, tovRows = (await TOV)?.[`${Math.round(ox / 512)}_${Math.round(oz / 512)}`] || null;
+  const TF = (tfo && tfo.boxes) || tovRows
+    ? treeFixes(furn0, ox, oz, tfo?.t?.[`${Math.round(ox / 512)}_${Math.round(oz / 512)}`] || null, tovRows, (tfo && tfo.boxes) || [], (x, z) => sectionY('sidewalk', x, z, 1.5) !== null)
+    : null;
   const bpExtra = [];
+  if (TF) for (const a of TF.add) { a.y = padYNear(a.x + ox, a.z + oz); bpExtra.push(a); }
   if (BP28) for (const t of bpTrees(ox, oz, 0)) { t.bp = true; t.y = padYNear(t.x + ox, t.z + oz); bpExtra.push(t); }
   // CP32: Central Park's trees, lamps and benches likewise (a record without a height stands on the ground under it)
   if (CPT) for (const t of cpFurniture(ox, oz)) { if (t.y === null) t.y = padYNear(t.x + ox, t.z + oz); bpExtra.push(t); }
   if (ART) for (const t of areaFurniture(ox, oz)) { if (t.y === null) t.y = padYNear(t.x + ox, t.z + oz); bpExtra.push(t); }
-  for (const f of (bpExtra.length ? [...furnitureOf(tile), ...bpExtra] : furnitureOf(tile))) {
+  for (const f of (bpExtra.length ? [...furn0, ...bpExtra] : furn0)) {
     let wx = f.x + ox, wz = f.z + oz;
+    if (TF && f.k === FURN.TREE && f.ix !== undefined) {
+      if (TF.drop.has(f.ix)) continue;
+      const e = TF.edit.get(f.ix);
+      if (e) {
+        if (e.p0 !== undefined) f.p0 = e.p0;
+        if (e.p1 !== undefined) f.p1 = e.p1;
+        if (e.pit !== undefined) f.pit = e.pit;
+        if (e.x !== undefined) { wx = e.x; wz = e.z; f.x = wx - ox; f.z = wz - oz; f.y = padYNear(wx, wz); }
+      }
+    }
     if (BP28 && f.k === FURN.TREE && !f.bp && bpDropTree(wx, wz, f)) continue;
     if (CPT && !f.cp && cpDropFurniture(wx, wz, f)) continue;
     if (ART && !f.ar && areaDropFurniture(wx, wz, f)) continue;
@@ -2539,6 +2669,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
       }
     }
     if (f.k === FURN.TREE) {
+      if (tsxT && f.p0 === 0 && (f.p2 & 1)) { const c9 = tsxAt(tsxT, f.x, f.z); if (c9) f.p0 = c9; }
       const sp = inst.treeSpecies(f.p0);
       const dbh = Math.max(4, f.p1);
       // geometry is pre-normalized to real mature height in trees.js, so the
@@ -2655,11 +2786,13 @@ export async function assembleTile(key, arrayBuf, ctx) {
       // either side), so nudging cannot help them — but a bare trunk in a lane
       // reads as a missing median, while a fenced planter box in a lane reads
       // as broken geometry. Reported to the compiler with coordinates.
-      if (f.p2 === 1 && ((wx * 7.3 + wz * 3.1) % 1 + 1) % 1 < 0.55
+      let vgG = 0;   // VG36 (GROUND): this tree's guard went in
+      if (f.p2 === 1 && f.pit !== 'none' && (f.pit === 'guard' || ((wx * 7.3 + wz * 3.1) % 1 + 1) % 1 < 0.55)
           && !(NO_DATUM === false && surfY(wx, wz, WALK_KINDS, 0.25) === null && surfY(wx, wz, ROAD_KINDS, 0.25) !== null)) {
         const idF = inst.claim('treeFence', wx, f.y, wz, f.rot);
-        if (idF >= 0) claims.push(['treeFence', idF]);
+        if (idF >= 0) { claims.push(['treeFence', idF]); vgG = 1; }
       }
+      if (f.p2 === 1 && (vgG || surfY(wx, wz, WALK_KINDS, 0.25) !== null)) vgPits.push(wx, f.y, wz, f.rot, vgG);   // VG36 (GROUND)
       continue;
     }
     if (f.k === FURN.STREET_SIGN) {
@@ -2817,7 +2950,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
   if (tpRoadsW) { try { tpBuildFurniture(group, tpRoadsW, (x, z) => sectionY('plaza', x, z, 0.6) ?? padYNear(x, z), ox, oz, key); } catch (e) { console.warn('tf31', e); } }
   // CP32: Central Park's meshes for this tile (each part builds what lies in it)
   if (CPT) cpBuild(group, { ox, oz, key, tile, sampleT, sectionY, surfY, padYNear });
-  if (ART) areaBuild(group, { ox, oz, key, tile, sampleT, sectionY, surfY, padYNear });
+  if (ART) await areaBuild(group, { ox, oz, key, tile, sampleT, sectionY, surfY, padYNear });   // AR34 KIT: the facade kit builds in slices (city/areas.js)
   if (BP28 && bpOwns(ox, oz)) {
     try {
       const [lx, lz] = bpWorld(77, 69);
@@ -2945,6 +3078,7 @@ export async function assembleTile(key, arrayBuf, ctx) {
     // 'path' polygons laid over the junction asphalt, and surfaceInfo answers 'path' there (sim/peds.js edge ends)
     roadAt: (x, z, tol = 0.25) => ROAD_KINDS.some((k) => sectionY(k, x, z, tol) !== null),
     culledOnRoad,
+    vgPits,                                  // VG36 (GROUND, world/vg36Pits.js)
     cyCourts,                                // CY12: light courts realised in this tile
     cyDropped,                               // CY12: …and dropped by a massing branch that cannot hold one
     strandedInRoad,

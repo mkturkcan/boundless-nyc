@@ -8,8 +8,21 @@
 //     house between them, the aprons with their rails and railings over the river (buildGantries);
 //   * the park's benches at their OpenStreetMap places, with seats for the seated people, and a walk along the sign.
 import * as THREE from 'three';
-import { SIGN, GANTRY, BENCHES, PIER, PIER_WALKS, LAWNS } from './hptSignData.js';
+import { SIGN, GANTRY, GANTRY_S, GANTRY_FOOTPRINTS, BENCHES, PIER, PIER_WALKS, LAWNS } from './hptSignData.js';
 import { buildSign, buildGantries, buildBenches, buildPier } from './hptSignKit.js';
+import { buildSignAr33 } from './hptSignBuild.js';
+import { buildGantriesAr33, buildSouthGantries, gantryReady } from './hptSignGantryBuild.js';
+import { buildPierEdges, buildLamps, buildBenchesAr33, buildPierDeck } from './hptSignPark.js';
+import { hpMatsReady } from './hptSignMats.js';
+import { shoreApply, shoreDeckTris, buildShore, shorePromenades } from './hptSignShore.js';
+import { SOUTH, S_LAWNS, southBedTris, southPathTris, southWalkTris, southWallBedTris, buildSouth } from './hptSignSouth.js';
+
+// AR33: the page waits for the PBR library's module (its textures stream in after); `?hptOld=1` draws the AR32 sign
+export const ready = Promise.all([hpMatsReady, gantryReady]);
+const OLD = typeof location !== 'undefined' && new URLSearchParams(location.search).get('hptOld') === '1';
+// AR34 b4: the seawalls and boardwalks where the compiled city has none (hptSignShore.js); `?hpsw=0` leaves the compiled shore
+const SHORE = !OLD && !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('hpsw') === '0');
+const SHORE_Y = 3.52;   // the boardwalks' level: the compiled sidewalks' datum (world/assemble.js: sidewalk 3.520, park path 3.540)
 
 export const AR32S = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('ar32s') === '0');
 const inTile = (ctx, x, z) => x >= ctx.ox && x < ctx.ox + 512 && z >= ctx.oz && z < ctx.oz + 512;
@@ -40,7 +53,7 @@ function pierTris() { return _pierTris || (_pierTris = tris(PIER)); }
 function lawnTris() {
   if (_lawnTris) return _lawnTris;
   _lawnTris = { grass: [], grassU: [] };
-  for (const [, kind, poly] of LAWNS) { try { _lawnTris[kind === 'bed' ? 'grassU' : 'grass'].push(...tris(poly)); } catch (e) { /* a degenerate outline is skipped */ } }
+  for (const [, kind, poly] of (SOUTH ? LAWNS.concat(S_LAWNS) : LAWNS)) { try { _lawnTris[kind === 'bed' ? 'grassU' : 'grass'].push(...tris(poly)); } catch (e) { /* a degenerate outline is skipped */ } }   // AR34 b5: + the south lawns (hptSignSouth.js)
   return _lawnTris;
 }
 // append triangles (world [x, z] corners) lying in the tile (by centroid) to its section `name` at height y, wound up
@@ -68,9 +81,33 @@ export function apply(tile, ox, oz) {
   const y = ys.length ? ys[ys.length >> 1] : (_walkY ?? 3.54);
   if (ys.length) _walkY = y;
   if (lay(tile, ox, oz, 'sidewalk', pierTris(), y)) _deckY = y;
+  if (SHORE) {
+    try {
+      const r = shoreApply(tile, ox, oz);
+      if (r) { const laid = lay(tile, ox, oz, 'sidewalk', shoreDeckTris(), SHORE_Y); console.log(`[ar34h] shore tile ${ox / 512}_${oz / 512}: ${JSON.stringify(r)}, deck ${laid ? 'laid' : 'none'}`); }
+    } catch (e) { console.warn('[ar34h] shore apply', e); }
+  }
   const L = lawnTris();
   lay(tile, ox, oz, 'grass', L.grass, y - 0.05);
   lay(tile, ox, oz, 'grassU', L.grassU, y - 0.05);
+  // AR34 b5: the park south of the slip (hptSignSouth.js): planted beds on the bare land, 2 cm under the lawns; the paths at the park paths' level
+  if (SOUTH) {
+    try {
+      const nb = lay(tile, ox, oz, 'grassU', southBedTris(tile, ox, oz), y - 0.07);
+      lay(tile, ox, oz, 'grassU', southWallBedTris(), y - 0.07);
+      lay(tile, ox, oz, 'sidewalk', southWalkTris(), y);
+      const np = lay(tile, ox, oz, 'path', southPathTris(), y + 0.02);
+      if (nb || np) console.log(`[ar34h] south ground tile ${ox / 512}_${oz / 512}: beds ${nb ? 'laid' : 'none'}, paths ${np ? 'laid' : 'none'}`);
+    } catch (e) { console.warn('[ar34h] south ground', e); }
+  }
+}
+
+// AR34: the compiled city drew the gantries' OSM footprints (LONG ISLAND, tile 2_8 building 97; the south pair, 1_8 building 2) as
+// 16-17 m stone blocks round the steel; the steel is built here, so those two footprints are left out
+export function skipBuilding(cx, cz, h, area) {
+  if (!AR32S || OLD) return false;
+  for (const [x, z, a] of GANTRY_FOOTPRINTS) if (Math.abs(cx - x) < 2.5 && Math.abs(cz - z) < 2.5 && area > a * 0.6 && area < a * 1.6) return true;
+  return false;
 }
 
 // compiled furniture (the scattered trees, lamps) standing in the sign's grid or on the gantries' footprints is dropped
@@ -111,22 +148,51 @@ export function build(group, ctx) {
       let y0 = 1e9;
       for (const u of SIGN.COLS) for (const w of [-0.45, -SIGN.DEPTH + 0.4]) { const [x, z] = signAt(u, w); y0 = Math.min(y0, groundY(ctx, x, z)); }
       if (!isFinite(y0) || y0 > 100) y0 = groundY(ctx, MX, MZ);
-      buildSign(group, y0);
+      let done = false;
+      if (!OLD) {
+        try { const r = buildSignAr33(group, y0); done = true; console.log('[ar33h] sign', JSON.stringify(r.stats)); } catch (e) { console.warn('[ar33h] sign unavailable, using the AR32 sign', e); }
+      }
+      if (!done) buildSign(group, y0);
     } catch (e) { console.warn('[ar32] hptSign sign', e); }
   }
   if (inTile(ctx, GANTRY.LONG.C[0], GANTRY.LONG.C[1])) {
     // the piers first (their deck at the park's level behind the bulkhead), then the gantries standing on them
     try {
       _pierY = _deckY ?? groundY(ctx, 1066.0, 4252.0);
-      const ch = buildPier(group, _pierY, PIER_WALKS, _deckY === null);
+      let pdone = false;
+      if (!OLD) {
+        try {
+          const r1 = buildPierEdges(group, _pierY), r2 = buildLamps(group, _pierY, PIER_WALKS, []);
+          try { const r3 = buildPierDeck(group, _pierY); console.log('[ar33h] pier deck', JSON.stringify(r3)); } catch (e) { console.warn('[ar33h] pier deck', e); }
+          pdone = true; console.log('[ar33h] pier edges', JSON.stringify(r1), 'lamps', JSON.stringify(r2));
+        } catch (e) { console.warn('[ar33h] pier edges unavailable, using the AR32 piers', e); }
+      }
+      const ch = buildPier(group, _pierY, PIER_WALKS, _deckY === null, pdone);
       _chairs = ch.map((c) => ({ ...c, y: _pierY }));
     } catch (e) { console.warn('[ar32] hptSign piers', e); }
-    try { buildGantries(group); } catch (e) { console.warn('[ar32] hptSign gantries', e); }
+    let gdone = false;
+    if (!OLD) {
+      try { const r = buildGantriesAr33(group); gdone = true; console.log('[ar33h] gantries', JSON.stringify(r)); } catch (e) { console.warn('[ar33h] gantries unavailable, using the AR32 gantries', e); }
+    }
+    if (!gdone) { try { buildGantries(group); } catch (e) { console.warn('[ar32] hptSign gantries', e); } }
+  }
+  if (!OLD && inTile(ctx, GANTRY_S.F.C[0], GANTRY_S.F.C[1])) {
+    try { const r = buildSouthGantries(group); console.log('[ar33h] south gantry', JSON.stringify(r)); } catch (e) { console.warn('[ar33h] south gantry', e); }
+  }
+  if (SOUTH) {
+    try { const n = buildSouth(group, ctx, _walkY ?? 3.54); if (n) console.log(`[ar34h] south lamps tile ${ctx.key}: ${n} triangles`); } catch (e) { console.warn('[ar34h] south lamps', e); }
+  }
+  if (SHORE) {
+    try { const n = buildShore(group, ctx, SHORE_Y); if (n) console.log(`[ar34h] shore build tile ${ctx.key}: ${n} triangles`); } catch (e) { console.warn('[ar34h] shore build', e); }
   }
   try {
     const list = [];
     for (const b of benchList()) if (inTile(ctx, b.x, b.z)) { b.y = groundY(ctx, b.x, b.z); list.push([b.x, b.y, b.z, b.yaw]); }
-    if (list.length) buildBenches(group, list);
+    if (list.length) {
+      let bdone = false;
+      if (!OLD) { try { buildBenchesAr33(group, list); bdone = true; } catch (e) { console.warn('[ar33h] benches unavailable, using the AR32 benches', e); } }
+      if (!bdone) buildBenches(group, list);
+    }
   } catch (e) { console.warn('[ar32] hptSign benches', e); }
   const dt = performance.now() - t0;
   if (dt > 1) console.log(`[ar32] hptSign tile ${ctx.key}: ${dt.toFixed(1)} ms`);
@@ -150,8 +216,10 @@ export function promenades() {
   if (!AR32S) return [];
   const pts = [];
   for (let u = -4; u <= SL + 4; u += 6) { const [x, z] = signAt(u, 5.5); pts.push([x, 3.5, z]); }
-  const out = [{ pts, busy: 4 }];
+  const out = [{ pts, busy: 2.5 }];   // AR34 b5: 2.5 (was 4): with the boardwalks quieter the walk under the letters drew a single-file
+  // line of ~50 (b5_e/hptSignSWW_day.jpg) where the SWW photograph shows ~30 people spread over the walk and the lawn
   // the piers' walks (OSM footways 696508280, 696508281) and the gantry platform, on the deck apply() lays
   for (const [x0, z0, x1, z1] of PIER_WALKS) out.push({ pts: [[x0, 3.5, z0], [(x0 + x1) / 2, 3.5, (z0 + z1) / 2], [x1, 3.5, z1]], busy: 3 });
+  if (SHORE) { try { out.push(...shorePromenades(SHORE_Y)); } catch (e) { /* none */ } }
   return out;
 }

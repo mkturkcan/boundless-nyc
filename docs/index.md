@@ -57,6 +57,26 @@ scene state as the image, so they need no annotation. The Python package writes 
 The compiled city holds every building of the four boroughs. The client keeps full detail around the camera and draws
 coarser far-field tiles beyond it, so any street of the four boroughs can be rendered on a laptop GPU.
 
+## Areas modelled in detail
+
+Some areas go beyond the compiled records. On 125th Street, from Twelfth Avenue to the Harlem River, every frontage is
+built from a per-building specification (storeys, bays, materials, storefronts and signs) with a facade kit and a
+library of 35 CC0 material sets; the street surface, furniture and street life are laid out along the corridor. The
+Riverside Drive viaduct follows its published 1900 design, and the Manhattan Valley viaduct, the 1 train's 125th Street
+station, the Park Avenue Viaduct and the bridge approaches at the Harlem River are modelled to their documented
+dimensions, with the 1 train and Metro-North running on them. In Central Park, the relief comes from USGS 3DEP and the
+water bodies, paths and landmarks from OpenStreetMap; tree crowns are segmented by watershed on a vegetation index from
+NAIP near-infrared imagery, and the resulting 16,951 trees are assigned to 33 species groups fitted to the park's
+published composition.
+
+## Offline rendering in Blender
+
+A recorded take can be exported to OpenUSD and rendered in Blender Cycles. `boundlessjs/tools/ar34/export/harvest.mjs`
+boots the page as the film recorder does and writes every visible mesh, instance set and camera sample of the take;
+`usd_write.py` turns this into USD layers, and `blender_take.py` renders the frames with the web client's materials
+rebuilt as Cycles node groups, baked facade windows with interiors, film-detail street trees and the page's time of day.
+[Building from source](building.md#offline-rendering-in-blender) lists the commands.
+
 ## Architecture
 
 <figure markdown="span">
@@ -85,7 +105,7 @@ BoundlessNYC, the compiled city or imagery rendered with it, please cite Boundle
   author  = {Turkcan, Mehmet Kerem},
   title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.2.0},
   url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```

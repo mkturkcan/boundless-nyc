@@ -512,7 +512,7 @@ export function buildBenches(group, list) {
 // the deck (the OSM outline, 0.9 m thick, its top at yTop), the piles under its edges every 4.5 m, the railings on
 // every edge over the water (1.07 m top rail, a mid rail, posts every 2 m), the lamps along the walks (6.1 m poles, the
 // heads lit after dusk) and the wooden lounge chairs of the north pier facing the river; returns the chairs' seats
-export function buildPier(group, yTop, walks, drawTop) {
+export function buildPier(group, yTop, walks, drawTop, chairsOnly = false) {
   const M = hpMats();
   if (drawTop) {   // only when hptSign.js apply() could not lay the deck as the tile's own paving
     const sh = new THREE.Shape(PIER.map(([x, z]) => new THREE.Vector2(x, -z)));
@@ -522,7 +522,7 @@ export function buildPier(group, yTop, walks, drawTop) {
   }
   const wall = [], piles = [], rail = [], I = new THREE.Matrix4();
   const pos = [];
-  for (let i = 0; i < PIER.length; i++) {
+  if (!chairsOnly) for (let i = 0; i < PIER.length; i++) {
     const [x0, z0] = PIER[i], [x1, z1] = PIER[(i + 1) % PIER.length], L = Math.hypot(x1 - x0, z1 - z0);
     if (L < 0.05) continue;
     pos.push(x0, yTop, z0, x1, yTop, z1, x1, yTop - 0.9, z1, x0, yTop, z0, x1, yTop - 0.9, z1, x0, yTop - 0.9, z0);
@@ -536,14 +536,16 @@ export function buildPier(group, yTop, walks, drawTop) {
     beam(rail, [x0, yTop + 0.12, z0], [x1, yTop + 0.12, z1], 0.035, 0.035);
     for (let d = 0; d < L; d += 2.0) boxAt(rail, x0 + ux * d, yTop + 0.55, z0 + uz * d, 0.05, 1.1, 0.05);
   }
-  const wg = new THREE.BufferGeometry();
-  wg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); wg.computeVertexNormals();
-  addMesh(group, wg, M.pwall, 'ar32s:pier:edge', false);
-  addMesh(group, boxesGeo(piles, I), M.concrete, 'ar32s:pier:piles', false);
-  addMesh(group, boxesGeo(rail, I), M.fence, 'ar32s:pier:railing');
+  if (!chairsOnly) {
+    const wg = new THREE.BufferGeometry();
+    wg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); wg.computeVertexNormals();
+    addMesh(group, wg, M.pwall, 'ar32s:pier:edge', false);
+    addMesh(group, boxesGeo(piles, I), M.concrete, 'ar32s:pier:piles', false);
+    addMesh(group, boxesGeo(rail, I), M.fence, 'ar32s:pier:railing');
+  }
   // lamps along each walk, every 14 m, 1.8 m off its line on alternate sides
   const pole = [], head = [];
-  for (const [x0, z0, x1, z1, hw] of walks) {
+  if (!chairsOnly) for (const [x0, z0, x1, z1, hw] of walks) {
     const L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L;
     let k = 0;
     for (let d = 5; d < L - 3; d += 14, k++) {
@@ -553,8 +555,10 @@ export function buildPier(group, yTop, walks, drawTop) {
       boxAt(head, x, yTop + 6.2, z, 0.62, 0.22, 0.62);
     }
   }
-  addMesh(group, boxesGeo(pole, I), M.iron, 'ar32s:pier:lamps');
-  addMesh(group, boxesGeo(head, I), M.lamp, 'ar32s:pier:lampheads', false);
+  if (!chairsOnly) {
+    addMesh(group, boxesGeo(pole, I), M.iron, 'ar32s:pier:lamps');
+    addMesh(group, boxesGeo(head, I), M.lamp, 'ar32s:pier:lampheads', false);
+  }
   // the lounge chairs: pairs across the north pier's middle every 9 m, facing out along it to the west (Manhattan)
   const [ax0, az0, ax1, az1] = walks[0], L = Math.hypot(ax1 - ax0, az1 - az0), ux = (ax1 - ax0) / L, uz = (az1 - az0) / L;
   const wood = [], iron = [], seats = [];

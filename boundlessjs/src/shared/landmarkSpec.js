@@ -55,7 +55,12 @@ export const LANDMARKS = [
   { id: 45, key: 'guggenheim',      name: 'Guggenheim Museum',           lat: 40.78300, lon: -73.95900, mode: 'replace' },
   { id: 46, key: 'amnh',            name: 'Museum of Natural History',   lat: 40.78130, lon: -73.97400, mode: 'decorate' },
   { id: 47, key: 'dakota',          name: 'The Dakota',                  lat: 40.77650, lon: -73.97610, mode: 'decorate' },
-  { id: 48, key: 'sanRemo',         name: 'The San Remo',                lat: 40.77490, lon: -73.97660, mode: 'replace' },
+  // CP33: the old point (40.77490, -73.97660) was 370 m south-west of the San Remo, on an 18-storey block at Columbus Avenue
+  // and W 73rd (the twin-tower builder had replaced that block; the San Remo stayed a plain 120 m extrusion). This point is
+  // the pole of inaccessibility of the San Remo's compiled footprint (tile -1_1 #13, 145-146 Central Park West, 10 m clear
+  // of every wall, in the wing behind the park front); a recompile marks it, the read-time overrides at the end of this
+  // file (CP33) do the same on the tiles already built
+  { id: 48, key: 'sanRemo',         name: 'The San Remo',                lat: 40.777914, lon: -73.975386, mode: 'replace' },
   { id: 49, key: 'plaza',           name: 'The Plaza',                   lat: 40.76450, lon: -73.97440, mode: 'decorate' },
   { id: 50, key: 'waldorf',         name: 'Waldorf Astoria',             lat: 40.75640, lon: -73.97430, mode: 'decorate' },
   { id: 51, key: 'p40wall',         name: '40 Wall Street',              lat: 40.70740, lon: -74.00890, mode: 'replace' },
@@ -68,6 +73,10 @@ export const LANDMARKS = [
   { id: 58, key: 'boaTower',        name: 'Bank of America Tower',       lat: 40.75550, lon: -73.98450, mode: 'replace' },
   { id: 59, key: 'p30hudson',       name: '30 Hudson Yards',             lat: 40.75390, lon: -74.00110, mode: 'replace' },
   { id: 60, key: 'one57',           name: 'One57',                       lat: 40.76545, lon: -73.97875, mode: 'replace' },
+  // CP33 (the Central Park South skyline the teaser frames): decorate builders on the rooftops; points are the poles of
+  // inaccessibility of the compiled footprints (tile -2_3 #37 and #50)
+  { id: 61, key: 'essexHouse',      name: 'Essex House (160 Central Park South)', lat: 40.766182, lon: -73.978516, mode: 'decorate' },
+  { id: 62, key: 'hampshireHouse',  name: 'Hampshire House (150 Central Park South)', lat: 40.766044, lon: -73.977978, mode: 'decorate' },
 ];
 // AR32C (city/w125c.js): the 125th Street part builds the Apollo's front itself (the terracotta, the marquee, the blade
 // sign); the old decorate builder's red and white boxes are kept off by giving the entry, in the browser only, a key no
@@ -181,3 +190,27 @@ export const BUILDING_OVERRIDES = [
   );
 }
 // /AR32C
+
+// CP33 (landmarks round, 2026-09-30; owner on teaser 4: the park's surroundings must not read as flat low-poly blocks).
+// Read-time like the AR32C entries (world/tiledata.js applies them when a tile is read; `?rto=0` disables them): each point is
+// the pole of inaccessibility of its compiled footprint (boundlessjs/tools/ar33 style probe: tile and index in the name).
+// - the San Remo's landmark id (48) sat on an 18-storey block at Columbus and W 73rd (tile -1_1 #36), 370 m from the building,
+//   so the twin-tower builder drew that block and the real San Remo (tile -1_1 #13) stayed a plain 120 m extrusion
+// - One57's id (60) sat on a 31 m 9-storey building (tile -2_3 #81) beside the tower, which the blue-glass builder had replaced
+// - the Plaza (tile -1_4 #130, decorate id 49): white glazed brick and marble under the green mansard (the compiled colour was
+//   a dirty tan, [211, 203, 180]); the Essex House (tile -2_3 #37) takes the new decorate id 61 (the red roof sign);
+//   Hampshire House (tile -2_3 #50) a steep verdigris copper roof with chimneys through the CR24 roof table
+{
+  const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
+  if (!q || q.get('cp33lm') !== '0') BUILDING_OVERRIDES.push(
+    { key: 'cp33SanRemo', name: 'The San Remo, 145-146 Central Park West (tile -1_1 #13)', lat: 40.777914, lon: -73.975386, landmarkId: 48 },
+    { key: 'cp33NotSanRemo', name: 'the 18-storey block at Columbus and W 73rd that id 48 had replaced (tile -1_1 #36)', lat: 40.775502, lon: -73.976816, landmarkId: 0 },
+    { key: 'cp33NotOne57', name: 'the 9-storey building beside One57 that id 60 had replaced (tile -2_3 #81)', lat: 40.765646, lon: -73.978591, landmarkId: 0 },
+    { key: 'cp33Plaza', name: 'The Plaza (1907): white glazed brick and marble', lat: 40.764439, lon: -73.974378, color: [236, 232, 222], wall: 'limestone',
+      clear: ['SETBACKS'] },   // the compiled stepping tiers are not the Plaza: one wall to the cornice, the mansard (city/lmPlaza.js) above it
+    { key: 'cp33Essex', name: 'Essex House (1931): the roof sign', lat: 40.766182, lon: -73.978516, landmarkId: -61 },
+    { key: 'cp33Hampshire', name: 'Hampshire House (1937): the steep copper roof with its chimneys (city/lmPlaza.js)', lat: 40.766089, lon: -73.977909,
+      landmarkId: -62, clear: ['SETBACKS'] },
+  );
+}
+// /CP33

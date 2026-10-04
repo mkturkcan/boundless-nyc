@@ -1,0 +1,10 @@
+{
+  "name": "ar33-signs-tools",
+  "private": true,
+  "type": "module",
+  "description": "Font conversion for the AR33 sign kit (typeface JSON outlines for three.js)",
+  "dependencies": {
+    "fontkit": "^2.0.4",
+    "opentype.js": "^1.3.4"
+  }
+}

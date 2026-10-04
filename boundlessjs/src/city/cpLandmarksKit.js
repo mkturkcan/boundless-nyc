@@ -208,8 +208,9 @@ export function lmMats() {
   // weathered copper (the verdigris of the Boathouse's roofs, the castle's finials): a matte patina, a trace of metal
   MATS.copper = own(applyLightTrim(applyCityAO(std({ roughness: 0.62, metalness: 0.08 }))), 'copper');
   // Manhattan schist: the campus stone set darker and coarser, laid in rough courses (the castle's rubble walls)
+  // (CPB33: rough-faced, the stones smaller and their faces and joints stronger: Gapstow's walls read as flat panels)
   MATS.schist = own(applyLightTrim(applyCityAO(applyStoneDetail(std({ roughness: 0.9, metalness: 0.0 }), 'cgranite',
-    { amt: 0.8, nrm: 0.75, rgh: 0.35, scale: 0.55, ashlar: 0.6 }))), 'schist');
+    { amt: 1.0, nrm: 1.0, rgh: 0.4, scale: 0.42, ashlar: 1.0 }))), 'schist');
   // the living rock (Vista Rock, the outcrops): no joints, large-scale grain
   MATS.rock = own(applyLightTrim(applyCityAO(applyStoneDetail(std({ roughness: 0.92, metalness: 0.0 }), 'cgranite',
     { amt: 0.9, nrm: 0.9, rgh: 0.4, scale: 1.6 }))), 'rock');
@@ -807,8 +808,10 @@ export function buildBelvedere(group, B, groundAt) {
   const [ox, oz] = BELV.O, [ax, az] = BELV.A;
   const mk = () => new LBin().frame(ox, 0, oz, ax, az);
   const SC = mk(), GR = mk(), RK = mk(), SL = mk(), TW = mk(), DK = mk();
-  const cSch = K(0x6c665d), cSchD = K(0x5a554d), cSchL = K(0x7d776c), cGr = K(0xb3aea4), cGrD = K(0x9d988e), cSl = K(0x4b5057), cSlD = K(0x3d4147);
-  const cTim = K(0x7c4a2c), cTimL = K(0xa0683c), cWin = K(0x22262a), cPave = K(0x9c978d), cRock = K(0x5e5a53), cRockL = K(0x77726a), cMoss = K(0x4f5a3c);
+  // (CPB33, the owner's review of teaser 4: the castle read dark from Turtle Pond; since the 2019 restoration its schist
+  // is a light warm grey and the granite trim paler still, the photographs from the Pond: the tones raised a third)
+  const cSch = K(0x9a948a), cSchD = K(0x86807a), cSchL = K(0xaaa49a), cGr = K(0xcac6bd), cGrD = K(0xb6b2a9), cSl = K(0x4b5057), cSlD = K(0x3d4147);
+  const cTim = K(0x7c4a2c), cTimL = K(0xa0683c), cWin = K(0x22262a), cPave = K(0x9c978d), cRock = K(0x7a756d), cRockL = K(0x908a81), cMoss = K(0x56613f);
   const WL = (u, w) => [ox + ax * u - az * w, oz + az * u + ax * w];
   // -- Vista Rock: a ring of rock round the terrace's plateau, falling from the terrace to the ground in craggy steps
   const [pu0, pu1, pw0, pw1] = BELV.PLAT, RM = 7.5, st = 1.25;
@@ -961,7 +964,9 @@ export function buildGapstow(group, W, gW, gE) {
   const [cx, cz] = G.C, [ax, az] = G.A;
   const mk = () => new LBin().frame(cx, 0, cz, ax, az);
   const SC = mk(), CP = mk(), PV = mk(), DK = mk();
-  const cS = K(0x736a5e), cSD = K(0x5f574d), cSL = K(0x857b6d), cCop = K(0x9a948a), cPav = K(0x5d5a55), cBar = K(0x4a453e);
+  // (CPB33, the owner's review of teaser 4: the arch read near black; the bridge is grey-brown rough-faced schist with
+  // dressed voussoirs, the photographs from the Pond: the tones raised a third, the ring's stones paler than the walls)
+  const cS = K(0x8c8374), cSD = K(0x797164), cSL = K(0x9e9586), cCop = K(0xaca69b), cPav = K(0x6f6b64), cBar = K(0x5d574e), cVL = K(0xa89f90);
   const yS = W + 0.4, yC = W + 3.66, r = yC - yS, R = (G.SPAN * G.SPAN + r * r) / (2 * r), yc = yC - R;
   const yi = (u) => yc + Math.sqrt(Math.max(0, R * R - u * u)), ring = 0.8;
   const yd = (u) => gapDeckY(u, W), W2 = G.W2;
@@ -975,7 +980,7 @@ export function buildGapstow(group, W, gW, gE) {
     const pa = [Math.cos(ta) * R, yc + Math.sin(ta) * R], pb = [Math.cos(tb) * R, yc + Math.sin(tb) * R];
     const qa = [Math.cos(ta) * (R + ring), yc + Math.sin(ta) * (R + ring)], qb = [Math.cos(tb) * (R + ring), yc + Math.sin(tb) * (R + ring)];
     DK.quad([pa[0], pa[1], -W2 + 0.05], [pb[0], pb[1], -W2 + 0.05], [pb[0], pb[1], W2 - 0.05], [pa[0], pa[1], W2 - 0.05], k % 2 ? cSD : cBar);
-    const col = h(k, 1) < 0.33 ? cSL : h(k, 1) < 0.66 ? cS : cSD;
+    const col = h(k, 1) < 0.33 ? cVL : h(k, 1) < 0.66 ? cSL : cS;
     for (const s of [-1, 1]) {
       const w = s * (W2 + 0.06);
       SC.quad([pa[0], pa[1], w], [pb[0], pb[1], w], [qb[0], qb[1], w], [qa[0], qa[1], w], col);
@@ -988,13 +993,24 @@ export function buildGapstow(group, W, gW, gE) {
     for (let i = 0; i + 1 < uW.length; i++) {
       const ua = uW[i], ub = uW[i + 1], am = Math.abs((ua + ub) / 2);
       const low = (u) => Math.abs(u) < G.SPAN ? Math.min(yd(u) - 0.1, yi(u) + ring * 0.95) : W - 1.0;
-      SC.quad([ua, low(ua), w], [ub, low(ub), w], [ub, yd(ub), w], [ua, yd(ua), w], am < G.SPAN ? cS : cSD);
+      // (CPB33: the spandrel laid in courses of rough-faced stones ~0.42 m high and ~1 m long, staggered course to
+      // course, each stone its own tone, the abutments' a shade darker: one flat panel read as concrete)
+      const y0a = low(ua), y0b = low(ub), y1a = yd(ua), y1b = yd(ub);
+      const nC = Math.max(1, Math.round(((y1a + y1b) - (y0a + y0b)) / 2 / 0.42));
+      for (let c = 0; c < nC; c++) {
+        const ta = c / nC, tb = (c + 1) / nC, st = Math.floor((i + (c % 2)) / 2), hv = h(st * 3.1 + c * 17.3, s * 5.7 + 2.0);
+        const colS = am < G.SPAN ? (hv < 0.3 ? cSD : hv < 0.72 ? cS : cSL) : (hv < 0.5 ? cSD : cS);
+        SC.quad([ua, y0a + (y1a - y0a) * ta, w], [ub, y0b + (y1b - y0b) * ta, w], [ub, y0b + (y1b - y0b) * tb, w], [ua, y0a + (y1a - y0a) * tb, w], colS);
+      }
     }
     // the parapet on the spandrel wall, its coping; end piers
     for (let i = 0; i + 1 < uW.length; i++) {
       const ua = uW[i], ub = uW[i + 1], ya = yd(ua), yb = yd(ub), wi = s * (W2 - 0.5);
       SC.quad([ua, ya, wi], [ub, yb, wi], [ub, yb + 0.95, wi], [ua, ya + 0.95, wi], cS);
-      SC.quad([ua, ya, w + s * 0.04], [ub, yb, w + s * 0.04], [ub, yb + 0.95, w + s * 0.04], [ua, ya + 0.95, w + s * 0.04], cS);
+      for (let c = 0; c < 2; c++) {   // (CPB33: the parapet's outer face in two courses of stones, as the spandrel)
+        const hv = h(Math.floor((i + c) / 2) * 3.1 + c * 29.1 + 7.0, s * 5.7 + 9.0), colP = hv < 0.3 ? cSD : hv < 0.72 ? cS : cSL;
+        SC.quad([ua, ya + 0.475 * c, w + s * 0.04], [ub, yb + 0.475 * c, w + s * 0.04], [ub, yb + 0.475 * (c + 1), w + s * 0.04], [ua, ya + 0.475 * (c + 1), w + s * 0.04], colP);
+      }
       CP.quad([ua, ya + 0.95, wi - s * 0.04], [ub, yb + 0.95, wi - s * 0.04], [ub, yb + 1.05, w + s * 0.08], [ua, ya + 1.05, w + s * 0.08], cCop);
     }
     for (const u of [-G.HALF, G.HALF]) { SC.box(1.0, 1.35, 0.8, cSL, u, yd(u) - 0.1, w - s * 0.2); CP.box(1.12, 0.12, 0.92, cCop, u, yd(u) + 1.25, w - s * 0.2); }
@@ -1030,7 +1046,7 @@ export function buildGapstow(group, W, gW, gE) {
   }
   return out;
 }
-export function gapColliders(COLLIDERS, W, gW, gE) {
+export function gapColliders(COLLIDERS, W, gW, gE, parU = Infinity) {   // parU (CP34): the parapets' reach along u (the approaches have none)
   const G = GAP, [cx, cz] = G.C, [ax, az] = G.A, rot = Math.atan2(az, ax);
   const P = (u, w) => [cx + ax * u - az * w, cz + az * u + ax * w];
   const E = G.HALF + G.RAMP;
@@ -1038,7 +1054,7 @@ export function gapColliders(COLLIDERS, W, gW, gE) {
     const u1 = Math.min(E, u + 1.45), um = (u + u1) / 2, top = Math.max(gapWalkY(u, W, gW, gE), gapWalkY(u1, W, gW, gE), gapWalkY(um, W, gW, gE));
     const [x, z] = P(um, 0);
     COLLIDERS.addBox('kit31', { x, y: top - 0.3, z, hw: (u1 - u) / 2 + 0.05, hh: 0.3, hd: G.W2 - 0.55, rotY: rot, deck: true });
-    for (const sd of [-1, 1]) { const [xr, zr] = P(um, sd * (G.W2 - 0.25)); COLLIDERS.addBox('kit31', { x: xr, y: top + 0.5, z: zr, hw: (u1 - u) / 2 + 0.05, hh: 0.55, hd: 0.3, rotY: rot }); }
+    if (Math.abs(um) < parU) for (const sd of [-1, 1]) { const [xr, zr] = P(um, sd * (G.W2 - 0.25)); COLLIDERS.addBox('kit31', { x: xr, y: top + 0.5, z: zr, hw: (u1 - u) / 2 + 0.05, hh: 0.55, hd: 0.3, rotY: rot }); }
   }
 }
 

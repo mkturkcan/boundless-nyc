@@ -5,7 +5,7 @@ if (typeof window !== 'undefined') window.__BOOT = BOOT;
 let bootLoopUp = false;   // PC26: the real frame loop is installed (the precompile pump may release the picture)
 bootMark('main.js evaluated');
 import { spawnGuard, viewGuard } from './sim/spawnGuard.js';
-import { Engine } from './core/engine.js';
+import { Engine, nb37Hold, FP37 } from './core/engine.js';
 import { Sky } from './world/sky.js';
 import { Streamer } from './world/streamer.js';
 import { makeFacadeMaterial, makeTileFacadeMaterial, makeGroundMaterial, makeFarMaterial, makeWaterMaterial, ENV, initGTEX, initCityAO, CP32R_MASK } from './world/materials.js';
@@ -16,6 +16,7 @@ import { initAudio } from './world/audio.js';
 import { project } from './shared/geo.js';
 // CL24: must load before the first shader compiles (it patches three's light chunks and ShaderLib uniforms)
 import { CityLamps } from './world/cityLamps.js';
+import { areasReady } from './city/areas.js';
 const cityLamps = new CityLamps();
 if (typeof window !== 'undefined') window.__LAMPS = cityLamps;
 
@@ -55,6 +56,10 @@ const landmarksReady = import('./city/landmarks.js')
     landmarkFn = (key, ctx) => m.buildLandmark(key, ctx);
   })
   .catch((e) => console.warn('landmarks unavailable', e));
+// AR33 (2026-09-30): the area parts (city/areas.js) load as separate modules; a tile assembled before they land would be
+// built without them and never rebuilt, so tile assembly also waits for them (3 min cap, then it opens without them)
+let areasIn = false;
+const areasGate = Promise.race([areasReady.then(() => { areasIn = true; }), new Promise((r) => setTimeout(() => { if (!areasIn) console.warn('[boot] area parts still loading after 180 s — continuing without them'); r(); }, 180000))]);
 
 const signalReg = [];
 // NYC building dresser: rebuilds the buildings nearest the camera on their real
@@ -72,8 +77,10 @@ const streamer = new Streamer(engine.scene, {
   },
 });
 
+engine.groundAt = (x, z) => { try { return streamer.terrainAt ? streamer.terrainAt(x, z) : null; } catch { return null; } };   // DP37 (core/engine.js): the ground under the lens caps its near plane
 import { HeroFacades } from './world/heroFacades.js';
 import { sweepFrame } from './core/shadowSweep.js';   // SV29: the shadow sets' view test
+const RS35 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('rs35') === '0');   // RS35: decks left to the view's height
 const heroes = new HeroFacades(engine.scene);
 // ?hero=0 disables the hero trim ring entirely (attribution renders, lead r8)
 if (new URLSearchParams(location.search).get('hero') === '0') heroes.skip = () => true;
@@ -128,7 +135,16 @@ class FlyCam {
         // there is over the park's own ground (the park's rectangle, as world/materials.js masks the river plane)
         const qx = this.pos.x - 447.2, qz = this.pos.z - 82.2;
         const park = CP32R_MASK && Math.abs(qx * 0.4848 - qz * 0.8746) < 2084 && Math.abs(qx * 0.8746 + qz * 0.4848) < 451;
-        this.pos.y = (park ? g : Math.max(g, 0.5)) + this.relY;
+        // RS34 (QA Q06, 2026-10-02): where the terrain grid dips under the street's own sections (Lexington: terrainAt
+        // 1.15-1.91 under a roadway at ~3.4) a height over terrainAt sank the lens; take the section under the camera,
+        // less its usual rise over the base plane (road 0.145, walk 0.28), when that is higher. Flat ground: unchanged.
+        const si = !park && streamer.surfaceInfoAt ? streamer.surfaceInfoAt(this.pos.x, this.pos.z, 0.5) : null;
+        // RS35 (QA Q60, 2026-10-02): only a section within 3 m of the grid counts (a dip like Lexington's); a deck over the
+        // street (the Henry Hudson Parkway at 12th Avenue, ~7 m up) is left to the view's height, as the film's PathCam does,
+        // so views and teaser keys under a deck stand where they did before RS34 (`?rs35=0`: decks count again)
+        const sy = si && Number.isFinite(si.y) ? si.y - (si.road ? 0.145 : 0.28) : null;
+        const gs = sy !== null && (sy - g <= 3 || !RS35) ? Math.max(g, sy) : g;
+        this.pos.y = (park ? g : Math.max(gs, 0.5)) + this.relY;
         this.relY = null;
       }
     }
@@ -285,6 +301,20 @@ class PathCam {
     this.curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', path.tension ?? 0.5);
     this.lookCurve = new THREE.CatmullRomCurve3(lks, false, 'catmullrom', path.tension ?? 0.5);
     this.hasLook = path.keys.some((k) => !!k.look);
+    // NB37 (core/engine.js): the take's height range; while recording the shadow boxes hold the extent of its top
+    // FP37 (core/engine.js, the film policy): while recording, the take's path for every LOD that holds a form per take
+    {
+      let y0 = Infinity, y1 = -Infinity;
+      const N = 64, pts = new Float64Array((N + 1) * 3);
+      for (let i = 0; i <= N; i++) {
+        const q = this.curve.getPointAt(i / N), g = path.abs ? 0 : streamer.terrainAt(q.x, q.z);
+        const y = q.y + (Number.isFinite(g) ? g : 0);
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+        pts[i * 3] = q.x; pts[i * 3 + 1] = y; pts[i * 3 + 2] = q.z;
+      }
+      engine.shadowHoldY = nb37Hold(y0, y1);
+      if (FP37 && engine.recordMode) window.__FP37 = { v: ((window.__FP37 && window.__FP37.v) || 0) + 1, pts, y0, y1 };
+    }
     return { keys: path.keys.length, duration: path.duration, len: +this.curve.getLength().toFixed(1) };
   }
   // constant speed through the middle, quadratic ramps over the first/last
@@ -398,6 +428,14 @@ async function boot() {
         // release: the frame loop runs, the near ring is in and a pass found nothing new, or 30 s after the frame loop
         // started, or 3 minutes after boot. A program first seen later compiles on first use, as it always did.
         while (performance.now() - t0 < 180000) {
+          // PC35 (LOOK, AR34 wave 2): at dusk and night the first pass waits for the sims. The vehicle light pool
+          // (sim/carlights.js, PF34) joins the scene with them, lit, and three keys every lit program by the scene's light
+          // count, so each lit program a pass compiled before the pool was compiled again with the pool's lights on first draw.
+          // By day the pool starts hidden and changes nothing. `?pc35=0`: passes from boot start, as before.
+          if (Q.get('pc35') !== '0' && (ENV.night.value >= 0.06 || /^(night|dusk)$/.test(Q.get('time') || '')) && !BOOT.some((b) => b[1] === 'sims') && performance.now() - t0 < 90000) {
+            await new Promise((r) => setTimeout(r, 500));
+            continue;
+          }
           const n0 = R.info.programs.length;
           await R.compileAsync(engine.scene, engine.camera);
           passes++;
@@ -428,7 +466,7 @@ async function boot() {
   bootMark('tile manifest');
   if (PF25) {
     streamer.holdAssembly = true;
-    Promise.race([landmarksReady, new Promise((r) => setTimeout(r, lmWaitMs0))]).then(() => { streamer.holdAssembly = false; bootMark('tile assembly open'); });
+    Promise.all([Promise.race([landmarksReady, new Promise((r) => setTimeout(r, lmWaitMs0))]), areasGate]).then(() => { streamer.holdAssembly = false; bootMark('tile assembly open'); });
     engine.onFrame = () => streamer.update(px, pz);   // provisional pump; the real frame loop replaces it below
   }
   if (Q.get('time')) sky.apply(Q.get('time'));
@@ -459,6 +497,7 @@ async function boot() {
   // (the timer is never cleared: warn only if the module really is still out — it used to fire on every page that lived past lmwait)
   let lmIn = false; landmarksReady.then(() => { lmIn = true; });
   await Promise.race([landmarksReady, new Promise((r) => setTimeout(() => { if (!lmIn) console.warn(`[boot] landmarks module still loading after ${lmWaitMs / 1000} s — continuing without it`); r(); }, lmWaitMs))]);
+  await areasGate;
 
   bootMark('landmarks module');
   // sims
@@ -573,6 +612,10 @@ async function boot() {
   let life = null;
   // ?life=0 (recordings, 2026-09-17): no manhole steam or roof plumes — the sprites pop in the ad
   if (new URLSearchParams(location.search).get('life') !== '0') import('./world/life.js').then((m) => { life = m.initLife(engine.scene, engine.camera); }).catch((e) => console.warn('life unavailable', e));
+  // VG36 (GROUND, docs/notes/ar35-veg.md): grass blades over the lawns near the lens and the tree pits' fill; `?vg36=0` leaves the ground as it was
+  if (new URLSearchParams(location.search).get('vg36') !== '0') import('./world/vg36.js').then((m) => m.initVeg36(engine, streamer)).catch((e) => console.warn('vg36 unavailable', e));
+  // TRAINS (AR34, docs/notes/ar34-trains.md): the 1 on the Manhattan Valley Viaduct, Metro-North on the Park Avenue Viaduct; `?trains=0` leaves them out
+  if (new URLSearchParams(location.search).get('trains') !== '0') import('./sim/trains.js').then((m) => m.initTrains(engine, streamer)).catch((e) => console.warn('trains unavailable', e));
   try {
     const r = await fetch('/settings/graphics.json');
     if (r.ok) { applyGfx(await r.json()); sky.apply(sky.mode); console.log('[gfx] loaded settings/graphics.json'); }
@@ -798,9 +841,44 @@ async function boot() {
     // rest of the run and the recorder would happily screenshot a frozen image.
     // Swallow it here so the render still happens, and count it for __RECSTAT.
     // ?api=1 asynchronous mode (src/api/bridge.js sets window.__FREERUN_ON): the sim free-runs on real time
+    // FP37 (core/engine.js): every THREE.LOD (Belvedere Castle, the park's bridges, Bethesda's angel and cherubs, the facade
+    // kit's cells, the streetscape) holds the level of the take's nearest approach: autoUpdate off, the level set once per
+    // take; the scene is walked again every 30 stepped frames for parts that stream in. Unheld level changes in view count
+    // as `lod` events (the recorder's QA fails a take on them).
+    let fpLodV = -1, fpLodN = 0;
+    const _fpW = new THREE.Vector3();
+    const fpHoldLODs = () => {
+      const fp = window.__FP37;
+      if (!fp || !fp.pts) return;
+      engine.scene.traverse((o) => {
+        if (!o.isLOD || !o.levels || o.levels.length < 2 || o.userData.fpV === fp.v) return;
+        o.autoUpdate = false; o.userData.fpV = fp.v;
+        o.getWorldPosition(_fpW);
+        let d = Infinity;
+        for (let j = 0; j < fp.pts.length; j += 3) d = Math.min(d, Math.hypot(_fpW.x - fp.pts[j], _fpW.y - fp.pts[j + 1], _fpW.z - fp.pts[j + 2]));
+        const L = o.levels;
+        let i = 0;
+        while (i + 1 < L.length && d >= L[i + 1].distance) i++;
+        for (let j = 0; j < L.length; j++) L[j].object.visible = j === i;
+        o._currentLevel = i;
+      });
+    };
+    if (FP37) {
+      const lodUpd = THREE.LOD.prototype.update;
+      THREE.LOD.prototype.update = function (camera) {
+        const was = this._currentLevel;
+        lodUpd.call(this, camera);
+        if (camera === engine.camera && this.userData.fpSeen && this._currentLevel !== was) {
+          this.getWorldPosition(_fpW);
+          if (engine.inView(_fpW.x, _fpW.y, _fpW.z, 20)) engine.popEvents.lod++;
+        }
+        if (camera === engine.camera) this.userData.fpSeen = true;
+      };
+    }
     engine.onFrame = (rdt) => {
       const sdt = pending || (window.__FREERUN_ON ? Math.min(0.1, rdt || 0) : 0); pending = 0;
       if (sdt > 0) engine.simStepped = true;   // AC26: the accumulation AA starts again on a stepped frame
+      if (FP37 && window.__FP37 && (window.__FP37.v !== fpLodV || (sdt > 0 && ++fpLodN % 30 === 0))) { fpLodV = window.__FP37.v; try { fpHoldLODs(); } catch (e) { console.warn('[fp37] lod hold', e); } }
       try { realFrame(sdt); } catch (e) { if (!threw++) console.warn('[record] frame body threw:', e); }
     };
     // install a camera path (tools/trailer/paths.json, injected by the recorder)
@@ -861,6 +939,9 @@ async function boot() {
     // through another during the turn"); the recorder asks once a stepped frame and reports CAR-OVERLAP
     window.__CAR_OVERLAPS = () => {
       if (!traffic || !traffic._ovHit) return null;
+      // VF36 (VEHFIX 2026-10-02): the bodies as drawn, dead cars and parked instances included, in the frame (traffic.js
+      // drawnOverlaps); the test below took the live cars' carHalf boxes only and never saw a car standing inside a dead one
+      if (traffic.drawnOverlaps && traffic.fleet24 && Q.get('vf36') !== '0') return traffic.drawnOverlaps(0.1);
       const L = [], out = [];
       for (const c of traffic.cars) { const q = c._pose; if (q && !c.dead && spawnGuard.inView(q[0], q[1] + 1, q[2], 3)) L.push(c); }
       for (let a = 0; a < L.length; a++) for (let b = a + 1; b < L.length; b++) {
@@ -983,7 +1064,21 @@ onmessage = async (e) => {
         else if (o.enc === 'worker') sendWorker(o.name, o);
         else sendBlob(o.name, o);
         const T5 = performance.now();
-        return { lens, jumps, ovl, pumped, frames: engine.frames, threw,
+        // WS37: the park water's mirrors as this frame drew them (city/cpWaterMat.js): each body in view with its share of
+        // the lens's rays, its mirror's weight against the probe and whether a mirror image was drawn; the recorder logs a
+        // REFLECTION-DROPOUT when a body that fills the view loses its mirror mid-take (tools/ad/temporal_scan.py reads it)
+        const M = o.checks ? window.__CPMIR : null;
+        const water = M ? M.bodies.filter((B) => B.slot || (B.w || 0) > 0 || M.stats.pick.includes(B.key)).map((B) => {
+          const i = M.stats.pick.indexOf(B.key);
+          return [B.key, i >= 0 ? M.stats.cover[i] : 0, +(B.w || 0).toFixed(3), B.slot ? 1 : 0];
+        }) : null;
+        // QA37: the engine's pop events since the last captured frame (the shadow cascades' box steps and far-map renders,
+        // the light probe), and VG36's lawn-field captures
+        const pe = engine.popEvents, V = window.__VG36, F24 = window.__F24PROBE;
+        const ev = o.checks && pe ? { ...pe, vg36: V ? V.stats.captures : 0, f24: F24 ? F24.captures || 0 : 0 } : null;   // f24: the fleet's reflection probe (sim/fleet24.js)
+        let events = null;
+        if (ev) { const last = window.__recEv || ev; events = Object.keys(ev).filter((k) => ev[k] !== last[k]); window.__recEv = ev; if (!events.length) events = null; }
+        return { lens, jumps, ovl, water, events, pumped, frames: engine.frames, threw,
           t: { wait: +(T1 - T0).toFixed(1), step: +(T2 - T1).toFixed(1), settle: +(T3 - T2).toFixed(1), acc: +(T4 - T3).toFixed(1), cap: +(T5 - T4).toFixed(1) } };
       } catch (e) {
         err = String(e && e.stack || e).slice(0, 400);

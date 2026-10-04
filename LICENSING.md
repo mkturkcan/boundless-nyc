@@ -10,21 +10,29 @@ photoreal pedestrians additionally fall under Epic Games' MetaHuman terms (see t
 | Source code | everything in this repository unless listed below | [MIT](LICENSE) |
 | Documentation, figures and other original media | `docs/`, the READMEs, `docs/assets/figures/`, `boundlessjs/public/luts/` | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | Compiled city: tiles, derived data and the sky-occlusion bake | dataset `Content/tiles/`, `Content/data/`, `Content/textures/cityao.*`; `boundlessjs/public/data/` | [ODbL 1.0](https://opendatacommons.org/licenses/odbl/1-0/) |
-| Vehicle and prop models | dataset `Content/models/fleet24/`, `Content/models/carla/` | CC BY 4.0, CARLA Simulator |
-| Pedestrian models | dataset `Content/models/peds24/` | CC BY 4.0, CARLA Simulator, **and Epic Games' MetaHuman terms** |
+| Data modules with OpenStreetMap-derived positions and outlines | the files under `boundlessjs/src/` whose header carries the ODbL notice (`city/cpLandData.js`, `cpFloraData.js`, `cpReliefData.js`, `cpLandmarks.js`, `cpLandmarksKit.js`, `cpBethesdaKit.js`, `w125eData.js`, `w125wData.js`, `hptSignData.js`, `hptSignSouth.js`, `hptShoreData.js`, `bryantParkData.js`, `world/vg37Data.js`) | ODbL 1.0 for the data they hold; the code around it is MIT |
+| Vehicle and prop models | dataset `Content/models/carla/`, the CARLA-derived models in `Content/models/fleet24/` | CC BY 4.0, CARLA Simulator |
+| Vehicle bodies from Sketchfab | dataset `Content/models/fleet24/taxinv200.glb`, `boxtruck26_vh36.glb` | CC BY 4.0, memoov and mekanismo ([ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)) |
+| Original models: the NYC buses, service and delivery vehicles, the street trees, the Blender tree set | dataset `Content/models/fleet24/` (`mtalfs`, `mtalfsa`, `mtalfsal`, `mtaxd40`, `mtaxd60`, `nypd`, `uspsllv`, `uspsngdv`, `dsny`, `schoolbus`, `stepvan`, `cargovan`, `boxtruck26`, `foodtruck`, `icecream`), `Content/models/trees36/`, `Content/models/bxtrees/`, `Blender/bxtrees/` | CC BY 4.0, M. K. Turkcan; the leaf and bark textures in them are CC0 1.0 |
+| Bethesda Fountain figures | dataset `Content/models/cp33/bethesda/` | `angel.glb` CC BY 4.0, "Engel" by noe-3d.at; `cherub.glb` CC0 1.0, "Putto auf Fisch" by noe-3d.at |
+| Central Park boulders | dataset `Content/models/cp33/rocks/` | CC0 1.0, Poly Haven scans |
+| Pedestrian models | dataset `Content/models/peds24/`, the rowboat passengers baked from them in `Content/models/cp33/lakeside/people/` | CC BY 4.0, CARLA Simulator, **and Epic Games' MetaHuman terms** |
 | Pedestrian models, Rocketbox set | dataset `Content/models/peds24/rb27/` | MIT, Microsoft Rocketbox Avatar Library (`rb27/NOTICE.md`) |
 | Pedestrian motion clips | dataset `Content/models/peds24/clips_*.bin` | CC BY 4.0, 100STYLE |
 | Bag and backpack models | baked into `Content/models/peds24/` | CC BY 4.0, individual authors ([ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md)) |
-| Textures and sky HDRIs | dataset `Content/textures/` (except `cityao.*`) | CC0 1.0, Poly Haven and ambientCG |
+| Textures and sky HDRIs | dataset `Content/textures/` (except `cityao.*`), `Blender/bxwin/` | CC0 1.0, Poly Haven and ambientCG |
 | Alma Mater statue model | dataset `Content/models/landmarks/alma_mater.glb` | CC BY 4.0, M. K. Turkcan, photogrammetry scan ([doi:10.5281/zenodo.10312053](https://doi.org/10.5281/zenodo.10312053)) |
 | Inter typeface and the Times Square display typefaces | `boundlessjs/public/fonts/`, the display families in `boundlessjs/public/fonts/ta31/` (listed with their copyright holders in `FONTS.txt`, each licence beside its files) | SIL Open Font License 1.1 |
+| Sign typefaces of 125th Street and Hunters Point | `boundlessjs/public/fonts/ar33/` (listed with their copyright holders in `FONTS.txt`, each licence beside its files) | SIL Open Font License 1.1; Apache License 2.0 for Roboto Slab and Yellowtail |
 | Libraries bundled in the built client | dataset `Content/assets/` | three.js MIT, postprocessing Zlib, n8ao ISC, ez-tree MIT, meshoptimizer MIT, Basis Universal Apache-2.0 |
 | Electron and Chromium runtime | release builds | MIT (`LICENSE.electron.txt`) and the Chromium licences (`LICENSES.chromium.html`) |
 
 ## The compiled city
 
 The tiles combine NYC Open Data and New York State open data with data from OpenStreetMap: building colours,
-footprints the city file lacks, the Columbia campus map and the elevated-rail alignments. A database derived from
+footprints the city file lacks, the Columbia campus map and the elevated-rail alignments. The data modules listed in the
+table carry further OpenStreetMap data (Central Park, 125th Street, Hunters Point, Bryant Park, hedges and beds) into
+the client. A database derived from
 OpenStreetMap must be shared under the Open Database License, so the compiled city is released under ODbL 1.0.
 Redistributions and derived databases must carry the notice "© OpenStreetMap contributors" and remain under the
 ODbL.

@@ -1,7 +1,7 @@
 {
   "name": "boundless-server",
   "productName": "BoundlessNYC",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "boundless.js NYC simulation server: the digital twin as a CARLA-style server, driven over TCP by the boundless Python API",
   "main": "main.js",
   "private": true,

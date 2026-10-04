@@ -2271,12 +2271,18 @@ export const TREE_SPECIES = [
   { c: 0x3d5026, c13: 0x3d5233, s: 1.0, w: 1.0, arch: 'A' },   // default
   { c: 0x455a2c, c13: 0x455c39, s: 1.15, w: 1.15, arch: 'A' }, // london plane — big, broad-spreading
   { c: 0x506332, c13: 0x50653e, s: 1.0, w: 1.05, arch: 'B' },  // honeylocust — airy, wide
-  { c: 0x3a4f26, c13: 0x3a5133, s: 0.85, w: 0.75, arch: 'B' }, // callery pear — narrow upright
+  // 9-11): the middle crown is 7.9 m across where w 0.75 drew 5.1 m; mature Bradford / Cleveland pears are broad ovals
+  { c: 0x3a4f26, c13: 0x3a5133, s: 0.85, w: 1.1, arch: 'B' },
   { c: 0x5d6830, c13: 0x5d6a3c, s: 1.0, w: 0.72, arch: 'C' },  // ginkgo — columnar
   { c: 0x2f421f, c13: 0x2f442b, s: 1.08, w: 1.12, arch: 'A' }, // oak — dark, spreading
   { c: 0x375024, c13: 0x375231, s: 1.0, w: 0.95, arch: 'A' },  // linden — pyramidal
   { c: 0x455224, c13: 0x455431, s: 0.95, w: 1.02, arch: 'A' }, // maple
   { c: 0x4f5b34, c13: 0x4f5d40, s: 0.8, w: 0.85, arch: 'B' },  // cherry
+  // AR34: classes 9-12 come from public/data/tree_species_extra.json (assemble.js TSX) until the tiles carry them
+  { c: 0x3d5026, c13: 0x3d5233, s: 1.0, w: 1.0, arch: 'A' },   // 9 sophora (Japanese pagoda tree)
+  { c: 0x3d5026, c13: 0x3d5233, s: 1.0, w: 1.0, arch: 'A' },   // 10 Japanese zelkova
+  { c: 0x3d5026, c13: 0x3d5233, s: 1.0, w: 1.0, arch: 'A' },   // 11 ash (green, white)
+  { c: 0x3d5026, c13: 0x3d5233, s: 1.08, w: 1.1, arch: 'A' },  // 12 elm (American, Chinese, Siberian)
 ];
 
 // ---------------------------------------------------------------- TV25 SPECIES FORMS (trees agent, 2026-09-25)
@@ -2398,6 +2404,7 @@ export const TREE_FORM_MIX = {
   1: [['P', 1]], 2: [['H', 1]], 3: [['R', 1]], 4: [['G', 1]], 5: [['Q', 1]], 6: [['L', 1]],
   7: [['M', 0.93], ['X', 0.07]],   // maple (~5 % of the city's maples are 'Crimson King' purple)
   8: [['Y', 0.8], ['X', 0.2]],     // cherry ('Schubert' chokecherry is purple all summer: ~15 % of the class)
+  9: [['S', 1]], 10: [['Z', 1]], 11: [['S', 1]], 12: [['Z', 1]],   // AR34: sophora, zelkova, ash, elm (assemble.js TSX)
 };
 // every TV25 pool base name ('treeP', 'treeP2', ...): trees.js builds them, furnitureKit/instancer allocate them
 export const TV25_POOLS = [];

@@ -16,7 +16,10 @@ import { ENV, applyLightTrim, applyStoneDetail, CP32L_GROUND } from '../world/ma
 import { CP_DATUM, cpRelief, cpDemToWorld, cpReliefReady } from './cpRelief.js';
 import { WATER, WOODS, PITCHES, PARK, ROCKS } from './cpLandData.js';
 import { COLLIDERS } from './colliders.js';
+import { CPR33, cpRocksInit, cpRocksBuild, cpRocksTop, cpRocksOwns, cpRocksClear } from './cpRocks.js';   // CP33: every outcrop and boulder but Vista Rock
+import { CPC33, castleVistaTop, VISTA_ID } from './cpCastle.js';   // CPC33: Vista Rock is the castle part's (city/cpCastle.js); the CP32 hump is off
 import { mkConvex, tpSplit } from './tsqPlaza.js';   // the convex clipper (Times Square's plaza, Bryant Park's walks)
+import { cpWaterMat, cpwMirrorBody } from './cpWaterMat.js';   // the water shader, shared with Bethesda's pools; MR33's mirror
 
 const Q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
 export const CP32L = !(Q && (Q.get('cp32') === '0' || Q.get('cp32l') === '0'));
@@ -55,7 +58,22 @@ function levelOf(b, x, z) {
     return Math.min(own, (bL - 0.03) * (1 - t) + own * t);
   }
   if (b.kind === 'basin') return lawnY(x, z) + 0.08;
-  return cpReliefReady() ? cpDemToWorld(b.dem, x, z) : CP_DATUM - b.flat;
+  return cpReliefReady() ? (MR_FLAT ? flatLevel(b) : cpDemToWorld(b.dem, x, z)) : CP_DATUM - b.flat;
+}
+// MR33 (the water worker; the owner's review of teaser 4): a lake is level. cpDemToWorld followed the 3DEP sample under each
+// point, so a body's surface wandered with the 14 m grid: the Pond's outline ran from -2.18 to +0.09 m (a wall of water at
+// its south-west corner, and the mirror plane taken from a piece's bounding box at -1.05, a metre over the water: the Pond
+// was opaque olive under Gapstow), Harlem Meer's over 4.6 m. A body's level (every kind but the streams and the basins) is
+// now the median of its outline's levels (the Pond -2.07, the Lake -4.15, Turtle Pond 8.69, the Reservoir 8.89).
+// `?cpflat=0` restores the sampled levels.
+const MR_FLAT = !(Q && Q.get('cpflat') === '0');
+function flatLevel(b) {
+  if (b.lvl !== undefined) return b.lvl;
+  const v = [];
+  for (const R of [b.outer, ...b.holes]) for (const [x, z] of R) v.push(cpDemToWorld(b.dem, x, z));
+  v.sort((p, q) => p - q);
+  b.lvl = v.length ? v[v.length >> 1] : cpDemToWorld(b.dem, (b.box[0] + b.box[2]) / 2, (b.box[1] + b.box[3]) / 2);
+  return b.lvl;
 }
 // the cut: how far inside the shoreline the ground sections stop (the bank runs on under the water to there)
 const cutOf = (b) => (b.kind === 'lake' ? -1.0 : b.kind === 'stream' ? -0.6 : 0.0);
@@ -98,6 +116,9 @@ function hardMask(x, z) {
 // ends ~1.0-1.4 m, crown 2.75 m over the Lake), Gapstow Bridge (a stone arch, estimated)
 // ...and towers on a shore (kind 2: centre x, z, radius, -, -, top over the water, -, 2): Belvedere Castle on Vista Rock
 // (its tower ~25 m over Turtle Pond: the rock's ~8 m and the castle's tower)
+// the half width of each bridge's vault over the water (the reflection under it is its soffit): Bow Bridge's deck
+// (BOW.HALF), Gapstow's barrel (GAP.W2)
+const BRIDGE_HALFW = { lake: [2.45, 0], pond: [3.03, 0], turtle: [0, 0] };
 const BRIDGE_PROXY = {
   lake: [[-58.4, 799.4, -38.7, 832.4, 1.2, 2.75, 2.1, 1]],
   pond: [[-212.6, 1793.3, -231.1, 1801.4, 2.5, 4.0, 3.0, 1]],
@@ -222,6 +243,16 @@ export function cpWaterY(x, z, pad = 0) {
   return null;
 }
 export const cpOnWater = (x, z, pad = 0) => cpWaterY(x, z, pad) !== null;
+// within m of a coped basin's shore, or in it (the esplanade: no trunk, no lamp, no shrub; CP33 LANDSCAPE)
+export function cpNearCoped(x, z, m = CW_ESP + 1) {
+  if (!CP32L || !CPCW) return false;
+  for (const b of BODIES) {
+    if (b.kind !== 'coped' || x < b.box[0] - m || x > b.box[2] + m || z < b.box[1] - m || z > b.box[3] + m) continue;
+    sdfAt(sdfOf(b), x, z, _q);
+    if (_q.d < m) return true;
+  }
+  return false;
+}
 // the surface of body `key` at any (x, z) (for abutments, landings, the Bethesda lake front)
 export function cpWaterLevelY(key, x, z) {
   const b = BY_KEY.get(key);
@@ -315,7 +346,11 @@ function groundMask() {
     if (j < H - 1) { d = Math.min(d, D[k + W] + 1); if (i < W - 1) d = Math.min(d, D[k + W + 1] + S2); if (i > 0) d = Math.min(d, D[k + W - 1] + S2); }
     D[k] = d;
   }
-  for (let k = 0; k < W * H; k++) data[k * 4 + 3] = Math.max(0, Math.round(255 * (1 - (D[k] * MASK_CELL) / 2.4)));
+  // (CPB33: the wet band over 1.4 m, was 2.4: "grass down to a thin dark mud line")
+  for (let k = 0; k < W * H; k++) data[k * 4 + 3] = Math.max(0, Math.round(255 * (1 - (D[k] * MASK_CELL) / (CPBANK ? 1.4 : 2.4))));
+  // (CPB33: the woodland floor stops short of the water: the Conservancy's shores are planted to the water, so from the
+  // air the woods' brown litter read as a brown rim round the Lake's Ramble shore; it fades in from 1.5 to 4.5 m out)
+  if (CPBANK) for (let k = 0; k < W * H; k++) { const m = Math.min(1, Math.max(0, (D[k] * MASK_CELL - 1.5) / 3)); data[k * 4] = Math.round(data[k * 4] * m); }
   const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
   tex.magFilter = THREE.LinearFilter; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.generateMipmaps = true;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -332,11 +367,42 @@ function groundMask() {
 const SECTIONS = ['asphalt', 'sidewalk', 'curb', 'paintW', 'paintY', 'grass', 'path', 'paintG', 'brick', 'gutter', 'busred', 'warn', 'warnIron', 'grassU', 'plaza', 'gravel'];
 const CELL = 2.5, COARSE = 7.5;   // the global lattices the bank's ground is cut to: both triangles of a shared edge split it alike
 const smooth = (a, b, t) => { const u = Math.min(1, Math.max(0, (t - a) / (b - a))); return u * u * (3 - 2 * u); };
+// CPB33 (owner review of teaser 4, 2026-09-30: "every water body has a brown or purple smeared band round its edge"):
+// the natural bank fell from the relief's lawn to the water over its width w (the distance to the nearest path),
+// steepest at the water (2 x the drop over w), so a 1-3 m drop over 1-4 m made 40-70 deg faces, and the ground shader
+// turns grass steeper than 35 deg into schist: a smooth brown-grey band round the Lake, the Pond, Turtle Pond and the
+// Meer, stretched over a few long triangles, and its reflection. Real banks there are lawn down to a thin dark mud line
+// at the water (the photographs), with schist and shrubs in places. Now the lawn at a lake's shore stands a few
+// centimetres over the water and rises from it at no more than BANK_TAN (23 deg) until it meets the relief's lawn,
+// out to BANK_REACH past the waterline; the wet mask gives the mud line. `?cpbank=0` restores the old profile.
+const CPBANK = !(Q && Q.get('cpbank') === '0');
+// CP33 LANDSCAPE (review of teaser 4 v2: "Conservatory Water is a deep dark crater, its coping a sawtooth ring of disjoint pale
+// wedges, the water well below the lawn, trees right up to it. The real model-boat pond is a shallow formal basin with its water
+// a few inches under a continuous granite coping set flush in a paved esplanade"): the coping runs level at 0.30 m over the
+// water's mean level all the way round, the ground within CW_ESP of the shore is laid flush with it (the paving) and falls back
+// to the relief over the next CW_BLEND m, the lawn within CW_ESP becomes flagstone, no tree stands within CW_ESP + 1.
+// `?cpcw=0` restores the CP32 coping.
+const CPCW = !(Q && Q.get('cpcw') === '0');
+const CW_ESP = 7, CW_BLEND = 7, CW_TOP = 0.30;
+const _copeTop = new Map();
+function copeTop(b) {
+  let v = _copeTop.get(b.k);
+  if (v === undefined) {
+    let m = 0;
+    for (const [x, z] of b.outer) m += levelOf(b, x, z);
+    v = m / b.outer.length + CW_TOP;
+    _copeTop.set(b.k, v);
+  }
+  return v;
+}
+const BANK_TAN = 0.42, BANK_REACH = 9;
+const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - (h * h * k) / 4; };
 // the bank's reach past the shoreline (where the offset below falls to 0)
 function reachOf(b, w) {
   if (b.kind === 'reservoir') return cpReliefReady() ? 20 : 0.5;
-  if (b.kind === 'lake' || b.kind === 'stream') return w;
-  if (b.kind === 'coped') return 5.5;   // the promenade round Conservatory Water
+  if (b.kind === 'lake') return CPBANK ? Math.max(w, BANK_REACH) : w;
+  if (b.kind === 'stream') return w;
+  if (b.kind === 'coped') return CPCW ? CW_ESP + CW_BLEND : 5.5;   // the promenade round Conservatory Water
   return 0;
 }
 // The offset added to every ground section at (x, z) (so a path keeps its lift over the lawn), for the point at signed
@@ -346,6 +412,11 @@ function reachOf(b, w) {
 //   is lifted to at least 0.2 m over it at the shore.
 //   the Reservoir: its embankment, the track 1.25 m over the water out to 7 m, the outer slope 1 in 3 (raise only).
 function bankOffset(b, x, z, d, w) {
+  if (CPCW && b.kind === 'coped') {
+    // d < 0: inside the water (the sections are cut there); outside, the paving at the coping's level (2 cm under it)
+    const e = 1 - smooth(CW_ESP, CW_ESP + CW_BLEND, Math.max(0, d));
+    return (copeTop(b) - 0.02 - lawnY(x, z)) * e;
+  }
   if (b.kind === 'coped' || b.kind === 'basin') return 0;
   const G = lawnY(x, z), L = levelOf(b, x, z);
   const hm = HARD.length ? hardMask(x, z) : 0;
@@ -355,6 +426,20 @@ function bankOffset(b, x, z, d, w) {
     if (d < -0.5) return 0;   // (past the cut; the vertices on it, at d = 0, take the full lift)
     const top = L + 1.25, emb = d <= 7 ? top : top - (d - 7) / 3;
     off = Math.max(0, emb - G);
+  } else if (CPBANK && b.kind === 'lake') {
+    const u = d + 0.3;                                   // metres from the waterline (0.3 m inside the OSM shore)
+    const R = Math.max(w, BANK_REACH);
+    if (u >= R) return 0;
+    let Gp;
+    if (u >= 0) {
+      // the lawn the bank meets: the relief, lifted to 0.2 m over the water where the relief leaves it under it
+      const Gc = G + Math.max(0, L + 0.2 - G) * (1 - smooth(0.7, 1, u / (w + 0.3)));
+      // a wet lip 6 cm over the water, then the lawn rising at BANK_TAN until it meets Gc (no crease where they meet),
+      // eased back to the relief over the reach's last 2 m (a drop steeper than that, a rocky bank, stays steep there)
+      Gp = smin(Gc, L + 0.06 + BANK_TAN * u, 0.6);
+      Gp += (Gc - Gp) * smooth(R - 2, R, u);
+    } else Gp = L + u * 0.9;
+    off = Gp - G;
   } else {
     const t = (d + 0.3) / (w + 0.3);
     if (t >= 1) return 0;
@@ -510,9 +595,26 @@ export function apply(tile, ox, oz) {
         }
         for (const pg of polys) {
           // Conservatory Water's walk: its lawn within 5.5 m of the coping becomes the city's flagstone
-          if (name === 'grass' && pg[0].b && pg[0].b.kind === 'coped' && (pg[0].d + pg[1].d + pg[2].d) / 3 < 5.5) {
-            for (const p of pg) promenade.push(p.x - ox, p.y + 0.008, p.z - oz);
-            continue;
+          if (name === 'grass' && pg[0].b && pg[0].b.kind === 'coped') {
+            if (!CPCW) {
+              if ((pg[0].d + pg[1].d + pg[2].d) / 3 < 5.5) { for (const p of pg) promenade.push(p.x - ox, p.y + 0.008, p.z - oz); continue; }
+            } else {
+              // CP33 LANDSCAPE: the esplanade's edge is cut where the distance to the shore is CW_ESP (a marching split of the
+              // piece), not by whole pieces: the 2 m lattice's staircase read as a sawtooth ring round the coping
+              const ins = [], rest = [];
+              for (let m = 0; m < 3; m++) {
+                const u = pg[m], v = pg[(m + 1) % 3], ui = u.d < CW_ESP, vi = v.d < CW_ESP;
+                (ui ? ins : rest).push(u);
+                if (ui !== vi) {
+                  const t = (CW_ESP - u.d) / (v.d - u.d);
+                  const w = { x: u.x + (v.x - u.x) * t, y: u.y + (v.y - u.y) * t, yr: u.yr + (v.yr - u.yr) * t, z: u.z + (v.z - u.z) * t, c: u.c + (v.c - u.c) * t, d: CW_ESP, b: u.b };
+                  ins.push(w); rest.push(w);
+                }
+              }
+              for (let m = 1; m + 1 < ins.length; m++) for (const p of [ins[0], ins[m], ins[m + 1]]) promenade.push(p.x - ox, p.y + 0.008, p.z - oz);
+              for (let m = 1; m + 1 < rest.length; m++) push([rest[0], rest[m], rest[m + 1]]);
+              continue;
+            }
           }
           push(pg);
         }
@@ -655,34 +757,20 @@ const LOOK = {
   basin: { col: [0.030, 0.048, 0.046], amp: 0.010, rough: 0.05 },
   stream: { col: [0.030, 0.036, 0.020], amp: 0.030, rough: 0.08 },
 };
-const lookOf = (b) => (b.kind === 'lake' ? (b.k === 'lake' || b.k === 'meer' ? LOOK.lake : LOOK.pond) : LOOK[b.kind] || LOOK.pond);
+// (CPB33: the Pond, Turtle Pond and the Pool take the Lake's look too: the owner's review of teaser 4 read the Pond as
+// muddy under Gapstow Bridge; `?cpbank=0` restores the ponds' own)
+const lookOf = (b) => (b.kind === 'lake' ? (CPBANK || b.k === 'lake' || b.k === 'meer' ? LOOK.lake : LOOK.pond) : LOOK[b.kind] || LOOK.pond);
 
+// the body's own helpers after the shared core (city/cpWaterMat.js CPW_CORE_GLSL: the uniforms cpwCol, cpwP, cpwProbe,
+// cpwEnv, cpwEnvOn, cpwT, cpwNight, cpwSky, the varying vCpW, cpwHash, cpwH and the ripples cpwCap, 1.4 m down to 3 cm,
+// slowed x 0.55: a calm park lake, not open sea)
 const WATER_GLSL = /* glsl */ `
-  uniform sampler2D cpwSdf; uniform vec4 cpwRect; uniform vec3 cpwCol; uniform vec4 cpwP; uniform vec4 cpwProbe;
-  uniform samplerCube cpwEnv; uniform float cpwEnvOn; uniform float cpwT; uniform float cpwNight; uniform vec3 cpwSky;
+  #ifndef CPW_BANKK
+  #define CPW_BANKK 1.0
+  #endif
+  uniform sampler2D cpwSdf; uniform vec4 cpwRect;
   uniform vec4 cpwBr[2]; uniform vec4 cpwBrH[2];   // bridges over this body: axis ends; heights over the water (ends, crown, soffit, on)
-  varying vec3 vCpW;
-  float cpwHash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-  float cpwH(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-    return mix(mix(cpwHash(i), cpwHash(i + vec2(1.0, 0.0)), f.x), mix(cpwHash(i + vec2(0.0, 1.0)), cpwHash(i + vec2(1.0, 1.0)), f.x), f.y); }
-  // capillary-gravity ripples, 10 trains from 1.4 m down to 3 cm in golden-angle directions on their own dispersion;
-  // a train fades once it is under ~2.5 pixels and returns its slope variance in .z
-  vec3 cpwCap(vec2 p, float t, float fp, float amp) {
-    vec2 s = vec2(0.0); float lost = 0.0;
-    for (int i = 0; i < 10; i++) {
-      float fi = float(i);
-      float a = fi * 2.3999632 + 0.7;
-      vec2 d = vec2(cos(a), sin(a));
-      float lam = 1.4 * pow(0.66, fi);
-      float k = 6.2831853 / lam;
-      float w = sqrt(9.81 * k + 7.3e-5 * k * k * k) * 0.55;   // slowed: a calm park lake, not open sea
-      float sa = amp * (0.55 + 0.45 * fract(fi * 0.618034)) * mix(1.0, 0.6, fi / 9.0);
-      float aa = 1.0 - smoothstep(0.9, 2.4, k * fp);
-      s += d * (sa * aa * cos(k * dot(d, p) - w * t + fi * 1.93));
-      lost += sa * sa * (1.0 - aa) * 0.5;
-    }
-    return vec3(s, lost);
-  }
+  uniform float cpwBrW[2];                         // ...and the half width of each one's vault (0: none)
   // distance from the shore into the water (m), from the body's field
   float cpwShore(vec2 xz) {
     vec2 uv = (xz - cpwRect.xy) * cpwRect.zw;
@@ -703,12 +791,42 @@ const WATER_GLSL = /* glsl */ `
       float band = 1.0 - smoothstep(0.02, 0.16, R.y);
       return mix(skyC, vec3(0.018, 0.026, 0.014) * (1.0 - 0.8 * cpwNight), band * 0.85);
     }
+    // under a bridge's vault (Bow Bridge's iron deck, Gapstow's arch) the reflected ray rises into its soffit: dark stone
+    // or iron lit only by the water under it (the probe, taken over the open water, gave the sky there: a bright band in
+    // the Pond under Gapstow's arch, the owner's review of teaser 4)
+    // MR33 (the review of teaser 4 v2: "a razor-thin black line across the water under Gapstow and Bow Bridge"): a constant
+    // inside the vault's half width drew the footprint of the vault as a hard-edged black strip. The soffit now fades in over
+    // the footprint's edge and the span's ends, and with the height the ray has reached by the time it leaves the footprint
+    // (a ray that rises into the vault meets the soffit, one that leaves under it sees the far side through the arch); the
+    // planar mirror shows the real underside, this is the fallback
+    float soff = 0.0;
+    for (int k = 0; k < 2; k++) {
+      vec4 A = cpwBr[k], Hh = cpwBrH[k];
+      float hw = cpwBrW[k];
+      if (Hh.w < 0.5 || Hh.w > 1.5 || hw <= 0.0) continue;
+      vec2 e = A.zw - A.xy; float el = length(e);
+      if (el < 1e-3) continue;
+      vec2 eu = e / el, rel = vCpW.xz - A.xy;
+      float along = dot(rel, eu), acr = rel.x * eu.y - rel.y * eu.x, across = abs(acr);
+      float sw = smoothstep(0.0, 1.8, along) * smoothstep(0.0, 1.8, el - along) * (1.0 - smoothstep(hw - 1.4, hw + 0.3, across));
+      if (sw <= 0.0) continue;
+      float rise = 1e3, dl2 = length(R.xz);
+      if (dl2 > 1e-3) {
+        vec2 u2 = R.xz / dl2;
+        float ua = dot(u2, eu), uc = u2.x * eu.y - u2.y * eu.x;
+        float sA = abs(ua) > 1e-4 ? (ua > 0.0 ? el - along : along) / abs(ua) : 1e5;
+        float sC = abs(uc) > 1e-4 ? (uc * acr > 0.0 ? hw - across : hw + across) / abs(uc) : 1e5;
+        rise = min(sA, sC) * R.y / dl2;
+      }
+      soff = max(soff, sw * smoothstep(0.5 * Hh.z, Hh.z, rise));
+    }
     // parallax: march the reflected ray over the body's shore field to the bank it would meet; if it passes under the
     // bank's trees there (13-20 m), look the probe up towards that point of the treeline, else it is sky or distant city
     // and the ray's own direction serves (never below the probe's horizon: the probe draws without the water, so under
     // it lies the bed)
     vec3 dir = R;
     vec2 d2 = R.xz; float dl = length(d2);
+    float bankK = 0.0, bankRise = 0.0;
     if (dl > 1e-3) {
       vec2 u = d2 / dl;
       float t = 0.0; bool hit = false;
@@ -720,13 +838,32 @@ const WATER_GLSL = /* glsl */ `
         t += max(s, 1.5);
         if (t > 420.0) break;
       }
+      #ifdef CPW_MIR
+      // MR33 (the probe is the fallback beyond the mirrored body): a ray that ran out of steps skimming a shore (the
+      // field's distance stayed small all along) meets that shore; it escaped to the sky between the treeline's
+      // reflections before (the review of teaser 4 v2: sky shards in the Lake by the terrace)
+      if (!hit && t <= 420.0) hit = true;
+      #endif
       float tc = 450.0;   // past the treeline: the city round the park, taken ~450 m out (or 150 m past the shore)
       if (hit) {
         float rise = t * R.y / dl;
         vec2 hx = vCpW.xz + u * t;
         float treeH = 13.0 + 7.0 * cpwH(hx * 0.05);
         tc = max(t + 150.0, 450.0);
-        if (rise < treeH) { dir = normalize(vec3(hx.x, vCpW.y + rise, hx.y) - vec3(cpwProbe.x, cpwProbe.z, cpwProbe.y)); tc = -1.0; }
+        if (rise < treeH) {
+          dir = normalize(vec3(hx.x, vCpW.y + rise, hx.y) - vec3(cpwProbe.x, cpwProbe.z, cpwProbe.y)); tc = -1.0;
+          // CPB33: the probe hangs over the body's deepest point, so a bank near this fragment and far from the probe is
+          // seen from there at another angle (its wet toe, a wall's face): the near banks lay in the water as brown
+          // smears (the owner's review of teaser 4). There the bank's own reflection is taken instead: the lawn's green
+          // low down, the trees' darker green over it
+          #ifdef CPW_MIR
+          // (MR33: feathered over 0.1-0.9 of the probe's distance: the 0.25-0.6 switch drew a seam behind the terrace)
+          bankK = CPW_BANKK * (1.0 - smoothstep(0.1, 0.9, t / max(length(hx - cpwProbe.xy), 1.0)));
+          #else
+          bankK = CPW_BANKK * (1.0 - smoothstep(0.25, 0.6, t / max(length(hx - cpwProbe.xy), 1.0)));
+          #endif
+          bankRise = rise;
+        }
       }
       // a bridge over the water (Bow Bridge, Gapstow): the ray meets its axis before the shore, under its railing and
       // not through its arch: the probe looked up towards that point (the hero shots' reflection of the arch)
@@ -744,7 +881,7 @@ const WATER_GLSL = /* glsl */ `
           if (rt > Hh.y) continue;
           vec2 ht = vCpW.xz + u * tt;
           dir = normalize(vec3(ht.x, vCpW.y + rt, ht.y) - vec3(cpwProbe.x, cpwProbe.z, cpwProbe.y));
-          tc = -1.0;
+          tc = -1.0; bankK = 0.0;
           break;
         }
         vec2 e = A.zw - A.xy;
@@ -757,7 +894,7 @@ const WATER_GLSL = /* glsl */ `
         if (rb > mix(Hh.x, Hh.y, arc) + 1.1 || rb < Hh.z * sqrt(max(arc, 0.0))) continue;
         vec2 hb = vCpW.xz + u * tb;
         dir = normalize(vec3(hb.x, vCpW.y + rb, hb.y) - vec3(cpwProbe.x, cpwProbe.z, cpwProbe.y));
-        tc = -1.0;
+        tc = -1.0; bankK = 0.0;
         break;
       }
       if (tc > 0.0) {
@@ -766,7 +903,10 @@ const WATER_GLSL = /* glsl */ `
       }
     }
     dir.y = max(dir.y, 0.03);
-    return textureLod(cpwEnv, normalize(dir), lod).rgb;
+    vec3 cpwRc = textureLod(cpwEnv, normalize(dir), lod).rgb;
+    if (bankK > 0.0) cpwRc = mix(cpwRc, mix(vec3(0.050, 0.068, 0.030), vec3(0.022, 0.032, 0.016), smoothstep(0.8, 3.5, bankRise)) * (1.0 - 0.8 * cpwNight), bankK);
+    if (soff > 0.0) cpwRc = mix(cpwRc, vec3(0.034, 0.032, 0.028) * (1.0 - 0.8 * cpwNight), soff);
+    return cpwRc;
   }`;
 
 function sdfTexture(b) {
@@ -786,8 +926,6 @@ function waterMat(b) {
   const look = lookOf(b);
   const S = sdfOf(b);
   const { tex, rect } = sdfTexture(b);
-  const m = new THREE.MeshStandardMaterial({ color: 0x0a120a, roughness: look.rough, metalness: 0 });
-  m.name = 'cp32l:water:' + b.k;
   const U = {
     cpwSdf: { value: tex }, cpwRect: { value: rect }, cpwCol: { value: new THREE.Vector3(...look.col) },
     // x ripple slope, y shore depth gain (1/m), z bed albedo, w probe lod bias
@@ -797,67 +935,21 @@ function waterMat(b) {
     cpwEnv: { value: null }, cpwEnvOn: { value: 0 },
     cpwBr: { value: (BRIDGE_PROXY[b.k] || []).concat([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]]).slice(0, 2).map((q) => new THREE.Vector4(q[0], q[1], q[2], q[3])) },
     cpwBrH: { value: (BRIDGE_PROXY[b.k] || []).concat([[0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]]).slice(0, 2).map((q) => new THREE.Vector4(q[4], q[5], q[6], q[7])) },
+    cpwBrW: { value: CPBANK ? (BRIDGE_HALFW[b.k] || [0, 0]).slice() : [0, 0] },
     cpwT: ENV.time, cpwNight: ENV.night, cpwSky: ENV.skyAmbient,
   };
-  m.userData.cpw = U;
-  m.onBeforeCompile = (sh) => {
-    Object.assign(sh.uniforms, U);
-    sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vCpW;')
-      .replace('#include <project_vertex>', '#include <project_vertex>\nvCpW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>')
-      .replace('#include <fog_pars_fragment>', '#include <fog_pars_fragment>\n' + WATER_GLSL)
-      .replace('#include <color_fragment>', `#include <color_fragment>
-        float cpwFp = max(length(dFdx(vCpW.xz)), length(dFdy(vCpW.xz)));
-        float cpwS = cpwShore(vCpW.xz);
-        // wind patches (cat's paws) drift over the water; the shore's lee is calmer
-        float cpwPatch = 0.35 + 0.95 * smoothstep(0.25, 0.85, cpwH(vCpW.xz * 0.018 + vec2(cpwT * 0.011, -cpwT * 0.007)))
-                       * (0.6 + 0.4 * cpwH(vCpW.xz * 0.07 - vec2(cpwT * 0.02, cpwT * 0.013)));
-        cpwPatch *= mix(0.45, 1.0, smoothstep(0.5, 12.0, cpwS));
-        vec3 cpwCp = cpwCap(vCpW.xz, cpwT, cpwFp, cpwP.x * cpwPatch);`)
-      .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-        roughnessFactor = clamp(pow(roughnessFactor * roughnessFactor * roughnessFactor * roughnessFactor + 2.0 * cpwCp.z, 0.25), 0.04, 0.45);`)
-      .replace('#include <clearcoat_normal_fragment_begin>', `
-        normal = normalize(normal + (viewMatrix * vec4(-cpwCp.x, 0.0, -cpwCp.y, 0.0)).xyz);
-        #include <clearcoat_normal_fragment_begin>`)
-      .replace('#include <opaque_fragment>', `
-        {
-          vec3 wV = normalize(cameraPosition - vCpW);
-          vec3 wN = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
-          wN = normalize(vec3(wN.x, max(wN.y, 0.35), wN.z));
-          float fr = 0.0204 + 0.9796 * pow(1.0 - clamp(dot(wN, wV), 0.0, 1.0), 5.0);
-          vec3 dif = max(material.diffuseContribution, vec3(1e-4));
-          vec3 eD = reflectedLight.directDiffuse / dif, eA = reflectedLight.indirectDiffuse / dif;
-          float trim = mix(0.30, 0.88, cpwNight);
-          vec3 wR = reflect(-wV, wN); wR.y = max(wR.y, 0.015); wR = normalize(wR);
-          // the mirror's blur from the surface's roughness (which already carries the ripples' unresolved slopes), not
-          // per-pixel slope noise, so it does not sparkle into grain at range
-          vec3 refl = cpwRefl(wR, cpwP.w + clamp(roughnessFactor * 9.0 - 0.2, 0.0, 5.0));
-          // the water column: sunlight and skylight scattered back by the fine silt, and the bed through the shallows
-          float depth = max(cpwS, 0.0) * cpwP.y + 0.08;
-          vec3 sig = vec3(3.2, 1.9, 2.6);                         // per metre: the green water swallows red and blue first
-          vec3 T = exp(-sig * depth * 1.6);
-          vec3 lit = (eD + eA * 0.8) * trim;
-          vec3 bed = lit * cpwP.z * vec3(0.72, 0.62, 0.46) * (0.7 + 0.6 * cpwH(vCpW.xz * 1.3));
-          // algae: the summer's green scum drifting in the still water near the shores (the NAIP frames show it on the
-          // Lake's south-west arms), in slow patches
-          float alg = smoothstep(0.62, 0.9, cpwH(vCpW.xz * 0.045 + vec2(cpwT * 0.002, 0.0)) * 0.7 + cpwH(vCpW.xz * 0.31) * 0.3) * (1.0 - smoothstep(4.0, 22.0, cpwS));
-          vec3 colA = mix(cpwCol, vec3(0.040, 0.066, 0.018), alg * 0.55);
-          // (the stills from above at 30-40 degrees read a lawn-bright green at 1.5: a park lake's water column sends back
-          // 2-4 % of the light, so it is dark there and the mirror carries it at the low angles)
-          vec3 body = lit * colA * 0.9 * (1.0 - T) + bed * T;
-          // the bank's shade in the water along the shore (the trees and the bank itself over it)
-          body *= mix(0.62, 1.0, smoothstep(0.0, 3.5, cpwS));
-          vec3 gl = reflectedLight.directSpecular;
-          gl *= min(1.0, 40.0 / max(dot(gl, vec3(0.2126, 0.7152, 0.0722)), 1e-4));
-          outgoingLight = refl * fr + body * (1.0 - fr) + gl;
-        }
-        #include <opaque_fragment>`);
-  };
-  m.customProgramCacheKey = () => 'cp32l-water-1';
-  m.needsUpdate = true;
+  // the shader is the park's shared water (city/cpWaterMat.js; Bethesda's pools take it too)
+  // (CPB33: the Reservoir, 40 ha of open water, takes the shader's wind waves and sharper reflections)
+  const open = CPBANK && b.kind === 'reservoir';
+  const m = cpWaterMat({ name: 'cp32l:water:' + b.k, color: 0x0a120a, rough: look.rough, U, glsl: WATER_GLSL, key: open ? 'cp32l-water-open-1' : 'cp32l-water-1',
+    defines: open ? { CPW_OPEN: '', CPW_LAM: '2.400', CPW_SLOW: '0.900' } : CPBANK ? null : { CPW_BANKK: '0.0' } });
   b.mat = m;
+  // MR33: a level body the planar mirror can serve (city/cpWaterMat.js): its water from the field, the relief's lawn for
+  // the rays that pass under a bank before they reach it
+  if (b.kind === 'lake' || b.kind === 'reservoir' || b.kind === 'coped') {
+    const q = { d: 0, w: 0 };
+    cpwMirrorBody({ key: b.k, box: b.box, mats: [m], inside: (x, z) => sdfAt(S, x, z, q).d < 0, ground: lawnY, level: () => levelOf(b, S.cx, S.cz) });
+  }
   return m;
 }
 
@@ -932,7 +1024,7 @@ function probeOf(b) {
   if (P) return P;
   const S = sdfOf(b);
   const big = b.k === 'lake' || b.k === 'reservoir';
-  const rt = new THREE.WebGLCubeRenderTarget(big ? 256 : 128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
+  const rt = new THREE.WebGLCubeRenderTarget(CPBANK && b.k === 'reservoir' ? 512 : big ? 256 : 128, { type: THREE.HalfFloatType, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter });
   P = { b, rt, cam: new THREE.CubeCamera(0.5, 4000, rt), x: S.cx, z: S.cz, y: levelOf(b, S.cx, S.cz) + 2.2, n: 0, step: 0, sun: new THREE.Vector3(), has: false };
   PROBES.set(b.k, P);
   return P;
@@ -1005,8 +1097,9 @@ function buildCoping(acc, b, ox, oz, ctx) {
       // the top: over the water, or over the paving for a raised basin; never under the ground behind it
       const g0 = ctx.padYNear ? ctx.padYNear(p[0] + vn[i][0] * (C.w + 0.3), p[1] + vn[i][1] * (C.w + 0.3)) : null;
       const g1 = ctx.padYNear ? ctx.padYNear(q[0] + vn[j][0] * (C.w + 0.3), q[1] + vn[j][1] * (C.w + 0.3)) : null;
-      const t0 = b.kind === 'basin' ? lawnY(p[0], p[1]) + C.back : Math.max(yw0 + C.top, (g0 ?? -1e9) + 0.1);
-      const t1 = b.kind === 'basin' ? lawnY(q[0], q[1]) + C.back : Math.max(yw1 + C.top, (g1 ?? -1e9) + 0.1);
+      const flat = CPCW && b.kind === 'coped';
+      const t0 = flat ? copeTop(b) : b.kind === 'basin' ? lawnY(p[0], p[1]) + C.back : Math.max(yw0 + C.top, (g0 ?? -1e9) + 0.1);
+      const t1 = flat ? copeTop(b) : b.kind === 'basin' ? lawnY(q[0], q[1]) + C.back : Math.max(yw1 + C.top, (g1 ?? -1e9) + 0.1);
       const back0 = b.kind === 'basin' ? t0 - C.back - 0.05 : (g0 ?? t0 - C.back) - 0.04, back1 = b.kind === 'basin' ? t1 - C.back - 0.05 : (g1 ?? t1 - C.back) - 0.04;
       const I0 = [p[0] - vn[i][0] * 0.04, q[0] - vn[j][0] * 0.04], Iz = [p[1] - vn[i][1] * 0.04, q[1] - vn[j][1] * 0.04];
       const O0 = [p[0] + vn[i][0] * C.w, q[0] + vn[j][0] * C.w], Oz = [p[1] + vn[i][1] * C.w, q[1] + vn[j][1] * C.w];
@@ -1164,7 +1257,11 @@ function rockGeo(r) {
 // the outcrop's surface y at world (x, z), or null (other parts: seat a foot on it, keep trees and benches off it)
 export function cpRockTop(x, z) {
   if (!CP32L) return null;
+  const t33 = cpRocksTop(x, z);   // CP33: the new outcrops' own surface (undefined where none)
+  if (t33 !== undefined) return t33;
   for (const r of RK) {
+    if (cpRocksOwns(r.id)) continue;
+    if (CPC33 && r.id === VISTA_ID) { const y = castleVistaTop(x, z); if (y !== undefined) return y; continue; }   // CPC33
     if (x < r.box[0] || x > r.box[2] || z < r.box[1] || z > r.box[3]) continue;
     const d = ringInsideDist(x, z, r.outer, r.holes);
     if (d < 0) continue;
@@ -1231,10 +1328,12 @@ function rockMat() {
   _rockMat = m;
   return m;
 }
-function buildRocks(group, ox, oz, key) {
+function buildRocks(group, ox, oz, key, rk33) {
   const parts = [];
   let n = 0;
   for (const r of RK) {
+    if (rk33 && cpRocksOwns(r.id)) continue;   // CP33: city/cpRocks.js built it (all but Vista Rock)
+    if (CPC33 && r.id === VISTA_ID) continue;   // CPC33: city/cpCastle.js builds Vista Rock (and its walker collider)
     if (r.c[0] < ox || r.c[0] >= ox + 512 || r.c[1] < oz || r.c[1] >= oz + 512) continue;
     const a = rockGeo(r);
     if (!a) continue;
@@ -1527,6 +1626,13 @@ function buildFence(group, b, ox, oz) {
 // tile with the outcrops' schist.
 const BRIDGES = [[-233, 1789, -210, 1805], [-62, 796, -34, 836], [-47, 479, -32, 497], [-115, 485, -96, 505], [1005, -1300, 1023, -1273], [1299, -1419, 1317, -1403], [1097, -1186, 1111, -1163], [1378, -1460, 1434, -1424], [1419, -1545, 1429, -1530], [1542, -1544, 1607, -1522], [-189, 410, -153, 451]];
 const nearBridge = (x, z) => BRIDGES.some((B) => x > B[0] - 6 && x < B[2] + 6 && z > B[1] - 6 && z < B[3] + 6);
+// CP33: city/cpRocks.js builds on this part's ground, water and carve-outs
+cpRocksInit({
+  groundAt, levelOf, bodies: BODIES, hard: HARD, hardMask, nearBridge, hash1, reliefReady: cpReliefReady,
+  rockCut: ROCK_CUT.map((C) => ({ bb: C.bb, poly: C.poly, pad: C.pad,
+    floor: (x, z) => (C.lawn ? lawnY(C.lawn[0], C.lawn[1]) + 0.02 : cpReliefReady() ? cpDemToWorld(C.dem, x, z) : CP_DATUM) })),
+  inWater: (x, z) => cpWaterY(x, z, 0.05) !== null,
+});
 let _ico = null;
 function icoBase() {
   if (_ico) return _ico;
@@ -1568,9 +1674,23 @@ function buildBoulders(group, ox, oz) {
           const sx = size * (0.8 + 0.5 * h2), sy = size * (0.45 + 0.3 * h3), sz = size * (0.8 + 0.5 * h3);
           const yaw = h1 * 6.283, cy = Math.cos(yaw), sy2 = Math.sin(yaw);
           const yc = gy + sy * 0.25;
+          // CPB33 (the owner's review of teaser 4: "low-poly blobs"): schist breaks along its foliation and its joints, so
+          // each boulder is the rounded core cut by a tilted top and bottom (the foliation) and three or four near-vertical
+          // joint planes: flat cleaved faces meeting at sharp edges, a slab more than a ball
+          const planes = [];
+          if (CPBANK) {
+            const tx = (h2 - 0.5) * 0.55, tz = (h3 - 0.5) * 0.55, tl = Math.hypot(tx, 1, tz);
+            planes.push([tx / tl, 1 / tl, tz / tl, 0.42 + 0.25 * h1], [-tx / tl, -1 / tl, -tz / tl, 0.5 + 0.2 * h2]);
+            const nj = 3 + (h3 > 0.5 ? 1 : 0);
+            for (let j = 0; j < nj; j++) {
+              const a = j * (6.283 / nj) + (hash1(s * 7.1 + j) - 0.5) * 1.1, py = (hash1(s * 2.9 + j) - 0.5) * 0.35, pl = Math.hypot(1, py);
+              planes.push([Math.cos(a) / pl, py / pl, Math.sin(a) / pl, 0.6 + 0.28 * hash1(s * 4.3 + j)]);
+            }
+          }
           for (let k = 0; k < base.length; k += 3) {
             let vx = base[k], vy = base[k + 1], vz = base[k + 2];
-            const kn = 1 + (vnoise2(vx * 2.1 + s, vz * 2.1 + vy * 1.7) - 0.5) * 0.45;
+            const kn = 1 + (vnoise2(vx * 2.1 + s, vz * 2.1 + vy * 1.7) - 0.5) * (CPBANK ? 0.16 : 0.45);
+            for (const [px, py, pz, pd] of planes) { const tq = vx * px + vy * py + vz * pz - pd; if (tq > 0) { vx -= tq * px; vy -= tq * py; vz -= tq * pz; } }
             vx *= sx * kn; vy *= sy * kn; vz *= sz * kn;
             if (vy < 0) vy *= 0.6;   // flatter below
             out.push(x + vx * cy - vz * sy2, yc + vy, z + vx * sy2 + vz * cy);
@@ -1675,6 +1795,7 @@ function buildReeds(group, ox, oz) {
           const h1 = hash1(s * 4.13 + 1.1), h2 = hash1(s * 6.77 + 3.3), h3 = hash1(s * 8.21 + 5.5);
           const off = -0.2 + h1 * 0.9;   // from just in the water to up the bank
           const x = x0 + nx * off, z = z0 + nz * off;
+          if (CPR33 && !cpRocksClear(x, z)) continue;   // CP34: not through one of cpRocks.js's boulders
           const L0 = levelOf(b, x, z), gy = Math.max(groundAt(x, z), L0 - 0.15);
           const H = RD[2] + RD[3] * h2 * h2, Wd = 0.5 + 0.5 * h3;
           // late September: greens with straw coming in, the rushes darker
@@ -1772,9 +1893,13 @@ export function build(group, ctx) {
     g.addEventListener('dispose', () => WATER_MESHES.delete(m));
     group.add(m);
   }
-  try { buildBoulders(group, ox, oz); } catch (e) { console.warn('[cp32l] boulders', e); }
+  // CP33: city/cpRocks.js builds the tile's outcrops and boulders (all but Vista Rock); the CP32 ones only where it did not
+  let rk33 = false;
+  // (CP34: with the tile's own surface sampler, so the boulders sit on the ground as drawn, not on groundAt's curve)
+  try { rk33 = cpRocksBuild(group, { ox, oz, key, surfY: ctx.surfY }); } catch (e) { console.warn('[cpr33] rocks', e); }
+  if (!rk33) try { buildBoulders(group, ox, oz); } catch (e) { console.warn('[cp32l] boulders', e); }
   try { buildReeds(group, ox, oz); } catch (e) { console.warn('[cp32l] reeds', e); }
-  try { buildRocks(group, ox, oz, key); } catch (e) { console.warn('[cp32l] outcrops', e); }
+  try { buildRocks(group, ox, oz, key, rk33); } catch (e) { console.warn('[cp32l] outcrops', e); }
   try { buildWall(group, ctx); } catch (e) { console.warn('[cp32l] perimeter wall', e); }
 }
 

@@ -21,7 +21,7 @@ const releaseGpu = await acquireGpu(process.argv.slice(2).join(" ").slice(0, 60)
 const port = String(5800 + Math.floor(Math.random() * 1500));
 const server = spawn(process.execPath, [path.join(bdir, 'node_modules', 'vite', 'bin', 'vite.js'), '--port', port, '--strictPort', '--host', '127.0.0.1'], { cwd: bdir, stdio: 'ignore' });
 await new Promise((r) => setTimeout(r, 2500));
-const browser = await chromium.launch({ headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--window-size=1760,990'] });
+const browser = await chromium.launch({ headless: true, args: [(process.platform === 'win32' ? '--use-angle=d3d11' : '--use-angle=vulkan'), '--enable-gpu', '--ignore-gpu-blocklist', '--force_high_performance_gpu', '--window-size=1760,990'] });
 await fs.mkdir(outDir, { recursive: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1760, height: 990 } });

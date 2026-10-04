@@ -22,7 +22,9 @@ server/.stage/
 # ---------------------------------------------------------------- binary banks (BUILDING.md: download, or compile tiles)
 # distributed through the Hugging Face dataset mehmetkeremturkcan/boundless-nyc (Content/)
 boundlessjs/public/tiles/
+boundlessjs/public/tiles
 boundlessjs/public/tiles_*/
+boundlessjs/public/tiles_*
 boundlessjs/public/models/
 boundlessjs/public/textures/
 
@@ -47,6 +49,8 @@ _out/
 *.tar.gz
 tools/gpu.lock
 gpu.queue/
+tools/gpu*.lock
+tools/gpu*.queue/
 .env
 .env.*
 .DS_Store

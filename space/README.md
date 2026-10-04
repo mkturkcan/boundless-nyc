@@ -13,7 +13,8 @@ short_description: Real-time digital twin of New York City from public records
 
 A real-time WebGL2 rendering of BoundlessNYC, a digital twin of Manhattan, the Bronx, Brooklyn and Queens compiled
 from public municipal records. It includes 937,965 buildings, the street network with its recorded lane geometry,
-street trees and street furniture, and simulated traffic and pedestrians. The browser streams 512 m tiles within
+street trees and street furniture, and simulated traffic, trains and pedestrians; 125th Street, Central Park and
+Hunters Point are modelled in detail. The browser streams 512 m tiles within
 1 km of the camera and far-field tiles within 13 km, so it loads only the neighbourhood around the camera at full
 detail. The full city is 2.4 GB.
 
@@ -39,8 +40,9 @@ stepping, sensors, ground truth) is distributed as a desktop build; see the repo
 ![Six frames from the simulator](assets/gallery.jpg)
 
 **Credits.** City data: NYC Open Data, NY State open data and © OpenStreetMap contributors (ODbL 1.0). Vehicle and
-pedestrian models: CARLA Simulator (carla.org), CC BY 4.0. Motion data: 100STYLE (CC BY 4.0). Textures and skies:
-Poly Haven and ambientCG (CC0). The complete list is in `ACKNOWLEDGEMENTS.md` in the repository.
+pedestrian models: CARLA Simulator (carla.org), CC BY 4.0; vehicle bodies by memoov and mekanismo and the Angel of the
+Waters by noe-3d.at (Sketchfab, CC BY 4.0). Motion data: 100STYLE (CC BY 4.0). Textures and skies: Poly Haven and
+ambientCG (CC0). The complete list is in `ACKNOWLEDGEMENTS.md` in the repository.
 
 **Licensing.** The server code is MIT and the compiled city ODbL 1.0. The photoreal pedestrians contain components
 created with Epic Games' MetaHuman, which may not be used to build or enhance a database or to train or test AI
@@ -49,4 +51,4 @@ repository explains the notice and the procedural alternative.
 
 **Citation.** BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. Please
 cite it as: M. K. Turkcan. *BoundlessNYC: a real-data, real-time digital twin of New York City.* Software, version
-0.1.0, 2026. <https://github.com/mkturkcan/boundless-nyc>
+0.2.0, 2026. <https://github.com/mkturkcan/boundless-nyc>

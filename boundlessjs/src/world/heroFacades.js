@@ -190,9 +190,13 @@ export class HeroFacades {
     if (this._acc < 20) return; // rescan ~3x/sec
     this._acc = 0;
     const cands = [];
+    // FP37 (core/engine.js, the film policy): while recording, the take's nearest approach places each building's ring and
+    // band, so no trim is added, dropped or re-banded within a take
+    const fp = typeof window !== 'undefined' && window.__FP37 && window.__FP37.pts ? window.__FP37 : null;
+    const near = (x, z) => { let q = Infinity; for (let j = 0; j < fp.pts.length; j += 3) { const ax = x - fp.pts[j], az = z - fp.pts[j + 2]; q = Math.min(q, ax * ax + az * az); } return Math.sqrt(q); };
     for (const recs of this.tiles.values()) {
       for (const r of recs) {
-        const d = Math.hypot(r.cx - px, r.cz - pz);
+        const d = fp ? near(r.cx, r.cz) : Math.hypot(r.cx - px, r.cz - pz);
         const a = this.active.get(r.key);
         // buildings rebuilt by the NYC dresser get no shader-layer trim
         if (this.skip && this.skip(r.key)) { if (a) this._drop(r.key); continue; }

@@ -726,6 +726,18 @@ export class Instancer {
     let k = 0, k2 = 0;
     const top = p.top;
     const roofLow = p.roofLow && planes !== null;
+    // FP37 (core/engine.js, the film policy): while recording, the parapet hiding, the half-pixel drop and the pool LoD go by
+    // the take's path (its box in plan and its height range) instead of the lens, so none of them switches within a take
+    const fp = typeof window !== 'undefined' && window.__FP37 && window.__FP37.pts ? window.__FP37 : null;
+    let bx0 = 0, bx1 = 0, bz0 = 0, bz1 = 0, by0 = 0, by1 = 0;
+    if (fp) {
+      if (fp._box === undefined) {
+        const P = fp.pts; let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity, e = Infinity, f = -Infinity;
+        for (let j = 0; j < P.length; j += 3) { a = Math.min(a, P[j]); b = Math.max(b, P[j]); e = Math.min(e, P[j + 1]); f = Math.max(f, P[j + 1]); c = Math.min(c, P[j + 2]); d = Math.max(d, P[j + 2]); }
+        fp._box = [a, b, c, d, e, f];
+      }
+      [bx0, bx1, bz0, bz1, by0, by1] = fp._box;
+    }
     for (let s = 0; s < top; s++) {
       if (!alive[s]) continue;
       const x = pos[s * 3], y = pos[s * 3 + 1], z = pos[s * 3 + 2];
@@ -738,14 +750,21 @@ export class Instancer {
         }
         if (!inside) continue;
         if (sweep && sweepOut(x, y, z, rad[s] + 1)) continue;   // SV29: its shadow cannot reach the view
-        if (roofLow && camY < y - ROOF_BELOW && dx * dx + dz * dz > ROOF_DIST2) continue; // behind its parapet
-        if (minAng > 0) {
-          const d2 = dx * dx + dy * dy + dz * dz;
-          const rr = rad[s];
-          if (rr * rr < minAng * minAng * d2) continue;   // whole sphere under half a pixel
+        if (fp) {
+          const ex = Math.max(bx0 - x, 0, x - bx1), ez = Math.max(bz0 - z, 0, z - bz1), ey = Math.max(by0 - y, 0, y - by1);
+          if (roofLow && by1 < y - ROOF_BELOW && ex * ex + ez * ez > ROOF_DIST2) continue;   // behind its parapet all take
+          if (minAng > 0) { const rr = rad[s]; if (rr * rr < minAng * minAng * (ex * ex + ey * ey + ez * ez)) continue; }
+        } else {
+          if (roofLow && camY < y - ROOF_BELOW && dx * dx + dz * dz > ROOF_DIST2) continue; // behind its parapet
+          if (minAng > 0) {
+            const d2 = dx * dx + dy * dy + dz * dz;
+            const rr = rad[s];
+            if (rr * rr < minAng * minAng * d2) continue;   // whole sphere under half a pixel
+          }
         }
       }
-      if (dx * dx + dz * dz > lod2) {
+      const h2 = fp ? Math.max(bx0 - x, 0, x - bx1) ** 2 + Math.max(bz0 - z, 0, z - bz1) ** 2 : dx * dx + dz * dz;
+      if (h2 > lod2) {
         if (k2 >= mesh2.instanceMatrix.count) {
           this._growMesh(mesh2, k2 + 1, withColor);
           out2 = mesh2.instanceMatrix.array; outC2 = withColor ? mesh2.instanceColor.array : null;

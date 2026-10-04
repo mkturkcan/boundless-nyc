@@ -4,6 +4,12 @@
 // promenades(), seats(). Sub-flag `?ar32h=0`. Notes: docs/notes/area-hptShore.md.
 import { buildFleet, buildSeawallRail, buildLanding } from './hptShoreKit.js';
 import { HPT_COURSES, HPT_FLEET, HPT_SEAWALL, HPT_LANDING } from './hptShoreData.js';
+import { buildTowerDress } from './hptShoreTowers.js';
+import { hpMatsReady } from './hptSignMats.js';
+
+// AR33: the PBR library's module is in before the first tile builds; `?hptTow=0` leaves the towers as compiled
+export const ready = hpMatsReady;
+const TOWERS = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('hptTow') === '0');
 
 const QS = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
 export const AR32H = !(QS && QS.get('ar32h') === '0');
@@ -20,6 +26,9 @@ const owns = (ox, oz, x, z) => x >= ox && x < ox + 512 && z >= oz && z < oz + 51
 
 export function build(group, ctx) {
   if (!AR32H) return;
+  if (TOWERS) {
+    try { const r = buildTowerDress(group, ctx.ox, ctx.oz); if (r) console.log(`[ar33h] tower balconies tile ${ctx.key}: ${r.towers} towers, ${r.balconies} balconies, ${r.tris} triangles`); } catch (e) { console.warn('[ar33h] tower dress', e); }
+  }
   if (owns(ctx.ox, ctx.oz, FLEET_AT[0], FLEET_AT[1])) {
     try {
       const r = buildFleet(group, HPT_FLEET, HPT_COURSES, T_OFF, T_AT);

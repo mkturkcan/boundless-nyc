@@ -13,10 +13,11 @@ streetscape studies in which every modelled element can be traced to a public re
 | Buildings | Every footprint of NYC Building Footprints, gap-filled from OpenStreetMap and joined to PLUTO (use, class, floors, year) and to facade-inspection filings (wall material); facade typologies with procedural architectural detail; landmarks with dedicated models |
 | Streets | NYC Street Centerline (CSCL): widths, lane counts, direction, speed limits and grade separation become the carriageway, kerbs, sidewalks, markings and a routable lane graph |
 | Street furniture | Street trees, hydrants, bus shelters, LinkNYC kiosks, bicycle racks and subway entrances placed from their records; signals at junctions derived from the street network; lamps, signage and street furniture generated along the kerbs |
+| Areas modelled in detail | 125th Street from Twelfth Avenue to the Harlem River: facades, storefront signs, street furniture and street life, the Riverside Drive and Manhattan Valley viaducts, the Park Avenue Viaduct, the 1 train's 125th Street station and the bridge approaches at the Harlem River. Central Park: relief, water bodies, 16,951 trees in 33 species groups, bridges, Bethesda Terrace, Belvedere Castle and the other landmarks. Hunters Point's waterfront, Times Square, Bryant Park and Columbia's Morningside campus |
 | Streaming | Binary tiles streamed around the camera at full detail, with coarser far-field tiles beyond |
-| Simulation | IDM car following on the lane graph with signal phases and turn planning; pedestrians on the sidewalk graph with signal-aware crossings; vehicles of the NYC fleet: taxis, private cars, vans, box trucks, a minibus and emergency vehicles |
+| Simulation | IDM car following on the lane graph with signal phases and turn planning; pedestrians on the sidewalk graph with signal-aware crossings; vehicles of the NYC fleet: taxis, private cars, MTA buses on their routes, school buses, police, postal, sanitation and delivery vehicles, vans, box trucks and emergency vehicles; the 1 train on the Manhattan Valley viaduct and Metro-North on the Park Avenue tracks |
 | Sensors | RGB; semantic segmentation (Cityscapes-compatible classes); instance segmentation with visible and amodal boxes, occlusion ratios and 3D poses; metric depth |
-| Interfaces | Interactive browser client; simulation server with a TCP API and a Python client (synchronous stepping, actor control, sensors, map queries) |
+| Interfaces | Interactive browser client; simulation server with a TCP API and a Python client (synchronous stepping, actor control, sensors, map queries); export of a recorded take to OpenUSD for offline rendering in Blender Cycles |
 
 Links:
 
@@ -41,7 +42,7 @@ compiled city), extract it, start the server and run an example:
 
 ```
 StartServer.bat
-pip install PythonAPI/dist/boundless-<version>-py3-none-any.whl
+pip install PythonAPI/dist/boundless-0.1.0-py3-none-any.whl
 python PythonAPI/examples/intersection_120_amsterdam.py
 ```
 
@@ -50,7 +51,7 @@ python PythonAPI/examples/intersection_120_amsterdam.py
 ```
 npm install && (cd boundlessjs && npm install)
 # binary banks (tiles, models, textures): download, or compile the tiles (BUILDING.md)
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.1.0 \
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.0 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 cd boundlessjs && npm run dev        # http://127.0.0.1:5219
@@ -107,12 +108,14 @@ one script per step in [PythonAPI/examples/tutorials/](PythonAPI/examples/tutori
 boundlessjs/            renderer, simulation and perception client (three.js, Vite)
   src/                  engine, streaming, materials, traffic, pedestrians, perception, API bridge
   tools/pipeline/       city compiler: NYC Open Data -> binary tiles
+  tools/ar34/export/    take export to OpenUSD and the Blender Cycles renderer
+  tools/                asset builders (vehicles, trees, vegetation, materials, Central Park), tile probes and audits
   public/               LUTs, fonts, data; tiles, models and textures are downloaded (BUILDING.md)
 src/                    building-generator library shared with the client (@nyc alias); index.html is its demo
 server/                 simulation server (Electron): TCP API, content serving, release builder
 PythonAPI/              `boundless` Python client, examples
 space/                  the Hugging Face Space: static server for the dataset's Content/
-tools/                  figures, web packaging, headless rendering, perception export, asset build scripts
+tools/                  figures, web packaging, headless rendering, film recorder and render QA, perception export, asset build scripts
 docs/                   documentation site, API reference, wire protocol, rendering techniques, building typologies
 ```
 
@@ -130,8 +133,10 @@ the architecture diagram is a draw.io file in `docs/assets/figures/src/`.
 - **Compiled city:** ODbL 1.0, because it contains data derived from OpenStreetMap. Images and labels rendered from it
   may be used under any terms with the attribution "© OpenStreetMap contributors".
 - **Vehicle, prop and pedestrian models:** CC BY 4.0, from the CARLA Simulator; the Rocketbox pedestrian set
-  (`models/peds24/rb27/`) is MIT, from the Microsoft Rocketbox Avatar Library.
-- **Textures and skies:** CC0, from Poly Haven and ambientCG.
+  (`models/peds24/rb27/`) is MIT, from the Microsoft Rocketbox Avatar Library. The NYC buses, service and delivery
+  vehicles and the street trees are original models (CC BY 4.0); two vehicle bodies and the Angel of the Waters derive
+  from CC BY 4.0 scans and models credited in ACKNOWLEDGEMENTS.md.
+- **Textures and skies:** CC0, from Poly Haven and ambientCG. **Typefaces:** SIL OFL 1.1 and Apache 2.0.
 
 The photoreal pedestrians contain components created with Epic Games' MetaHuman. The MetaHuman licence does not allow
 using MetaHuman characters to build or enhance a database or to train or test AI models. For datasets, training and
@@ -151,7 +156,7 @@ BoundlessNYC, the compiled city or imagery rendered with it, please cite Boundle
   author  = {Turkcan, Mehmet Kerem},
   title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.2.0},
   url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```

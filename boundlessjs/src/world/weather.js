@@ -158,6 +158,7 @@ function makeParticles(scene, max, vtxExtra, opts) {
   const mesh = new THREE.Mesh(g, material);
   mesh.frustumCulled = false;
   mesh.visible = false;
+  mesh.userData.nearCap = 0.4;   // DP37 (core/engine.js): the drops round the lens write no depth; while they fall the near plane stays 0.4 m
   g.instanceCount = 0;
   scene.add(mesh);
   return { mesh, g, uniforms, max };
@@ -322,8 +323,11 @@ export function createWeather(scene, camera, engine) {
       const tmName = CLEAN && GFX.toneMap === 'Neutral' && ENV.night.value > 0.02 ? 'AgX' : GFX.toneMap;
       const tm = TONE_MAPS[tmName] ?? TONE_MAPS.ACES;
       if (engine.renderer.toneMapping !== tm[0]) engine.renderer.toneMapping = tm[0];
+      // HL34 (engine.setBloom sets engine.hlHi by time of day): the highlight shoulder answers AgX's long shoulder only;
+      // PBR Neutral (the clean=1 film and teasers by day) keeps its own top end
+      if (engine.grade.uniforms.uHi) engine.grade.uniforms.uHi.value = tmName === 'AgX' ? (engine.hlHi ?? 0) : 0;
       engine.expoTarget = (GFX.autoExpoTarget ?? 0.20) * (engine.expoTargetK ?? 1);   // LB13: day-only
-      const autoE = 1 + ((engine.autoExpo ?? 1) - 1) * GFX.autoExposure;
+      const autoE = 1 + ((engine.autoExpo ?? 1) - 1) * (engine.aeK ?? GFX.autoExposure);   // AE35: full strength by day (sky.js)
       engine.renderer.toneMappingExposure = (engine.expoBase ?? 0.74) * (GFX.exposure / 0.74) * tm[1] * autoE * (1 + 0.25 * td);
       engine.bloom.strength = (0.05 + ENV.night.value * 0.25) * GFX.bloomMul * (engine.bloomDayK ?? 1) + flash * 0.9;   // BL26 (engine.setBloom)
       ENV.fogDensity.value = baseFog * (GFX.fogDensity / 0.00011) * (1 + w * 2.2 + s * 3.0 + cl * 1.2);

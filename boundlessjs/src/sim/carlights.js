@@ -18,6 +18,8 @@ import { N11, fixtureOf, fixtureColor } from '../world/night11.js';
 // it stays among the nearest 24 and within 180 m, free beams go to the nearest unlit moving cars, and every beam fades in
 // and out over ~0.35 s (a released beam fades where it stands). `?hl26=0` restores the per-frame ranking.
 const HL26 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('hl26') === '0');
+// PF34: the headlamp / lamp pool starts in its first frame's day / night state (see the constructor). `?pf34=0`: as before.
+const PF34 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('pf34') === '0');
 
 const PER_CAR = 7; // 2 head sprites, 2 tail sprites, 2 head glows, 1 ground pool
 
@@ -125,6 +127,15 @@ export class CarLights {
     }
     this._hlCol = [new THREE.Color(0xe9efff), new THREE.Color(0xfff0d6)];   // HL24: LED and halogen whites
     this._lampAcc = 9;
+    // PF34 (MATS 2026-10-02 06:01): the pool was created visible and hidden by day only in the first update(), so every
+    // material drawn before that update compiled with 12 spot lights and again with none after it (156 of 447 programs at
+    // qc_lenox had such a twin). The pool now starts in the day / night state of its first frame. `?pf34=0`: as before.
+    if (PF34) {
+      const on0 = (ENV.night.value ?? 0) >= 0.06;
+      for (const L of this.dynLamps) L.visible = on0;
+      for (const L of this.dynCars) L.visible = on0;
+      this._lightsOn = on0;
+    }
   }
   _updateLamps(camera, night, dt) {
     if (CL24) { this.lampMesh.count = 0; this.glowMesh.count = 0; return; }

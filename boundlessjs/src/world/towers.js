@@ -132,6 +132,59 @@ function rectRing(cx, cz, hw, hh, ang) {
   return a >= 0 ? r : r.slice().reverse();
 }
 
+// RB34 (2026-10-02, QA Q07): a roof box must stand ON the roof. The crown pieces are centred on the footprint's OBB, and
+// on a concave footprint (an L-shaped NYCHA slab, 2_-7:43 at 125th and Morningside) the OBB's centre lies in the notch:
+// the slab's 7 m lift-and-tank bulkhead hung in the air over it and read from the street as a floating wing. A box (or a
+// mast's centre: hw = hh = 0) is kept where its centre and corners are inside the ring; otherwise it moves to the most
+// interior point of the ring (a grid search) and shrinks until it fits, or is left out (null). `?rb34=0` restores.
+const RB34 = !(typeof location !== 'undefined' && new URLSearchParams(location.search).get('rb34') === '0');
+function inRing(ring, x, z) {
+  let ins = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, zi] = ring[i], [xj, zj] = ring[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) ins = !ins;
+  }
+  return ins;
+}
+function boxInRing(ring, cx, cz, hw, hh, ang) {
+  if (!inRing(ring, cx, cz)) return false;
+  if (hw <= 0 && hh <= 0) return true;
+  for (const [x, z] of rectRing(cx, cz, hw, hh, ang)) if (!inRing(ring, x, z)) return false;
+  return true;
+}
+function edgeDist(ring, x, z) {
+  let d = 1e9;
+  for (let i = 0; i < ring.length; i++) {
+    const [ax, az] = ring[i], [bx, bz] = ring[(i + 1) % ring.length];
+    const ex = bx - ax, ez = bz - az, l2 = ex * ex + ez * ez || 1;
+    const t = Math.max(0, Math.min(1, ((x - ax) * ex + (z - az) * ez) / l2));
+    d = Math.min(d, Math.hypot(x - (ax + ex * t), z - (az + ez * t)));
+  }
+  return d;
+}
+function placeInside(ring, cx, cz, hw, hh, ang) {
+  if (!RB34 || !ring || ring.length < 3 || boxInRing(ring, cx, cz, hw, hh, ang)) return { x: cx, z: cz, hw, hh };
+  let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+  for (const [x, z] of ring) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+  let best = null, bd = -1;
+  const N = 16;
+  for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
+    const x = x0 + ((x1 - x0) * i) / N, z = z0 + ((z1 - z0) * j) / N;
+    if (!inRing(ring, x, z)) continue;
+    const d = edgeDist(ring, x, z);
+    if (d > bd) { bd = d; best = [x, z]; }
+  }
+  if (!best) return null;
+  if (hw <= 0 && hh <= 0) return { x: best[0], z: best[1], hw, hh };
+  let w = hw, h = hh;
+  for (let k = 0; k < 12; k++) {
+    if (boxInRing(ring, best[0], best[1], w, h, ang)) return { x: best[0], z: best[1], hw: w, hh: h };
+    w *= 0.85; h *= 0.85;
+    if (w < 0.6 || h < 0.6) break;
+  }
+  return null;
+}
+
 // ------------------------------------------------------------- buffer writers
 // One prism of walls. `aux2v` is [_, lit, colorVar, flags]; aux2.x is filled per
 // wall with this wall's top in v-units (the shader stops its window grid 0.8 m
@@ -423,11 +476,12 @@ export function buildTower(buf, ring, cx, cz, y0, topY, b, opts = {}) {
       const [pw] = fitBox(obb.w * 0.5, Math.max(1.6, obb.w * 0.13), 0);
       const [ph] = fitBox(obb.h * 0.5, Math.max(1.4, obb.h * 0.16), 0);
       const pyH = Math.min(9, 2.6 + r2 * 4.5 + h * 0.012);
-      box(buf, obb.center[0], obb.center[1], pw, ph, yy, yy + pyH, obb.ang,
+      const pl0 = placeInside(ring, obb.center[0], obb.center[1], pw, ph, obb.ang);   // RB34
+      if (pl0) box(buf, pl0.x, pl0.z, pl0.hw, pl0.hh, yy, yy + pyH, obb.ang,
         lite.map((c) => c * 0.92), aux, [0, b.lit, cv, crownFlags], y0, MECH_OPTS);
       yy += pyH;
     }
-    if (h > 175 || (h > 130 && r1 < 0.16)) mast(buf, obb, yy, h, y0, b, cv, aux);
+    if (h > 175 || (h > 130 && r1 < 0.16)) mast(buf, obb, yy, h, y0, b, cv, aux, ring);
   } else if (kind === 'modern') {
     // 1945-79 office slab: a big louvred mechanical penthouse pushed to one end
     // of the roof, a lower stair/lift head beside it, screen walls. Nearly every
@@ -438,16 +492,18 @@ export function buildTower(buf, ring, cx, cz, y0, topY, b, opts = {}) {
     const px = obb.center[0] + off * c, pz = obb.center[1] + off * s;
     const mHt = Math.max(4.2, Math.min(16, h * 0.055 + r0 * 4));
     const mech = [0.40 + r1 * 0.09, 0.41 + r1 * 0.09, 0.43 + r1 * 0.08];
-    box(buf, px, pz, mw, mh, topY, topY + paraH + mHt, obb.ang, mech, aux,
+    const pl1 = placeInside(ring, px, pz, mw, mh, obb.ang);   // RB34
+    if (pl1) box(buf, pl1.x, pl1.z, pl1.hw, pl1.hh, topY, topY + paraH + mHt, obb.ang, mech, aux,
       [0, b.lit, cv, mechFlags], y0, MECH_OPTS);
     // stair head / lift overrun beside it
     const [sw, soff] = fitBox(obb.w * 0.5, Math.max(1.5, obb.w * 0.09), -off * 0.9);
     const [sh2] = fitBox(obb.h * 0.5, Math.max(1.4, obb.h * 0.16), 0);
     const sx = obb.center[0] + soff * c, sz = obb.center[1] + soff * s;
-    box(buf, sx, sz, sw, sh2, topY, topY + paraH + mHt * 0.62, obb.ang,
+    const pl2 = placeInside(ring, sx, sz, sw, sh2, obb.ang);   // RB34
+    if (pl2) box(buf, pl2.x, pl2.z, pl2.hw, pl2.hh, topY, topY + paraH + mHt * 0.62, obb.ang,
       mech.map((v) => v * 0.9), aux, [0, b.lit, cv, mechFlags], y0, MECH_OPTS);
     roofRing = pRing; roofY = topY; areaF = 0.6;
-    if (h > 185 || (h > 140 && r2 < 0.14)) mast(buf, obb, topY + paraH + mHt, h, y0, b, cv, aux);
+    if (h > 185 || (h > 140 && r2 < 0.14)) mast(buf, obb, topY + paraH + mHt, h, y0, b, cv, aux, ring);
   } else if (kind === 'sculpt' && steppable) {
     // post-2000 tower: the crown is part of the massing — one inset shoulder,
     // then a tapered cap, then a spire on the tallest. Reads as a silhouette,
@@ -463,14 +519,15 @@ export function buildTower(buf, ring, cx, cz, y0, topY, b, opts = {}) {
     cap(buf, capR, topY + paraH + 0.22 + sh1 + capH, [0.30, 0.32, 0.35], b.style, b.floorH, b.winW,
       [0, b.lit, cv, FF.ROOF], 2);
     roofRing = shoulder; roofY = topY; areaF = 0.55;
-    if (h > 170 || (h > 125 && r0 < 0.18)) mast(buf, obb, topY + paraH + 0.22 + sh1 + capH, h, y0, b, cv, aux);
+    if (h > 170 || (h > 125 && r0 < 0.18)) mast(buf, obb, topY + paraH + 0.22 + sh1 + capH, h, y0, b, cv, aux, ring);
   } else if (kind === 'slab') {
     // NYCHA / postwar brick slab: one long lift-and-tank bulkhead on the ridge,
     // brick like the shaft, plus a stair head. No crown — that IS the look.
     const c = Math.cos(obb.ang), s = Math.sin(obb.ang);
     const [mw, off] = fitBox(obb.w * 0.5, Math.max(2.0, obb.w * (0.16 + r0 * 0.12)), (r2 - 0.5) * obb.w * 0.4);
     const [mh] = fitBox(obb.h * 0.5, Math.max(1.8, obb.h * (0.30 + r1 * 0.16)), 0);
-    box(buf, obb.center[0] + off * c, obb.center[1] + off * s, mw, mh,
+    const pl3 = placeInside(ring, obb.center[0] + off * c, obb.center[1] + off * s, mw, mh, obb.ang);   // RB34
+    if (pl3) box(buf, pl3.x, pl3.z, pl3.hw, pl3.hh,
       topY, topY + paraH + Math.max(3.4, 3.0 + r0 * 3.2), obb.ang,
       col.map((v) => v * 0.95), aux, [0, b.lit, cv, mechFlags], y0, MECH_OPTS);
     roofRing = pRing; roofY = topY; areaF = 0.75;
@@ -479,7 +536,8 @@ export function buildTower(buf, ring, cx, cz, y0, topY, b, opts = {}) {
     if (rectness > 0.5 && obb.w > 6 && obb.h > 5) {
       const [mw] = fitBox(obb.w * 0.5, Math.max(1.6, obb.w * (0.15 + r0 * 0.1)), 0);
       const [mh] = fitBox(obb.h * 0.5, Math.max(1.5, obb.h * (0.24 + r1 * 0.14)), 0);
-      box(buf, obb.center[0], obb.center[1], mw, mh, topY,
+      const pl4 = placeInside(ring, obb.center[0], obb.center[1], mw, mh, obb.ang);   // RB34
+      if (pl4) box(buf, pl4.x, pl4.z, pl4.hw, pl4.hh, topY,
         topY + paraH + Math.max(2.8, 2.4 + r2 * 3.0), obb.ang,
         (masonry ? col.map((v) => v * 0.92) : [0.40, 0.41, 0.43]), aux,
         [0, b.lit, cv, mechFlags], y0, MECH_OPTS);
@@ -491,12 +549,14 @@ export function buildTower(buf, ring, cx, cz, y0, topY, b, opts = {}) {
 
 // three-stage tapered mast with an obstruction light: the antenna silhouette
 // that separates a 200 m tower from a 200 m box against the sky.
-function mast(buf, obb, yBase, h, y0, b, cv, aux) {
+function mast(buf, obb, yBase, h, y0, b, cv, aux, ring = null) {
   const r = hash1(cv * 131.7 + 3.3);
   const total = Math.min(26, Math.max(7, h * (0.045 + r * 0.055)));
   const dark = [0.17, 0.175, 0.185];
   const w0 = Math.max(0.20, Math.min(0.80, obb.w * 0.016));   // a real antenna mast is 0.4-1.6 m across, not 4 m
-  const cx = obb.center[0], cz = obb.center[1];
+  const plM = placeInside(ring, obb.center[0], obb.center[1], 0, 0, 0);   // RB34: never over a notch
+  if (!plM) return;
+  const cx = plM.x, cz = plM.z;
   let y = yBase;
   // a squat base house, then two tapering stages, then the pin
   taper(buf, cx, cz, w0 * 2.2, w0 * 2.2, w0 * 1.9, w0 * 1.9, y, y + total * 0.14, obb.ang, dark, aux, [0, b.lit, cv, FF.BLIND | FF.MECH], y0);

@@ -376,7 +376,8 @@ function exportLib(cfg) {
     if (!m) return -1;
     let e = X.mats.get(m.uuid);
     if (e) return e.id;
-    const d = { id: X.mats.size, name: m.name || '', type: m.type, side: m.side, transparent: !!m.transparent, vertexColors: !!m.vertexColors, colorWrite: m.colorWrite !== false, blending: m.blending, depthWrite: m.depthWrite, flatShading: !!m.flatShading, visible: m.visible !== false };
+    const d = { id: X.mats.size, name: m.name || '', type: m.type, side: m.side, transparent: !!m.transparent, vertexColors: !!m.vertexColors, colorWrite: m.colorWrite !== false, blending: m.blending, depthWrite: m.depthWrite, flatShading: !!m.flatShading, visible: m.visible !== false,
+      polygonOffset: !!m.polygonOffset, polygonOffsetFactor: m.polygonOffsetFactor || 0, polygonOffsetUnits: m.polygonOffsetUnits || 0 };   // BX-FIX: the web's depth pulls (usd_coplanar.py lifts the overlays by them)
     if (m.color) d.color = [m.color.r, m.color.g, m.color.b];
     if (m.emissive) d.emissive = [m.emissive.r, m.emissive.g, m.emissive.b];
     if (m.sheenColor) d.sheenColor = [m.sheenColor.r, m.sheenColor.g, m.sheenColor.b];

@@ -49,6 +49,10 @@ ALT_MIN = 2                            # cells
 ZF_T, ZF_V, ZF_N, ZF_F = 3.0, 4, 5, 5  # Z-FIGHT: >= ZF_N cells flickering over ZF_T on surfaces moving <= ZF_V px a frame (at
                                        # 320) in >= ZF_F frames (a fast near object passing the lens moves far more). The
                                        # 2026-10-03 exCpHandoff of 16:38: 22 such frames; the teaser 7 / 8 takes at most 2
+FZ_T, FZ_V, FZ_N, FZ_F = 6.0, 2, 6, 8   # FINE Z-FIGHT (--fine): >= FZ_N 40 px cells over FZ_T on surfaces moving <= FZ_V px in >= FZ_F frames
+FZ_AGREE, FZ_AGF = 0.75, 0.5           # ... measured on the pixels whose two compensations agree (the vector chosen against k-1
+                                       # within FZ_AGREE px at 320 of minus the one chosen against k+1), cells with FZ_AGF of them
+FINE = False
 STEP_T = 14.0                          # a step's 90th-percentile change (levels)
 STEP_X = 3.0                           # over the largest change either side
 
@@ -107,9 +111,10 @@ def motion(cur, ref):
     return vy + fy, vx + fx
 
 
-def warp(cur, ref, refc, vy, vx):
+def warp(cur, ref, refc, vy, vx, sel=False):
     """ref (luma) and refc (RGB) brought onto cur: each pixel the best of its block's vector and its four neighbours',
-    chosen on the 3x3-smoothed luma error; plus the mask of pixels whose source lies inside the frame"""
+    chosen on the 3x3-smoothed luma error; plus the mask of pixels whose source lies inside the frame (and with sel, the
+    vector each pixel chose, (vy, vx))"""
     yy, xx = np.mgrid[0:H, 0:W]
     by, bx = yy // C, xx // C
     best = None
@@ -126,12 +131,13 @@ def warp(cur, ref, refc, vy, vx):
         if best is None or (e < best[0]).any():
             ac = refc[y0, x0] * w00[..., None] + refc[y0, x0 + 1] * w01[..., None] + refc[y0 + 1, x0] * w10[..., None] + refc[y0 + 1, x0 + 1] * w11[..., None]
         if best is None:
-            best = [e, a, ac, inside]
+            best = [e, a, ac, inside, vy[nby, nbx], vx[nby, nbx]]
         else:
             m = e < best[0]
             best[0] = np.where(m, e, best[0]); best[1] = np.where(m, a, best[1])
             best[2] = np.where(m[..., None], ac, best[2]); best[3] = np.where(m, inside, best[3])
-    return best[1], best[2], best[3]
+            best[4] = np.where(m, vy[nby, nbx], best[4]); best[5] = np.where(m, vx[nby, nbx], best[5])
+    return (best[1], best[2], best[3], (best[4], best[5])) if sel else (best[1], best[2], best[3])
 
 
 def stepscan(lum):
@@ -210,6 +216,7 @@ def scan(d, f0=0, f1=100000, out_dir=None, name=None):
     # localized pops (a bench or a tree switching form, a shadow appearing under it) that an 80 px cell averages away
     F2 = 5; GY2, GX2 = H // F2, W // F2
     bk2 = np.zeros((n, GY2, GX2), np.float32); fw2 = np.zeros((n, GY2, GX2), np.float32); ok2 = np.zeros((n, GY2, GX2), bool)
+    zc2 = np.zeros((n, GY2, GX2), np.float32)
     fw = np.zeros((n, GY, GX), np.float32)        # forward change (p90 of |f_k - b|)
     ok = np.zeros((n, GY, GX), bool)
     vm = np.zeros((n, GY, GX), np.float32)        # block motion (px at 320, the larger of the two directions)
@@ -223,8 +230,8 @@ def scan(d, f0=0, f1=100000, out_dir=None, name=None):
         for v_ in (va[0], va[1], vb[0], vb[1]):
             sp = np.maximum(sp, ndimage.maximum_filter(v_, 3) - ndimage.minimum_filter(v_, 3))
         vsp[k] = sp
-        a, ac, ia = warp(lum[k], lum[k - 1], rgb[k - 1], *va)
-        b, bc, ib = warp(lum[k], lum[k + 1], rgb[k + 1], *vb)
+        a, ac, ia, sa = warp(lum[k], lum[k - 1], rgb[k - 1], *va, sel=True)
+        b, bc, ib, sb = warp(lum[k], lum[k + 1], rgb[k + 1], *vb, sel=True)
         inside = ia & ib
         # the differences low-passed (a 5x5 box, 40 px at 2560) before they are compared: a fine texture the block vectors
         # do not register exactly (pavers under a crane, leaves in the wind) leaves a zero-mean residual that this removes,
@@ -240,6 +247,20 @@ def scan(d, f0=0, f1=100000, out_dir=None, name=None):
         da2 = ndimage.uniform_filter(lum[k] - a, 3); db2 = ndimage.uniform_filter(lum[k] - b, 3)
         cell2 = lambda x: np.percentile(x.reshape(GY2, F2, GX2, F2).transpose(0, 2, 1, 3).reshape(GY2, GX2, F2 * F2), 80, axis=2)
         bk2[k] = cell2(np.abs(da2) * ia); fw2[k] = cell2(np.abs(db2) * ib)
+        # BX-FIX (2026-10-04): the two-sided flicker at the fine cells (40 px at 2560, 24 px low-pass): a decal z-fighting its
+        # wall (striped or speckled, re-drawn every frame) is too small for the 80 px cells and their 40 px low-pass
+        z2 = np.sqrt(np.maximum(0.0, da2 * db2)) * inside
+        # PARKGLASS (2026-10-05): only where the two compensations agree. Each pixel takes the best of five block vectors,
+        # once against k-1 and once against k+1; on a motion boundary (a near facade's silhouette against the far street, a
+        # bay against its wall, a pole, a cornice against the sky) neither direction's choice fits, the two residuals' signs
+        # are arbitrary and half the time they agree, which read as two-sided flicker (t7ParkCrane's golden take: 10 frames
+        # and its web take 2, all at its near building's edges, windows and poles, the same at 1024 spp without the
+        # denoiser). A surface that flips or crawls (a z-fight, denoiser blotches) moves smoothly, so both directions choose
+        # one vector there and the test still sees it: the known bad takes keep 70-93 % of their failing frames
+        # (docs/notes/ar34-parkglass.md)
+        agree = (np.abs(sa[0] + sb[0]) <= FZ_AGREE) & (np.abs(sa[1] + sb[1]) <= FZ_AGREE)
+        ag2 = agree.reshape(GY2, F2, GX2, F2).mean(axis=(1, 3))
+        zc2[k] = np.where(ag2 >= FZ_AGF, (z2 * agree).reshape(GY2, F2, GX2, F2).mean(axis=(1, 3)) / np.maximum(ag2, 1e-6), 0.0)
         ok2[k] = inside.reshape(GY2, F2, GX2, F2).mean(axis=(1, 3)) > 0.95
         ok[k] = inside.reshape(GY, C, GX, C).mean(axis=(1, 3)) > 0.9
     inner = slice(1, n - 1)
@@ -292,7 +313,7 @@ def scan(d, f0=0, f1=100000, out_dir=None, name=None):
            'alternation': {'cells': int(len(altc)), 'max': round(float(alt.max()), 2), 'over': {str(t): int((alt > t).sum()) for t in (1.0, 1.5, 2.0, 3.0, 5.0)},
                            'worst': [{'x': int(x) * C * 8, 'y': int(y) * C * 8, 'v': round(float(alt[y, x]), 1)} for y, x in altc[np.argsort(-alt[tuple(altc.T)])][:6]] if len(altc) else []},
            'steps': steps}
-    rep['_arr'] = {'zc': zc, 'bk': bk, 'fw': fw, 'ok': ok, 'alt': alt, 'idx': idx, 'vm': vm, 'bk2': bk2, 'fw2': fw2, 'ok2': ok2, 'vsp': vsp}   # for calibration (dropped from the JSON)
+    rep['_arr'] = {'zc': zc, 'bk': bk, 'fw': fw, 'ok': ok, 'alt': alt, 'idx': idx, 'vm': vm, 'bk2': bk2, 'fw2': fw2, 'ok2': ok2, 'vsp': vsp, 'zc2': zc2}   # for calibration (dropped from the JSON)
     # the verdict: `why` fails the take (calibrated: the 2026-10-03 bad takes fail, the clean and the teaser 7 / 8 takes pass),
     # `review` lists what a person should look at (cars, walkers and trains passing the lens trip these too)
     why, review = [], []
@@ -305,6 +326,17 @@ def scan(d, f0=0, f1=100000, out_dir=None, name=None):
     if bursts: review.append('flicker bursts: %d frame(s), largest %d cells at frame %d' % (len(bursts), max(b['cells'] for b in bursts), max(bursts, key=lambda b: b['cells'])['frame']))
     if steps: review.append('steps: %s' % ', '.join('f%d %s %dc d%.0f' % (s['frame'], s['kind'], s['cells'], s['d']) for s in steps[:6]))
     if ss: review.append('stepscan: %d jump(s) at frames %s' % (len(ss), ', '.join(sorted({str(h['frame']) for h in ss}, key=int)[:8])))
+    # BX-FIX (2026-10-04) FINE Z-FIGHT/SHIMMER (--fine, the Cycles takes' gate in bx_render_all.mjs): the two-sided flicker at
+    # the 40 px cells (24 px low-pass), where a decal z-fighting its wall, a glass pane's noisy reflection or a lamp-lit
+    # crown's denoiser blotches show; a frame counts with FZ_N cells over FZ_T levels on surfaces moving <= FZ_V px a frame
+    # (at 320); FZ_F such frames fail the take. Calibrated on the teaser 7 / 8 takes of 2026-10-03/04: the 20 web takes at
+    # most 4 frames; the Cycles takes before BX-FIX: t7ParkCrane 13 (its bay windows' glass), t7DinoGlide 10, t8LenoxDive 68
+    vm2 = np.repeat(np.repeat(vm, 2, axis=1), 2, axis=2)
+    nk2 = ((zc2 > FZ_T) & ok2 & (vm2 <= FZ_V)).sum(axis=(1, 2))
+    fz = [idx[k] for k in range(1, n - 1) if nk2[k] >= FZ_N]
+    rep['fine_zfight'] = {'frames': fz[:40], 'count': len(fz), 'max_cells': int(nk2.max())}
+    if FINE and len(fz) >= FZ_F:
+        why.append('FINE Z-FIGHT/SHIMMER: %d frames with >= %d slow 40 px cells flickering over %.0f levels (max %d cells; frames %s)' % (len(fz), FZ_N, FZ_T, nk2.max(), ', '.join(map(str, fz[:8]))))
     rep['fine_steps'] = fine[:60]
     if fine: review.append('fine steps (40 px, d>=20): %d frame(s), first %s' % (len(fine), ', '.join('f%d' % f_['frame'] for f_ in fine[:6])))
     # EVENT POP: a pop found above (STEP or STEPSCAN) in a frame where the engine changed something that draws everything at
@@ -396,6 +428,7 @@ if __name__ == '__main__':
             i = args.index(nm); v = args[i + 1]; del args[i:i + 2]; return v
         return default
     out_dir, json_out = opt('--out'), opt('--json')
+    if '--fine' in args: args.remove('--fine'); FINE = True
     root, takes = args[0], args[1:]
     reps, fail = {}, False
     for t in takes:

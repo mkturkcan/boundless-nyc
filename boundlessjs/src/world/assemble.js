@@ -15,6 +15,8 @@ import { namedShopZone } from '../city/namedShops.js';
 import { buildBillboards, buildTsqScreens } from '../city/billboards.js';
 import { BP28, bpDropTree, bpTrees, bpOwns, bpBuild, bpWorld, bpApply, bpSkipBuilding } from '../city/bryantPark.js';
 import { cpTileHit, cpApply, cpSkipBuilding, cpDropFurniture, cpFurniture, cpBuild, cpLift } from '../city/centralPark.js';
+import { st38ClipTri, st38GapFill } from '../city/stations/subEnt38.js';   // ST38 (STATIONS2): the stair openings cut out of the drawn grid
+import { gf38Load, gf38Apply } from '../city/groundFix38.js';   // GF38 (GROUNDFIX): the bare ground paved from the planimetric data
 import { areaTileHit, areaApply, areaSkipBuilding, areaDropFurniture, areaFurniture, areaBuild } from '../city/areas.js';
 import { tpTileHit, tpApply, tpStepsOwner, tpBuildSteps, tpSkipBuilding, tpBuildFurniture, tpDropFrontage } from '../city/tsqPlaza.js';
 import { placeCurbRamps } from '../city/streetNYC.js';
@@ -1606,6 +1608,7 @@ function cy12InCourt(holes, x, z) {
 export async function assembleTile(key, arrayBuf, ctx) {
   const tile = parseTile(arrayBuf);
   const [ox, oz] = tile.header.origin;
+  const gf38P = gf38Load(key, arrayBuf.byteLength).catch(() => null);   // GF38: the tile's baked fill (applied below)
   const group = new THREE.Group();
   group.name = 'tile_' + key;
   const claims = []; // [poolName, id]
@@ -1638,6 +1641,11 @@ export async function assembleTile(key, arrayBuf, ctx) {
   // AR32: the detailed areas (125th Street, Hunters Point: city/areas.js), likewise
   const ART = areaTileHit(ox, oz);
   if (ART) areaApply(tile, ox, oz);
+  // ST38 (STATIONS2): the corners round the islands' noses that no section covers are paved at the road's level
+  try { st38GapFill(tile); } catch (e) { console.warn('[st38] gap fill', e); }
+  // GF38 (GROUNDFIX, city/groundFix38.js; `?gf38=0` none): what is still bare where the city's planimetric data has a walk,
+  // a roadway, a median, a lot or a plaza is paved as that, with kerb faces where a walk meets the roadway
+  try { gf38Apply(tile, await gf38P); } catch (e) { console.warn('[gf38] fill', e); }
 
   // tile terrain sampler (carved grid) for foundation depths
   const terrRes = tile.header.res, terrN = terrRes + 1, terrG = tile.S.terrain;
@@ -2526,16 +2534,31 @@ export async function assembleTile(key, arrayBuf, ctx) {
       }
     }
     const T = TILE_OF(tile);
+    // ST38 (STATIONS2, city/stations/subEnt38.js; `?st38=0` none): the subway stairs' openings are cut out of the walk, and
+    // out of the drawn grid here, exactly: a cell they touch is drawn as its pieces outside them
+    const holes38 = tile.st38Holes && tile.st38Holes.length ? tile.st38Holes : null;
+    let extra38 = null;
     for (let j = 0; j < res; j++) for (let i = 0; i < res; i++) {
       const x0 = ox + (i / res) * T, x1 = ox + ((i + 1) / res) * T;
       const z0 = oz + (j / res) * T, z1 = oz + ((j + 1) / res) * T;
       const y00 = terrDraw[j * n + i], y10 = terrDraw[j * n + i + 1], y01 = terrDraw[(j + 1) * n + i], y11 = terrDraw[(j + 1) * n + i + 1];
       const quad = [[x0, y00, z0], [x1, y11, z1], [x1, y10, z0], [x0, y00, z0], [x0, y01, z1], [x1, y11, z1]];
+      if (holes38) {
+        const t1 = quad.slice(0, 3), t2 = quad.slice(3), c1 = st38ClipTri(t1, holes38), c2 = st38ClipTri(t2, holes38);
+        if (c1 || c2) { (extra38 = extra38 || []).push(...(c1 || [t1]), ...(c2 || [t2])); continue; }
+      }
       for (const [x, y, z] of quad) { pos[o * 3] = x; pos[o * 3 + 1] = y; pos[o * 3 + 2] = z; mat[o] = 7; o++; }
     }
+    let posF = pos, matF = mat;
+    if (holes38) {
+      const ne = extra38 ? extra38.length * 3 : 0;
+      posF = new Float32Array((o + ne) * 3); matF = new Float32Array(o + ne);
+      posF.set(pos.subarray(0, o * 3)); matF.set(mat.subarray(0, o));
+      if (extra38) for (const tri of extra38) for (const [x, y, z] of tri) { posF[o * 3] = x; posF[o * 3 + 1] = y; posF[o * 3 + 2] = z; matF[o] = 7; o++; }
+    }
     const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('matId', new THREE.BufferAttribute(mat, 1));
+    g.setAttribute('position', new THREE.BufferAttribute(posF, 3));
+    g.setAttribute('matId', new THREE.BufferAttribute(matF, 1));
     g.computeVertexNormals();
     g.computeBoundingSphere();
     const m = new THREE.Mesh(g, ctx.groundMat);

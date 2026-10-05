@@ -314,7 +314,8 @@ export function subway(q = 1, p = {}) {
 // (+z, as the stair head's), the station plate over them and a globe at the door. W 2.3 across, L 2.6 along, 3.0 high.
 export function subElev(q = 1, p = {}) {
   const M = new Model();
-  const W = 2.3, L = 2.6, H = 4.4, s = seg(q, 2, 1), fr = 'stainless';
+  // (ST38, STATIONS2: the A C B D elevator at St Nicholas Avenue stands in a green frame: p.frame 'green')
+  const W = 2.3, L = 2.6, H = 4.4, s = seg(q, 2, 1), fr = p.frame === 'green' ? 'subGreen' : 'stainless';
   M.add('granite', rbox(W + 0.16, 0.12, L + 0.16, 0.01, 0, 0.06, 0, s));
   for (const [x, z] of [[-W / 2, -L / 2], [W / 2, -L / 2], [-W / 2, L / 2], [W / 2, L / 2], [0, -L / 2], [-W / 2, 0], [W / 2, 0]]) M.add(fr, rbox(0.12, H - 0.12, 0.12, 0.01, x, 0.12 + (H - 0.12) / 2, z, s));
   for (const y of [0.17, 1.6, 3.0, H - 0.06]) {

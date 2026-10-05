@@ -44,7 +44,7 @@ The smaller banks (`basis/`, `data/`, `fonts/`, `luts/`, `settings/`) are commit
 ### Download (recommended)
 
 ```
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.0 \
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 ```
@@ -131,7 +131,7 @@ Options:
 - `--link` hardlinks `Content/` instead of copying it; the output must be on the same volume.
 - `--skip-content` keeps `Content/` from the previous build.
 - `--zip` also writes `release/BoundlessNYC-<version>-<platform>.zip`: the release folder with `Content/`, as
-  published on GitHub Releases (1.3 GB for Windows x64; GitHub limits one release asset to 2 GiB).
+  published on GitHub Releases (about 2 GB for Windows x64; GitHub limits one release asset to 2 GiB).
 - `--platform linux` cross-packages a Linux x64 server. It downloads that Electron runtime once. It has not been
   tested for this release.
 
@@ -193,7 +193,7 @@ server headless at 1280 × 720 and stops it afterwards, and without it the scrip
 listening:
 
 ```
-bash tools/figures/tutorial_images.sh --server release/BoundlessNYC_0.2.0_win64/BoundlessNYC.exe [--python python]
+bash tools/figures/tutorial_images.sh --server release/BoundlessNYC_0.2.1_win64/BoundlessNYC.exe [--python python]
 ```
 
 ## Offline rendering in Blender
@@ -205,7 +205,7 @@ steps need `usd-core`, `numpy` and `pillow`. The film-detail street trees and th
 `Blender/bxwin/rooms_atlas.png`.
 
 ```
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.0 --include "Blender/*" --local-dir .cache/hf
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 --include "Blender/*" --local-dir .cache/hf
 export BXTREES_ASSETS=$PWD/.cache/hf/Blender/bxtrees
 node boundlessjs/tools/ar34/export/harvest.mjs --shots <shot> --frames 0,54,107 --out <harvest dir>   # 1. harvest
 uv run --no-project --with usd-core --with numpy --with pillow \

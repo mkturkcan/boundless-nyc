@@ -24,10 +24,12 @@ import { pkMat, pkGlow, pkFace, pkGlass, pkEnvSync, pkMatsReady, pkFarMat, pkTin
 import * as ART1 from './pkArt.js';
 import * as ART2 from './pkArt2.js';
 import { regTex, mutTex, poleTagTex, poleGrimeTex, stripTex, busDiscTex, busRouteTex, busDestTex, busTimesTex, meshTex, plateBackTex, signsReady } from './pkSigns.js';
-const K = { ...K1, ...K2 };
+const K = { ...K1, ...K2, sub38 };
 const ART = { ...ART1, ...ART2 };
 import { PK_ITEMS, PK_ZONES, PK_CORR } from './pkData.js';
 import { accessDrop } from '../stations/irt125.js';
+// ST38 (STATIONS2): the subway entrances at Lenox and St Nicholas Avenues as built, and the sidewalk at the Lenox corners
+import { ST38, st38Rows, st38Replaces, st38Inside, st38Apply, sub38, sub38SignTex, sub38SubwayTex } from '../stations/subEnt38.js';
 
 const Q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : null;
 export const PK = !(Q && Q.get('pk') === '0');
@@ -96,6 +98,8 @@ export function dropFurniture(wx, wz, f) {
   if (PK && f.k === FURN.SUBWAY_ENTRANCE) for (const [x, z] of IRT125_PTS) if (Math.hypot(wx - x, wz - z) < 3.0) return true;
   // and any compiled piece inside the station's footprints on Broadway's sidewalks (a lamp inside the south foot house)
   if (PK && accessDrop(wx, wz)) return true;
+  // ST38: anything compiled standing in a stair or the elevator's footprint
+  if (PK && st38Inside(wx, wz, 0.3)) return true;
   if (!PK || !DROP.has(f.k)) return false;
   return inZone(wx, wz);
 }
@@ -171,6 +175,8 @@ function matFor(key) {
     if (n === 'busInfo') return pkFace(n, ART.busInfoTex(), { rough: 0.35 });
     if (n === 'sbs') return pkFace(n, ART.sbsTex(), { rough: 0.3, metal: 0.05 });
     if (n === 'stairs') return pkFace(n, ART.stairsTex(), { rough: 0.85 });
+    if (n.startsWith('sub38|')) { const [, ln, dr, nt] = n.split('|'); return pkFace(n, sub38SignTex(ln, dr || '', nt || ''), { rough: 0.35, metal: 0.05 }); }
+    if (n === 'sub38s') return pkFace(n, sub38SubwayTex(), { rough: 0.35, metal: 0.05 });
     if (n.startsWith('subPlate')) return pkFace(n, ART.subPlateTex(n.slice(8) || '23'), { rough: 0.3, metal: 0.05 });
     if (n.startsWith('banner')) return pkFace(n, ART.bannerTex(+n.slice(6) || 0), { rough: 0.8, side: THREE.FrontSide });
     if (n.startsWith('sign')) return pkFace(n, ART.signTex(n.slice(4)), { rough: 0.35, metal: 0.1, emissive: 0xffffff, on: 0 });
@@ -323,8 +329,10 @@ function subRow(r) {
 function bins() {
   if (_bins) return _bins;
   _bins = new Map();
-  for (const r0 of PK_ITEMS) {
-    const r = subRow(r0);
+  for (const r0 of PK_ITEMS.concat(st38Rows())) {
+    // ST38: the stair heads and the kiosk these entrances replace, and the pieces in their footprints, are left out
+    if (ST38 && r0[0] !== 'sub38' && !(r0[4] && r0[4].frame) && ((r0[0] === 'subway' && st38Replaces(r0[1], r0[2])) || st38Inside(r0[1], r0[2], 0.25))) continue;
+    const r = r0[0] === 'sub38' || (r0[4] && r0[4].frame) ? r0 : subRow(r0);
     if (!r) continue;
     const k = `${Math.floor(r[1] / 512)}_${Math.floor(r[2] / 512)}`;
     let b = _bins.get(k);
@@ -383,6 +391,9 @@ function lodUpdate(renderer, cam) {
   }
   if (gone) _cellsLod = _cellsLod.filter((L) => !L.dead);
 }
+// ST38: the walk under the subway entrances (the opening of each stair cut out, the Lenox corners' sidewalk filled in)
+export function apply(tile, ox, oz) { if (PK) st38Apply(tile, ox, oz); }
+
 export function build(group, ctx) {
   if (!PK) return;
   const list = bins().get(`${Math.floor(ctx.ox / 512)}_${Math.floor(ctx.oz / 512)}`);

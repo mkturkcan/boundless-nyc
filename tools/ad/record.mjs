@@ -438,6 +438,7 @@ try {
       }
 
       let frozen = 0, invalid = 0, retorn = 0, lensHit = 0, carJump = 0, carOv = 0;   // carOv: OV32 frames with overlapping vehicle bodies in view
+      let carOff = 0;   // TN38: frames with a vehicle's wheel or centre on a non-road surface in view (main.js __CAR_OFFROAD)
       // WS37: the park water's mirrors per frame (main.js __REC_FRAME `water`): [frame, [body, ray share, mirror weight, drawn]...]
       const waterLog = [], waterSeen = new Map(), evLog = [];
       let waterDrop = 0;
@@ -510,6 +511,7 @@ try {
           if (r.lens) { lensHit++; if (lensHit <= 12) console.log(`     *** frame ${i}: the lens is inside ${r.lens.join(', ')}`); }
           if (r.jumps) { carJump += r.jumps.length; if (carJump <= 12) console.log(`     *** frame ${i}: car jump in view: ${r.jumps.slice(0, 3).join('; ')}`); }
           if (r.ovl) { carOv++; if (carOv <= 12) console.log(`     *** frame ${i}: vehicles overlap in view: ${r.ovl.slice(0, 3).join('; ')}`); }
+          if (r.offr) { carOff++; if (carOff <= 12) console.log(`     *** frame ${i}: vehicle off the carriageway in view: ${r.offr.slice(0, 3).join('; ')}`); }
           if (r.events) evLog.push([i, r.events]);
           if (r.water) {
             waterLog.push([i, r.water]);
@@ -563,6 +565,8 @@ try {
         if (cj) { carJump += cj.length; if (carJump <= 12) console.log(`     *** frame ${i}: car jump in view: ${cj.slice(0, 3).join('; ')}`); }
         const co = i > startAt ? await page.evaluate(() => window.__CAR_OVERLAPS?.() ?? null).catch(() => null) : null;
         if (co) { carOv++; if (carOv <= 12) console.log(`     *** frame ${i}: vehicles overlap in view: ${co.slice(0, 3).join('; ')}`); }
+        const cf = i > startAt ? await page.evaluate(() => window.__CAR_OFFROAD?.() ?? null).catch(() => null) : null;   // TN38
+        if (cf) { carOff++; if (carOff <= 12) console.log(`     *** frame ${i}: vehicle off the carriageway in view: ${cf.slice(0, 3).join('; ')}`); }
         if (!ok) invalid++;
         const stem = isProbe ? `${take.tag}_${g.time}${probeFrames > 1 ? '_' + i : ''}` : `frame_${String(i).padStart(5, '0')}`;
         const file = path.join(outDir, stem + (ok ? '' : '_INVALID') + (isProbe ? '.png' : '.jpg'));
@@ -627,7 +631,7 @@ try {
       const secs = (Date.now() - t0) / 1000;
       await page.evaluate(() => window.__DRESS_HOLD?.(null));   // FP26: the next take re-dresses round its own path
       results.push({ tag: take.tag, outDir, frames: total, secs, frozen, invalid, retorn, probe: isProbe });
-      console.log(`     done ${total} frames in ${secs.toFixed(0)}s (${(secs / Math.max(1, total)).toFixed(2)} s/frame)${frozen ? ` FROZEN x${frozen}` : ''}${invalid ? ` INVALID x${invalid}` : ''}${retorn ? ` RE-SHOT x${retorn}` : ''}${lensHit ? ` LENS-INSIDE x${lensHit}` : ''}${carJump ? ` CAR-JUMP x${carJump}` : ''}${carOv ? ` CAR-OVERLAP x${carOv}` : ''}${waterDrop ? ` REFLECTION-DROPOUT x${waterDrop}` : ''}`);
+      console.log(`     done ${total} frames in ${secs.toFixed(0)}s (${(secs / Math.max(1, total)).toFixed(2)} s/frame)${frozen ? ` FROZEN x${frozen}` : ''}${invalid ? ` INVALID x${invalid}` : ''}${retorn ? ` RE-SHOT x${retorn}` : ''}${lensHit ? ` LENS-INSIDE x${lensHit}` : ''}${carJump ? ` CAR-JUMP x${carJump}` : ''}${carOv ? ` CAR-OVERLAP x${carOv}` : ''}${carOff ? ` CAR-OFFROAD x${carOff}` : ''}${waterDrop ? ` REFLECTION-DROPOUT x${waterDrop}` : ''}`);
     }
     const uniq = [...new Set(errors)];
     if (uniq.length) { console.log('    PAGE ERRORS:'); for (const e of uniq.slice(0, 6)) console.log('      ' + e); }

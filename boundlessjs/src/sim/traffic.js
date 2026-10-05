@@ -368,6 +368,33 @@ const VN36 = typeof location === 'undefined' || new URLSearchParams(location.sea
 // one in sight stands where it is drawn with its d taken from that pose, and every body test counts it. `?vf36=0` as before.
 const VF36 = typeof location === 'undefined' || new URLSearchParams(location.search).get('vf36') !== '0';
 const VF_REC = typeof location !== 'undefined' && new URLSearchParams(location.search).get('record') === '1';
+// TN38 (owner 2026-10-04 on teaser 8's Cycles cut, t8LenoxDive at 0:25: "The red van in bottom left turns by getting on the
+// central sidewalk area in the street"): the van, a cargovan in the kerb lane of Lenox's northbound carriageway, made a
+// U-turn into the southbound one round the south leg's median, its wheels on the median's nose in 59 of the take's 108
+// frames. A connector is one cubic from the car's place at its mouth to the next lane's entry, and nothing kept it on the
+// carriageway: the surface test took six points 1.1 m inside the curve's centre line, so the body's outer side, the first
+// and last eighth of the curve, the rear wheels' off-tracking and the body centre were never tested; when every candidate
+// failed, the last failing one was driven anyway; VT30's wider shapes and both-sides test ran only for the kinds BIGV
+// names, not for the cargovan, step van, box truck 26 or the MTA buses. A junction cluster spans both carriageways of a
+// divided avenue, so a U-turn, a left onto the short link across the median from a far lane, or a continuation onto an arm
+// at the cluster's far side has a median, a nose or a block corner between its ends, and the cubic cut across it. Probe
+// (180 s of the take's boot at t8LenoxDive's first key, every vehicle in the sim, four staged U-turns from the van's lane):
+// 96 vehicles stood with a wheel hub or their centre on a sidewalk, a median or a planting bed, 91 of them on a connector,
+// up to 10 s each. Now every connector is driven in advance the way _placeCar will drive it (VT29's body from its own
+// heading at the mouth: the centre on the curve, the rear axle towed lr behind, the 75 deg bound, the run-out onto the
+// tangent), then lr + 1.5 m into the new lane, and every 0.4 m each wheel hub of the kind (0.12 m further out: the tyre's
+// outer half) and the body centre must be off every non-road surface at the car's level. A failing shape is replaced by
+// the best passing one of a family of asymmetric handles (0.15-1.25 x the chord) with the controls swung 1 m inside to 3 m
+// outside the turn (3 m either way for a U-turn), the widest tightest bend up to the 2.84 lr the kind's lock can follow
+// winning (1 m of extra path costing 2 cm), kept per (edge, direction, lane, next edge, size) for the next car. If none
+// passes, the connector is refused: the car stays at its mouth and takes another continuation, and that continuation is
+// struck from the choices of every car in that lane (a one-way arm left with no way out stands its car down as a dead car,
+// as before). VT30's shapes and lock radius apply to every vehicle over 5.5 m long. Same probe after: 8 vehicles, none on a
+// connector (all on one edge 930 m out whose street runs over a compiled sidewalk); 75 continuations of 3,367 connectors
+// struck, 12 reshaped; the U-turn from the van's lane is refused; the sim's step time unchanged within the noise. The
+// recorder's CAR-OFFROAD check and clearance.mjs's vehicle audit (offRoad below) fail a take with a vehicle's wheel or
+// centre on a non-road surface in view. `?tn38=0` restores the old connectors (the check stays).
+const TN38 = typeof location === 'undefined' || new URLSearchParams(location.search).get('tn38') !== '0';
 // VC36 (g): OV32's last resort let a car held 20 s by a standing body drive through it, in sight too, and a car behind a
 // queue standing across the junction is held that long by a body that is no deadlock at all: FILM 09:13, the owner's case
 // in teaser 4 v3's t4Sheep, a Lincoln on its connector driven into the rear of a box truck standing in a queue (frames
@@ -1194,6 +1221,7 @@ export class Traffic {
       const ne = this.edges.get(o.id);
       if (!ne || ne === car.e) continue;
       if (ne.oneway !== 0 && o.dir !== ne.oneway) continue;
+      if (TN38 && this._tnBad(car, ne, o.dir)) continue;   // TN38: no connector from this lane keeps the body on the carriageway
       // a merged junction cluster spans a divided avenue (arms up to 22 m apart, entries up to
       // 60 m from the exit): only continue onto arms whose entry is within one junction's reach,
       // so the crossing goes exit -> short link piece -> far carriageway instead of one arc over
@@ -2260,7 +2288,7 @@ export class Traffic {
             // VT30: a big vehicle's connector, if its tightest bend is under the 2.84 lr its lock can follow: handles of
             // their own length and the controls swung up to 2 m to the outside of the turn; of the shapes that keep both
             // sides of the body on the road the widest bend (up to what is wanted) wins, 1 m of extra path costing 2 cm
-            if (VT30 && BIGV.test(car.kind)) {
+            if (VT30 && (BIGV.test(car.kind) || (TN38 && this.carHalf(car)[1] > 2.75))) {   // TN38: every vehicle over 5.5 m
               const lrC = car._lr || (car._lr = Math.max(1.25, Math.min(3.4, 0.56 * this.carHalf(car)[1])));
               const want = 2.84 * lrC;
               if (r0 < want) {
@@ -2298,6 +2326,16 @@ export class Traffic {
               car._badNe = ne.id; car.next = null; car.v = Math.min(car.v, 2); continue;
             }
             car._hookN = 0;
+          }
+          // TN38: the connector driven in advance; a shape with a wheel or the body centre off the carriageway is replaced, and
+          // with no shape that keeps the body on it the continuation is refused (the car stays at its mouth, as for a hook)
+          if (TN38 && this.streamer && this.streamer.surfaceInfoAt) {
+            const F = this._tnFit(car, T, p0, p2, hA, hB, chord, `${e.id}:${dir0}:${exLane}>${ne.id}:${car.dir}`);
+            if (!F) {
+              ne.cars.delete(car); car.e = e; car.dir = dir0; car.lane = exLane; car.laneF = lf0; car._lfv = lfv0; car.d = exitD; e.cars.add(car);
+              car._badNe = ne.id; car.next = null; car.v = Math.min(car.v, 2); this.tnRefused = (this.tnRefused || 0) + 1; continue;
+            }
+            T = F;
           }
           // TW27: a connector that doubles back (its end behind its start, or handles pointing apart: a cusp) drove the car
           // out, reversed it along the curve and brought it back, the body spinning (yaw probe: up to 149 deg in a frame).
@@ -2662,6 +2700,11 @@ export class Traffic {
     const c2 = [p2[0] + (2 / 3) * (p1[0] - p2[0]), p2[1], p2[2] + (2 / 3) * (p1[2] - p2[2])];
     car.turn = { p0, c1, c2, p2, len, s: 0, vCap: 3.2 };
     if (TW26) this._turnLUT(car.turn);
+    // TN38: a U-turn whose body would leave the carriageway (a street too narrow to turn in one sweep) is not driven: the
+    // car stands down where it is, as a dead car (VF36 recycles it where no camera sees it)
+    if (TN38 && this.streamer && this.streamer.surfaceInfoAt && this._tnSweep(car, car.turn, [-oldHx, -oldHz])) {
+      car.turn = null; car.dir = -car.dir; car.dead = true; car.v = 0; this.tnStood = (this.tnStood || 0) + 1;
+    }
   }
   // TW27: does this cubic double back? Consecutive tangents more than 100 deg apart (a cusp), or the tangent turning more
   // than 200 deg in all (a loop). A clean corner turns by its bend angle, a few degrees per sample.
@@ -2702,6 +2745,146 @@ export class Traffic {
       T.vCap = Math.min(T.vCap ?? 12, Math.max(1.8, Math.sqrt(2.5 * rMin)));
     }
     return T;
+  }
+  // TN38: the footprint a vehicle stands on, in its own frame: its kind's four wheel hubs (fleet24, FL FR RL RR), else four
+  // points from carHalf
+  _tnFoot(car) {
+    const C = this._tnFootK || (this._tnFootK = {});
+    let f = C[car.kind];
+    if (!f) {
+      const K = this.fleet24 && this.fleet24.kinds && this.fleet24.kinds[car.kind];
+      const H = K && K.meta && K.meta.hubs ? K.meta.hubs.filter((h) => h.id >= 1 && h.id <= 4).sort((a, b) => a.id - b.id) : [];
+      const lab = ['front left wheel', 'front right wheel', 'rear left wheel', 'rear right wheel'];
+      if (H.length === 4) f = H.map((h, i) => [h.p[0], h.p[2], lab[i]]);
+      else { const [hw, hl] = this.carHalf(car), a = Math.max(0.3, hw - 0.25), b = hl * 0.6; f = [[a, b, lab[0]], [-a, b, lab[1]], [a, -b, lab[2]], [-a, -b, lab[3]]]; }
+      if (this.fleet24) C[car.kind] = f;
+    }
+    return f;
+  }
+  // TN38: the non-road surface (sidewalk, median, planting bed, plaza ...) under (x, z) at the level y, or null (a road, no
+  // tile there, or a surface on another level: a street under a deck, a deck over a street)
+  _tnOff(x, z, y) {
+    const s = this.streamer.surfaceInfoAt(x, z, 0);
+    return s && !s.road && Math.abs(s.y - y) < 1.5 ? s.kind : null;
+  }
+  // TN38: drive cubic C the way the car will (_placeCar's VT29 body: the centre on the curve, the rear axle towed lr behind,
+  // the 75 deg bound, the run-out onto the tangent over the last 2.2 lr + 1 m), then lr + 1.5 m on along hB into the new
+  // lane; the number of samples (every 0.4 m) with a wheel (its hub 0.12 m further out: the tyre's outer half) or the body
+  // centre on a non-road surface, counting up to `stop`
+  _tnSweep(car, C, hB, stop = 1) {
+    const foot = this._tnFoot(car).map(([a, b]) => [a + Math.sign(a) * 0.12, b]), lr = car._lr || (car._lr = Math.max(1.25, Math.min(3.4, 0.56 * this.carHalf(car)[1])));
+    const N = 72, P = new Float64Array((N + 1) * 4);   // x, z, tangent yaw, and the level the car is drawn at (a grade)
+    let Ltot = 0;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, u = 1 - t, a0 = u * u * u, a1 = 3 * u * u * t, a2 = 3 * u * t * t, a3 = t * t * t;
+      const x = a0 * C.p0[0] + a1 * C.c1[0] + a2 * C.c2[0] + a3 * C.p2[0], z = a0 * C.p0[2] + a1 * C.c1[2] + a2 * C.c2[2] + a3 * C.p2[2];
+      const tx = 3 * u * u * (C.c1[0] - C.p0[0]) + 6 * u * t * (C.c2[0] - C.c1[0]) + 3 * t * t * (C.p2[0] - C.c2[0]);
+      const tz = 3 * u * u * (C.c1[2] - C.p0[2]) + 6 * u * t * (C.c2[2] - C.c1[2]) + 3 * t * t * (C.p2[2] - C.c2[2]);
+      P[i * 4] = x; P[i * 4 + 1] = z; P[i * 4 + 2] = tx * tx + tz * tz > 1e-12 ? Math.atan2(tx, tz) : (i ? P[i * 4 - 2] : Math.atan2(C.c1[0] - C.p0[0], C.c1[2] - C.p0[2]));
+      P[i * 4 + 3] = a0 * C.p0[1] + a1 * C.c1[1] + a2 * C.c2[1] + a3 * C.p2[1];
+      if (i) Ltot += Math.hypot(x - P[i * 4 - 4], z - P[i * 4 - 3]);
+    }
+    const wrap = (a) => a - Math.round(a / (2 * Math.PI)) * 2 * Math.PI, Le = 2.2 * lr + 1;
+    // the body as it stands at the mouth (a car off a short link or a lane change is not yet square to its lane)
+    const q0 = car._pose, own = q0 && car._yawL !== undefined && Math.hypot(q0[0] - C.p0[0], q0[2] - C.p0[2]) < 1.5;
+    let yawL = own ? car._yawL : P[2], rx = C.p0[0] - Math.sin(yawL) * lr, rz = C.p0[2] - Math.cos(yawL) * lr, qx = C.p0[0], qz = C.p0[2], s = 0, acc = 0.4, bad = 0;
+    const step = (x, z, yawT, inTurn, y) => {
+      const ds = Math.hypot(x - qx, z - qz);
+      if (ds < 1e-6) return false;
+      s += ds;
+      let yN = Math.atan2(x - rx, z - rz);
+      if (Math.abs(wrap(yN - yawT)) > 1.31) { const dy = wrap(yawT - yawL), m = ds / 1.2; yN = yawL + (dy > m ? m : dy < -m ? -m : dy); }
+      if (inTurn) { const rem = Ltot - s; if (rem < Le) yN += wrap(yawT - yN) * Math.min(1, ds / (Math.max(0, rem) + ds)); }
+      yawL = yN; rx = x - Math.sin(yN) * lr; rz = z - Math.cos(yN) * lr; qx = x; qz = z;
+      acc += ds;
+      if (acc < 0.4) return false;
+      acc = 0;
+      const fx = Math.sin(yN), fz = Math.cos(yN);
+      if (this._tnOff(x, z, y)) return true;
+      for (const [a, b] of foot) if (this._tnOff(x + fz * a + fx * b, z - fx * a + fz * b, y)) return true;
+      return false;
+    };
+    for (let i = 1; i <= N; i++) if (step(P[i * 4], P[i * 4 + 1], P[i * 4 + 2], true, P[i * 4 + 3]) && ++bad >= stop) return bad;
+    const yB = Math.atan2(hB[0], hB[1]), run = lr + 1.5;
+    for (let d = 0.25; d <= run; d += 0.25) if (step(C.p2[0] + hB[0] * d, C.p2[2] + hB[1] * d, yB, false, C.p2[1]) && ++bad >= stop) return bad;
+    return bad;
+  }
+  // TN38: the connector this car drives from p0 (heading hA) to p2 (heading hB): T when it keeps the body on the carriageway,
+  // else the best shape that does (kept per `key` for the next car), else null (the continuation is refused, and struck from
+  // the choices of this lane's cars)
+  _tnFit(car, T, p0, p2, hA, hB, chord, key) {
+    const M = this._tnMemo || (this._tnMemo = new Map());
+    if (M.size > 20000) M.clear();   // edges get new ids as tiles stream in again
+    const k = key + (this.carHalf(car)[1] > 2.75 ? 'B' : 'c');
+    const m = M.get(k);
+    if (m === 'bad') return null;
+    if (!this._tnSweep(car, T, hB)) return T;
+    const inn = hA[0] * hB[1] - hA[1] * hB[0] > 0 ? 1 : -1;
+    const n0 = [-hA[1] * inn, hA[0] * inn], n2 = [-hB[1] * inn, hB[0] * inn];
+    const mkS = (f0, f2, sw) => ({ p0, c1: [p0[0] + hA[0] * f0 * chord - n0[0] * sw, p0[1], p0[2] + hA[1] * f0 * chord - n0[1] * sw],
+      c2: [p2[0] - hB[0] * f2 * chord - n2[0] * sw, p2[1], p2[2] - hB[1] * f2 * chord - n2[1] * sw], p2 });
+    if (m) { const C = mkS(m[0], m[1], m[2]); if (!this._turnCusp(C) && !this._tnSweep(car, C, hB)) { this.tnKept = (this.tnKept || 0) + 1; return C; } }
+    const lr = car._lr || (car._lr = Math.max(1.25, Math.min(3.4, 0.56 * this.carHalf(car)[1]))), want = 2.84 * lr;
+    const len0 = this._turnLUT({ ...T }).len, cands = [];
+    const FS = [0.15, 0.3, 0.45, 0.6, 0.8, 1.0, 1.25], SW = Math.abs(hA[0] * hB[0] + hA[1] * hB[1]) > 0.7 ? [-3, -2, -1, 0, 1, 2, 3] : [-1, 0, 1, 2, 3];
+    for (const f0 of FS) for (const f2 of FS) for (const sw of SW) {
+      const C = mkS(f0, f2, sw), L = this._turnLUT({ ...C }), r = L.rMin ?? 1e9;
+      if (r < 1.2) continue;
+      cands.push({ C, f: [f0, f2, sw], s: Math.min(r, want) - 0.02 * Math.max(0, L.len - len0) });
+    }
+    cands.sort((a, b) => b.s - a.s);
+    let tried = 0;
+    for (const q of cands) {
+      if (this._turnCusp(q.C)) continue;
+      if (++tried > 40) break;
+      if (!this._tnSweep(car, q.C, hB)) { M.set(k, q.f); this.tnShaped = (this.tnShaped || 0) + 1; return q.C; }
+    }
+    M.set(k, 'bad');
+    return null;
+  }
+  // TN38: has this lane's continuation onto (ne, odir) been refused (no shape keeps the body on the carriageway)?
+  _tnBad(car, ne, odir) {
+    const M = this._tnMemo;
+    if (!M || !car.e) return false;
+    const lanesDir = car.e.oneway !== 0 ? car.e.lanes : Math.max(1, Math.floor(car.e.lanes / 2));
+    return M.get(`${car.e.id}:${car.dir}:${Math.min(car.lane, lanesDir - 1)}>${ne.id}:${odir}${this.carHalf(car)[1] > 2.75 ? 'B' : 'c'}`) === 'bad';
+  }
+  // TN38: the recorder's CAR-OFFROAD check (main.js __CAR_OFFROAD) and clearance.mjs's vehicle audit: every moving vehicle (a
+  // dead one too) with a wheel hub or its body centre on a non-road surface at its own level, with whether it is in the frame
+  // (its centre or an offending point projects inside it); `all` lists those out of the frame too
+  offRoad(all = false) {
+    const S = this.streamer, cam = this.camera;
+    if (!S || !S.surfaceInfoAt) return null;
+    let onScreen = () => false, cx = 0, cz = 0;
+    if (cam) {
+      cam.updateMatrixWorld();
+      const m = cam.matrixWorldInverse.elements, pr = cam.projectionMatrix.elements;
+      cx = cam.position.x; cz = cam.position.z;
+      onScreen = (x, y, z) => {
+        const vx = m[0] * x + m[4] * y + m[8] * z + m[12], vy = m[1] * x + m[5] * y + m[9] * z + m[13], vz = m[2] * x + m[6] * y + m[10] * z + m[14];
+        if (vz > -0.3) return false;
+        const qx = pr[0] * vx + pr[4] * vy + pr[8] * vz + pr[12], qy = pr[1] * vx + pr[5] * vy + pr[9] * vz + pr[13], qw = pr[3] * vx + pr[7] * vy + pr[11] * vz + pr[15];
+        return Math.abs(qx / qw) < 1 && Math.abs(qy / qw) < 1;
+      };
+    }
+    const out = [];
+    for (const car of this.cars) {
+      const q = car._pose;
+      if (!q || car.manual) continue;
+      const fx = Math.sin(q[3]), fz = Math.cos(q[3]), hits = [], pts = [];
+      const k0 = this._tnOff(q[0], q[2], q[1]);
+      if (k0) { hits.push('centre on ' + k0); pts.push([q[0], q[2]]); }
+      for (const [a, b, l] of this._tnFoot(car)) {
+        const x = q[0] + fz * a + fx * b, z = q[2] - fx * a + fz * b, k = this._tnOff(x, z, q[1]);
+        if (k) { hits.push(l + ' on ' + k); pts.push([x, z]); }
+      }
+      if (!hits.length) continue;
+      const vis = onScreen(q[0], q[1] + 0.8, q[2]) || pts.some((p) => onScreen(p[0], q[1] + 0.2, p[1]));
+      if (!vis && !all) continue;
+      out.push({ id: `${car.kind}#${car.idx}`, kind: car.kind, turn: !!car.turn, dead: !!car.dead, hits, vis, x: +q[0].toFixed(1), z: +q[2].toFixed(1), y: +q[1].toFixed(2),
+        dist: +Math.hypot(q[0] - cx, q[2] - cz).toFixed(0), v: +(car.v || 0).toFixed(1), e: car.e ? car.e.id : null, from: car.turn && car.turnFrom ? car.turnFrom.id : null });
+    }
+    return out;
   }
   // OV32 last resort: car has been held by oc's standing body for 8 s while oc is held by car's (two sweeps: each on the
   // other's path; or an edge car pinned at its mouth that car's body keeps from its own path): neither can move without

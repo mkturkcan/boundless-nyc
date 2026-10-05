@@ -952,6 +952,16 @@ async function boot() {
       }
       return out.length ? out : null;
     };
+    // TN38 (owner 2026-10-04 on t8LenoxDive: "The red van in bottom left turns by getting on the central sidewalk area in the
+    // street"): vehicles in view with a wheel hub or their body centre on a non-road surface (a sidewalk, a median or its
+    // nose, a planting bed, a plaza) at their own level (traffic.js offRoad); the recorder asks once a stepped frame and
+    // reports CAR-OFFROAD, clearance.mjs asks with all = true and fails the shot on one in view
+    window.__CAR_OFFROAD = (all = false) => {
+      if (!traffic || !traffic.offRoad) return null;
+      const L = traffic.offRoad(all);
+      if (!L || !L.length) return null;
+      return all ? L : L.map((c) => `${c.id}${c.turn ? ' (turning)' : ''}${c.dead ? ' (dead)' : ''} ${c.hits.join(', ')} ${c.dist} m away`);
+    };
     // ...and drops the TAA history before a re-shot frame (a void frame must not survive in the history)
     window.__TAA_RESET = () => { if (engine.taa) engine.taa._first = true; return !!engine.taa; };
     // ...and clears the kerb trees whose trunks stand within `r` m of a take's lens path (x,z points) for that take: the
@@ -1059,6 +1069,7 @@ onmessage = async (e) => {
         const lens = o.checks ? window.__LENS_HIT() : null;
         const jumps = o.checks && o.dt > 0 ? window.__CAR_JUMPS(o.dt) : null;
         const ovl = o.checks && o.dt > 0 ? window.__CAR_OVERLAPS() : null;   // OV32
+        const offr = o.checks && o.dt > 0 ? window.__CAR_OFFROAD?.() ?? null : null;   // TN38
         // o.encBoth: the same drawn frame both ways (<name>_blob, <name>_wkr) for an A/B of the two capture paths
         if (o.encBoth) { const d = o.name.lastIndexOf('.'); sendBlob(o.name.slice(0, d) + '_blob' + o.name.slice(d), o); sendWorker(o.name.slice(0, d) + '_wkr' + o.name.slice(d), o); }
         else if (o.enc === 'worker') sendWorker(o.name, o);
@@ -1078,7 +1089,7 @@ onmessage = async (e) => {
         const ev = o.checks && pe ? { ...pe, vg36: V ? V.stats.captures : 0, f24: F24 ? F24.captures || 0 : 0 } : null;   // f24: the fleet's reflection probe (sim/fleet24.js)
         let events = null;
         if (ev) { const last = window.__recEv || ev; events = Object.keys(ev).filter((k) => ev[k] !== last[k]); window.__recEv = ev; if (!events.length) events = null; }
-        return { lens, jumps, ovl, water, events, pumped, frames: engine.frames, threw,
+        return { lens, jumps, ovl, offr, water, events, pumped, frames: engine.frames, threw,
           t: { wait: +(T1 - T0).toFixed(1), step: +(T2 - T1).toFixed(1), settle: +(T3 - T2).toFixed(1), acc: +(T4 - T3).toFixed(1), cap: +(T5 - T4).toFixed(1) } };
       } catch (e) {
         err = String(e && e.stack || e).slice(0, 400);

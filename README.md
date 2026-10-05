@@ -51,7 +51,7 @@ python PythonAPI/examples/intersection_120_amsterdam.py
 ```
 npm install && (cd boundlessjs && npm install)
 # binary banks (tiles, models, textures): download, or compile the tiles (BUILDING.md)
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.0 \
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 cd boundlessjs && npm run dev        # http://127.0.0.1:5219
@@ -156,7 +156,7 @@ BoundlessNYC, the compiled city or imagery rendered with it, please cite Boundle
   author  = {Turkcan, Mehmet Kerem},
   title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.2.0},
+  version = {0.2.1},
   url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```

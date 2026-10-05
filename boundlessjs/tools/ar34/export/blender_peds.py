@@ -197,6 +197,12 @@ def _mesh(H, usd_dir, A, meta, bn, li, kind, vi, pm, night, sss):
     keep = np.ones(len(idx), bool)
     pr = part >= 10
     if pr.any(): keep[pr] = ((pm >> (part[pr] - 10)) & 1) == 1
+    # BX-FIX (2026-10-04): t7ArchCrane's walkers crashed Blender twice (SIGSEGV in the custom normals below): a face with a
+    # repeated corner (a degenerate triangle of a LOD mesh) or a corner past the vertices is invalid geometry for Blender
+    nvv = len(G['position'])
+    bad = (idx[:, 0] == idx[:, 1]) | (idx[:, 1] == idx[:, 2]) | (idx[:, 0] == idx[:, 2]) | (idx.max(axis=1) >= nvv)
+    if (bad & keep).any(): _log('degenerate', key, int((bad & keep).sum()))
+    keep &= ~bad
     idx, slot, cls, part = idx[keep], slot[keep], cls[keep], part[keep]
     uvv = G['uv']
     tile = np.floor(uvv[idx, 0].mean(axis=1)).astype(int)
@@ -351,6 +357,21 @@ def after_import(ctx):
         P = D['M'][k][frames][:, 12:15]
         return bool((np.linalg.norm(P - cp[frames], axis=1) < rsh).any())
     sel = [k for k in range(W) if show[k, frames].any() and (vis[k, frames].any() or near(k))]
+    # PIPEFIX (2026-10-05): the same rule per frame. A walker of the take's set that is out of view and further than
+    # --pedsshadow from the lens for --pedskeep frames either side (4) is hidden at that frame (hide_render keyed with the
+    # walker's own presence), so Cycles leaves it out of that frame's sync (its skinned mesh, attributes and BVH; the
+    # walkers were 3.8 s of t7StreetGlide's 6.8 s sync per frame, 41 % of their walker-frames are culled, the frame
+    # 14.0 -> 13.0 s). --pedskeep -1: every walker of the set at every frame, as before.
+    pk = int(opt('pedskeep', '4'))
+    keepd = None
+    if pk >= 0 and cp is not None:
+        nn = min(nF, len(cp))
+        kp = vis[:, :nn].copy()
+        kp |= np.linalg.norm(D['M'][:, :nn, 12:15] - cp[None, :nn], axis=2) < rsh
+        keepd = kp.copy()
+        for d_ in range(1, pk + 1):
+            keepd[:, d_:] |= kp[:, :-d_]; keepd[:, :-d_] |= kp[:, d_:]
+        if nn < nF: keepd = np.concatenate([keepd, np.ones((W, nF - nn), bool)], axis=1)
     pmax = int(opt('pedsmax', '0') or 0)
     if pmax and len(sel) > pmax:   # nearest first
         cam = sc.camera
@@ -394,6 +415,7 @@ def after_import(ctx):
     T['pose_build_s'] = round(time.time() - t1, 1)
     # pass 2: keyframes, meshes
     tk = tm = tv = 0.0
+    nhid_cull = 0
     for (k, bn, vi, pm, li, B, S, wid, ao) in made:
         nb = len(S['bones'])
         t2 = time.time()
@@ -427,7 +449,8 @@ def after_import(ctx):
             if np.ptp(bt[:, b, :], axis=0).max() < 1e-6: pbs[name].location = bt[0, b].tolist()
             else:
                 for d in range(3): _curve(cb, f'pose.bones["{name}"].location', d, fr, bt[:, b, d])
-        hid = (~show[k, frames]).astype(np.float32)
+        hid = (~(show[k, frames] & keepd[k, frames]) if keepd is not None else ~show[k, frames]).astype(np.float32)
+        nhid_cull += int((show[k, frames] & ~(keepd[k, frames] if keepd is not None else show[k, frames])).sum())
         tint = D['w_tint'][k]
         tk += time.time() - t2
         for kind in ('opaque', 'hair'):
@@ -445,6 +468,7 @@ def after_import(ctx):
                 mo.hide_render = bool(hid[0])
                 _curve(_channelbag(mo, mo.name), 'hide_render', 0, fr, hid, interp=0)
             if kind == 'hair': mo.visible_shadow = True
+    T['culled_walker_frames'] = nhid_cull; T['walker_frames'] = int(sum(int(show[k, frames].sum()) for k in sel))
     T['keys_s'] = round(tk, 1); T['mesh_s'] = round(tm, 1); T['vgroups_s'] = round(tv, 1)
     T['meshes'] = len([m for m in bpy.data.meshes if m.name.startswith('ped_')])
     T['materials'] = len([m for m in bpy.data.materials if m.name.startswith('ped_')])

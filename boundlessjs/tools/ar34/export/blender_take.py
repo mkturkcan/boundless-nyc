@@ -14,7 +14,7 @@
 # written as the web takes are: frame_%05d.jpg, JPEG q95, 2560x1440, into boundlessjs/shots/ad/clips_cyc/<shot>/ by default.
 # Existing frames are kept (a take is never overwritten without --overwrite). Each frame calls the hooks' frame(ctx, f).
 # Prints a TAKE_FRAME line per frame and TAKE_STATS at the end; take.json in the frames' folder holds the same.
-import os, sys, time, json
+import os, sys, time, json, math
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 def opt(n, d=None):
@@ -66,6 +66,24 @@ log = {'shot': shot, 'usd': BR.USD, 'frames': len(frames), 'samples': sc.cycles.
        'mblur': sc.render.motion_blur_shutter if sc.render.use_motion_blur else 0, 'mbpos': sc.render.motion_blur_position,
        'setup_s': round(t_setup, 1), 'setup': {k: v for k, v in T.items() if k != 'start'}, 'per_frame': []}
 overwrite = opt('overwrite') is not None
+# BX-FIX (2026-10-04): every frame's depth (blender_light's BXFIX_depth node) and camera into <outdir>/_depth/ for
+# bx_temporal.py (the night takes' temporal filter); the camera at the shutter's middle (the frame's colour is the
+# average over [f - 0.5, f] with --mbpos END)
+depth_dir = os.path.join(outdir, '_depth'); cams = {}
+dnode = sc.node_tree.nodes.get('BXFIX_depth') if sc.node_tree else None
+if dnode is not None and opt('nodepthout') is None:
+    os.makedirs(depth_dir, exist_ok=True); dnode.base_path = depth_dir + os.sep; dnode.mute = False
+    try: cams = json.load(open(os.path.join(depth_dir, 'cams.json')))
+    except Exception: cams = {}
+    cams.setdefault('res', [sc.render.resolution_x, sc.render.resolution_y]); cams.setdefault('frames', {})
+def cam_rec(f):
+    sh = sc.render.motion_blur_shutter if sc.render.use_motion_blur else 0.0
+    t = f - 0.5 * sh if sc.render.motion_blur_position == 'END' else f
+    fi = int(math.floor(t)); sc.frame_set(fi, subframe=t - fi)
+    cam = sc.camera
+    rec = {'m': [list(r) for r in cam.matrix_world], 'vf': [list(v) for v in cam.data.view_frame(scene=sc)]}
+    sc.frame_set(f)
+    return rec
 t_all = time.time()
 for f in frames:
     path = os.path.join(outdir, f'frame_{f:05d}.jpg')
@@ -79,6 +97,9 @@ for f in frames:
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
     rec = {'frame': f, 'secs': round(time.time() - t1, 2), 'render': round(time.time() - t2, 2)}
+    if dnode is not None and not dnode.mute:
+        cams['frames'][str(f)] = cam_rec(f)
+        json.dump(cams, open(os.path.join(depth_dir, 'cams.json'), 'w'))
     log['per_frame'].append(rec)
     print('TAKE_FRAME ' + json.dumps(rec), flush=True)
     json.dump(log, open(os.path.join(outdir, logname), 'w'), indent=1)

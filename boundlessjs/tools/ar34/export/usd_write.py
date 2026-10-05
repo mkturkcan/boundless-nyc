@@ -32,6 +32,7 @@ ap.add_argument('--ground', default='drop', choices=['drop', 'lift'], help='drop
 ap.add_argument('--nokeys', action='store_true', help='no key-frame roots (dyn_<shot>_f<frame>), only the take roots')
 ap.add_argument('--hooks', default=None, help='hook modules for this run (comma separated), replacing HOOKS')
 ap.add_argument('--nohooks', action='store_true')
+ap.add_argument('--coplanar', default='fix', choices=['fix', 'warn', 'off'], help='BX-FIX usd_coplanar.py: overlays lifted, interiors under their roofs, coplanar pairs resolved; fix fails the write when a pair is left, warn only reports')
 A, A_rest = ap.parse_known_args()
 t_start = time.time()
 IN, OUT = A.inp, A.out
@@ -645,7 +646,14 @@ def author_ground(stage, path, gid, mats, matrix=None, far=False):
         # BX-SEQ: the same-kind stacks resolved from above (ground_resolve): a triangle the later ones cover entirely is
         # dropped, the kept ones that still overlap are layered 2 mm apart; no jitter, so the open road keeps one height and
         # its unwelded triangles meet edge to edge
-        keep, lift = ground_resolve(P[I], kind)
+        keep, lift = ground_resolve(P[I], kind, step=1.0)
+        # BX-FIX: the same-kind layers 0.35 mm apart (they were 2 mm apart, so a third layer of asphalt stood at the bus
+        # lane's 6 mm and a fifth over it, and the street kit's repave 1.5 mm over the road had the road's layers poking
+        # through it: the triangles in the Lenox junction); what still comes within 3 mm of another kind or an overlay is
+        # moved by usd_coplanar.py's audit (each ground kind is its own owner there)
+        mr = float(lift.max()) if len(lift) else 0.0
+        lift = lift * 0.00035
+        stats['ground_max_layers'] = max(stats.get('ground_max_layers', 0), int(mr))
         off += lift
         stats['ground_dropped'] = stats.get('ground_dropped', 0) + int((~keep).sum())
         stats['ground_layered'] = stats.get('ground_layered', 0) + int((lift > 0).sum())
@@ -926,8 +934,47 @@ def far_filter(gid, mats, pts, R, sink=1.0, maxedge=100.0, tiles=None):
     stats['far_tris'] = stats.get('far_tris', 0) + int(len(tri_mi)); stats['far_tris_dropped'] = stats.get('far_tris_dropped', 0) + int((~keep).sum())
     return G['ntri']
 
+# BX-FIX (2026-10-04): usd_coplanar.py on the authored static layer: the overlays lifted by their depth pull, the facade
+# kit's interiors brought under their roofs, every coplanar pair of different owners resolved (lifts on the shared /_geo
+# points and the ground's world points), then audited again; counts in stats['coplanar'], the overlay and interior
+# materials in bx_fix.json for the Blender side (blender_fix.py)
+import usd_coplanar
+COPLANAR_FAIL = []
+CAMS_OF = {}
+def coplanar_pass(st_stage, fn, objs, Sd, ground_paths, lens=None, cams=None):
+    def gpts(path):
+        a = UsdGeom.Mesh(st_stage.GetPrimAtPath(path)).GetPointsAttr().Get()
+        return np.asarray(a, dtype=np.float64) if a is not None else None
+    def set_geo(gid, P):
+        pr = geo_stage.GetPrimAtPath(f'/_geo/g{gid}')
+        if not pr: return
+        m = UsdGeom.Mesh(pr); P = P.astype(np.float32)
+        m.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(np.ascontiguousarray(P)))
+        m.GetExtentAttr().Set([Gf.Vec3f(*map(float, P.min(axis=0))), Gf.Vec3f(*map(float, P.max(axis=0)))])
+    def set_ground(path, P):
+        m = UsdGeom.Mesh(st_stage.GetPrimAtPath(path)); P = P.astype(np.float32)
+        m.GetPointsAttr().Set(Vt.Vec3fArray.FromNumpy(np.ascontiguousarray(P)))
+        m.GetExtentAttr().Set([Gf.Vec3f(*map(float, P.min(axis=0))), Gf.Vec3f(*map(float, P.max(axis=0)))])
+    st = usd_coplanar.run([(i, o) for i, o in enumerate(objs)], Sd.get('pools') or [], Sd.get('instanced') or [], load_geo, MATS,
+                          ground_paths, gpts, set_geo, set_ground, log=print, lens=lens, cams=cams)
+    bf = os.path.join(OUT, 'bx_fix.json')
+    try: J = json.load(open(bf))
+    except Exception: J = {}
+    J['overlay_mids'] = sorted(set(J.get('overlay_mids', [])) | set(st.pop('overlay_mids')))
+    J['interior_mids'] = sorted(set(J.get('interior_mids', [])) | set(st.pop('interior_mids')))
+    J.setdefault('coplanar', {})[fn] = st
+    json.dump(J, open(bf, 'w'), indent=1)
+    stats.setdefault('coplanar', {})[fn] = st
+    print('[coplanar] %s: %d triangles, rules %d (street kit %d), interiors %d vertices under %d roofs (max %.3f m), audit rounds %s, unresolved %d in view (%d sub-pixel, %d same-prototype, %d out of view), %.0f s'
+          % (fn, st['tris'], st['rule_tris'], st['rule_sk_tris'], st['clamped_vertices'], st['clamped_buildings'], st['max_drop_m'],
+             ' -> '.join(str(r.get('close')) for r in st.get('rounds', [])), st['unresolved'], st.get('unresolved_subpixel', 0), st.get('unresolved_same_geo', 0), st.get('unresolved_far', 0), st['secs']), flush=True)
+    if st['unresolved']:
+        print('[coplanar] UNRESOLVED coplanar pairs in %s: %d %s at %s' % (fn, st['unresolved'], st.get('unresolved_pairs'), st.get('unresolved_at')), flush=True)
+        COPLANAR_FAIL.append(fn)
+
 def write_static(Sd, fn, lens=None):
     t0 = time.time()
+    lens3 = [(p_[0], 0.0, p_[1]) for p_ in lens] if lens else None   # BX-FIX: the lens path for usd_coplanar.py (x, -, z)
     HIDE_BIDS.clear(); HIDE_BIDS.update({int(k): v for k, v in (Sd.get('hide') or {}).items()})
     for k in [k for k in _hide_cache if isinstance(k, tuple)]: del _hide_cache[k]
     st_stage = Usd.Stage.CreateNew(os.path.join(OUT, fn))
@@ -959,6 +1006,7 @@ def write_static(Sd, fn, lens=None):
         if len(L) >= 3:
             author_instancer(st_stage, f'/World/City/inst{gi}_g{gid}', gid, list(mats), [objs[i]['matrix'] for i in L])
             done.update(L)
+    ground_paths = {}   # BX-FIX: the ground meshes (author_ground: world points) for usd_coplanar.py
     for i, o in enumerate(objs):
         if o['geo'] < 0 or i in done: continue
         name = ident(o['name'].split(' < ')[0])
@@ -966,7 +1014,9 @@ def write_static(Sd, fn, lens=None):
         wst = None
         if any(mat_world(m) or mat_uses(m, 'matId') for m in o['mats'] if m >= 0):
             wst = world_uv(G, o.get('matrix'), planar='matId' in G)
-        author_mesh(st_stage, f"/World/{'Far' if o.get('far') else 'City'}/o{i}_{name}", o['geo'], o['mats'], matrix=o.get('matrix'), world_st=wst, far=bool(o.get('far')))
+        path_ = f"/World/{'Far' if o.get('far') else 'City'}/o{i}_{name}"
+        author_mesh(st_stage, path_, o['geo'], o['mats'], matrix=o.get('matrix'), world_st=wst, far=bool(o.get('far')))
+        if not o.get('far') and 'matId' in G and any(mat_uses(x, 'matId') for x in o['mats'] if x >= 0): ground_paths[i] = path_
     PP = POOL_PRIMS.setdefault(fn, {})
     for p in Sd['pools']:
         path = f"/World/Pools/{ident(p['name'])}"
@@ -976,6 +1026,7 @@ def write_static(Sd, fn, lens=None):
         UsdGeom.Scope.Define(st_stage, '/World/Kit')
         for j, s_ in enumerate(Sd['instanced']):
             author_instancer(st_stage, f"/World/Kit/k{j}_{ident(s_['name'].split(' < ')[0], 30)}", s_['geo'], s_['mats'], s_['matrices'], s_.get('colors'))
+    if A.coplanar != 'off': coplanar_pass(st_stage, fn, objs, Sd, ground_paths, lens=lens3, cams=CAMS_OF.get(fn))   # BX-FIX
     run_hooks('static', st_stage)   # BX hooks
     st_stage.GetRootLayer().Save()
     stats.setdefault('secs_static', {})[fn] = round(time.time() - t0, 1)
@@ -1001,7 +1052,9 @@ for shot in SHOTS:
     sf = man['shots'][shot].get('staticFile')
     if sf and os.path.exists(os.path.join(IN, sf)):
         Sd = S if sf == 'static.json' else json.load(open(os.path.join(IN, sf)))
-        lens = [(c['m'][12], c['m'][14]) for c in json.load(open(os.path.join(IN, man['shots'][shot]['camFile'])))]
+        cams_ = json.load(open(os.path.join(IN, man['shots'][shot]['camFile'])))
+        CAMS_OF[f'static_{shot}.usdc'] = cams_   # BX-FIX: the frames' cameras for usd_coplanar.py's in-view test
+        lens = [(c['m'][12], c['m'][14]) for c in cams_]
         STATIC_OF[shot] = write_static(Sd, f'static_{shot}.usdc', lens=lens)
     else:
         STATIC_OF[shot] = 'static.usdc'
@@ -1304,3 +1357,6 @@ run_hooks('finish')   # BX hooks
 json.dump(stats, open(os.path.join(OUT, 'write_stats.json'), 'w'), indent=1)
 print(json.dumps({k: v for k, v in stats.items() if k != 'bytes'}, indent=1))
 print('layers MB', {k: round(v / 1e6, 1) for k, v in size.items()}, 'textures MB', round(tex_bytes / 1e6, 1))
+if COPLANAR_FAIL and A.coplanar == 'fix':   # BX-FIX: loud, after every layer is saved (the batch marks the USD stage failed)
+    print('COPLANAR FAIL: unresolved coplanar pairs in ' + ', '.join(COPLANAR_FAIL) + ' (stats coplanar; --coplanar warn to keep going)', flush=True)
+    sys.exit(4)

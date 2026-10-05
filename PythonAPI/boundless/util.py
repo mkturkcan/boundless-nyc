@@ -5,7 +5,7 @@ import json
 import math
 from typing import Iterable, List, Optional, Sequence, Tuple
 
-from .geometry import Location, Transform, Vector3D
+from .geometry import BoundingBox, Location, Rotation, Transform, Vector3D
 
 
 def camera_intrinsics(width: int, height: int, fov: float) -> List[List[float]]:
@@ -84,3 +84,66 @@ def draw_boxes_rgb(image, labels, color_of=None, thickness: int = 2):
         a[y0:y1, x0:x0 + thickness] = c
         a[y0:y1, max(x0, x1 - thickness):x1] = c
     return a
+
+
+# ---------------------------------------------------------------- 3D boxes and KITTI
+KITTI_TYPES = {"car": "Car", "truck": "Truck", "bus": "Bus", "pedestrian": "Pedestrian"}
+
+
+def label_vertices(label) -> Optional[List[Location]]:
+    """The 8 world corners of an ObjectLabel's 3D box, or None when the label has no 3D pose. A label's `location` is
+    the bottom centre of its box (on the ground), `extent` its half sizes (x along its heading), `yaw` its heading
+    (0 when the label has none, as for standing pedestrians)."""
+    if label.location is None or label.extent is None:
+        return None
+    box = BoundingBox(Location(0.0, 0.0, label.extent.z), label.extent)
+    return box.get_world_vertices(Transform(label.location, Rotation(yaw=label.yaw or 0.0)))
+
+
+def kitti_calib(width: int, height: int, fov: float) -> str:
+    """The text of a KITTI calib file for a camera with horizontal field of view `fov`: P0..P3 = K [I | 0],
+    R0_rect and the two Tr matrices identity (the labels are already in the camera frame)."""
+    K = camera_intrinsics(width, height, fov)
+    P = [K[0][0], 0.0, K[0][2], 0.0, 0.0, K[1][1], K[1][2], 0.0, 0.0, 0.0, 1.0, 0.0]
+    fmt = lambda vals: " ".join(f"{v:.12e}" for v in vals)
+    eye3, eye34 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0], [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+    lines = [f"P{i}: {fmt(P)}" for i in range(4)]
+    lines += [f"R0_rect: {fmt(eye3)}", f"Tr_velo_to_cam: {fmt(eye34)}", f"Tr_imu_to_velo: {fmt(eye34)}"]
+    return "\n".join(lines) + "\n"
+
+
+def _wrap_pi(a: float) -> float:
+    return (a + math.pi) % (2.0 * math.pi) - math.pi
+
+
+def kitti_object(label, camera: Transform, types: Optional[dict] = None) -> Optional[str]:
+    """One line of a KITTI label_2 file for an ObjectLabel seen by a camera at `camera` (the sensor's world
+    transform, SensorData.transform), or None when its class is not in `types` (default KITTI_TYPES), it has no 3D
+    pose, or its box centre is behind the camera.
+
+    Fields: type, truncated (0 or 1), occluded (0 visible, 1 partly, 2 largely occluded, 3 unknown: needs the
+    camera's `amodal` attribute), alpha, the visible 2D box (left, top, right, bottom), dimensions (height, width,
+    length), the bottom centre in camera coordinates (x right, y down, z forward) and rotation_y. KITTI assumes a
+    level camera; under a pitched camera the heading is projected onto the camera's x-z plane."""
+    kind = (types or KITTI_TYPES).get(label.class_name)
+    if kind is None or label.location is None or label.extent is None:
+        return None
+    p = camera.inverse_transform_point(label.location)          # x forward, y left, z up
+    x, y, z = -p.y, -p.z, p.x                                   # KITTI camera: x right, y down, z forward
+    if z <= 0.0:
+        return None
+    m = camera.rotation.matrix()
+    yaw = math.radians(label.yaw or 0.0)
+    f = (math.cos(yaw), math.sin(yaw), 0.0)                     # the object's heading in the world
+    fb = [m[0][k] * f[0] + m[1][k] * f[1] + m[2][k] * f[2] for k in range(3)]   # ... in the camera body frame
+    ry = math.atan2(-fb[0], -fb[1])                             # heading (cos ry, 0, -sin ry) in KITTI camera axes
+    alpha = _wrap_pi(ry - math.atan2(x, z))
+    if label.occlusion is None:
+        occluded = 3
+    else:
+        occluded = 0 if label.occlusion < 0.1 else (1 if label.occlusion < 0.5 else 2)
+    bx, by, bw, bh = label.bbox
+    e = label.extent
+    vals = [1.0 if label.truncated else 0.0, occluded, alpha, bx, by, bx + bw, by + bh,
+            2.0 * e.z, 2.0 * e.y, 2.0 * e.x, x, y, z, _wrap_pi(ry)]
+    return kind + " " + " ".join(f"{v:.2f}" if isinstance(v, float) else str(v) for v in vals)

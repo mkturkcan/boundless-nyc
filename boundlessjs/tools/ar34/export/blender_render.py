@@ -33,6 +33,7 @@ HOOKS = [
     'blender_windows',   # BX-WIN: the tile facades' windows per pixel (the bake + the web's grid), the kit's thin glass, the rooms' glow (--nowin off; BXW_Params for BX-LIGHT)
     'blender_light',   # BX-LIGHT: time of day, street and vehicle lamps, emission, the web's film look (with --harvest <dir>; --nolight off)
     'blender_peds',    # BX-PEDS: the walkers from peds_<shot>.npz (armatures, keyframed poses, skin / cloth / hair materials; --nopeds off)
+    'blender_fix',     # BX-FIX: the writer's overlays cast no shadows, the kit's interiors culled from outside (bx_fix.json; --nofix off)
 ]
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import importlib, traceback
@@ -216,9 +217,20 @@ else:
     cy.device = 'CPU'
     sc.render.threads_mode = 'FIXED'; sc.render.threads = int(opt('threads', '48'))
 cy.samples = SAMPLES
-cy.use_adaptive_sampling = True; cy.adaptive_threshold = 0.01
-cy.use_denoising = True
-cy.denoiser = 'OPTIX' if not CPU else 'OPENIMAGEDENOISE'
+cy.use_adaptive_sampling = float(opt('adaptive', '0.01')) > 0; cy.adaptive_threshold = max(1e-4, float(opt('adaptive', '0.01')))
+if opt('minspp'): cy.adaptive_min_samples = int(opt('minspp'))
+cy.use_denoising = opt('denoiser', 'x') != 'none'
+cy.denoiser = {'oidn': 'OPENIMAGEDENOISE', 'optix': 'OPTIX'}.get(opt('denoiser', ''), 'OPTIX' if not CPU else 'OPENIMAGEDENOISE')
+# BX-FIX (2026-10-04): the sampling and denoise knobs for the takes (--seed, --animseed, --clampind, --clampdir, --denoiser
+# none|optix|oidn, --adaptive (0: off), --minspp; diagnostics: the takes keep the defaults, their night samples come from
+# bx_render_all.mjs --nightspp; docs/notes/ar34-bx-fix.md)
+cy.seed = int(opt('seed', '0')); cy.use_animated_seed = opt('animseed') is not None
+if opt('clampind'): cy.sample_clamp_indirect = float(opt('clampind'))
+if opt('clampdir'): cy.sample_clamp_direct = float(opt('clampdir'))
+try:
+    cy.denoising_input_passes = 'RGB_ALBEDO_NORMAL'
+    if cy.denoiser == 'OPENIMAGEDENOISE': cy.denoising_prefilter = 'ACCURATE'; cy.denoising_quality = 'HIGH'
+except Exception: pass
 cy.max_bounces = 8; cy.diffuse_bounces = 3; cy.glossy_bounces = 3; cy.transparent_max_bounces = 16; cy.transmission_bounces = 6
 cy.caustics_reflective = False; cy.caustics_refractive = False
 cy.blur_glossy = 1.0

@@ -18,6 +18,9 @@
 //   (c) per frame, every pair of vehicles whose DRAWN bodies overlap (fleet24's LOD0 front body on the pool's instance
 //       matrix, an articulated vehicle's rear body on its pivot and bend as fleet24 draws it), with the sim's own carHalf
 //       box overlap beside it, whether either is in view and how deep.
+//   (d) TN38: per frame, every moving vehicle with a wheel hub or its body centre on a non-road surface (a sidewalk, a median
+//       or its nose, a planting bed, a plaza: traffic.js offRoad), with whether it is in view; one in view within 400 m fails
+//       the shot, and so does one on a connector (turning) out of view within 700 m of the lens; the others are listed.
 // Geometry is what the frame draws: every visible Mesh, InstancedMesh (the instancer's culled pools, fleet24's render sets,
 // the crowd), BatchedMesh and SkinnedMesh (bind pose) on the camera's layers, in world space through its matrixWorld and
 // instance matrices, the corridor round the path only. Not audited (listed in the report): geometry instanced through custom
@@ -654,6 +657,11 @@ function pageLib() {
     rec.ms[1] = +(performance.now() - t1).toFixed(0);
     rec.pos = [+cam.position.x.toFixed(2), +cam.position.y.toFixed(2), +cam.position.z.toFixed(2)];
     if (wantVeh) rec.veh = vehOverlaps();
+    // TN38: every moving vehicle with a wheel hub or its body centre on a non-road surface (traffic.js offRoad), in view or not
+    if (wantVeh) {
+      const L = window.__CAR_OFFROAD ? window.__CAR_OFFROAD(true) : null;
+      rec.off = (L || []).map((c) => { const v = new T.Vector3(c.x, c.y + 0.8, c.z).project(E.camera); return { ...c, ll: lonlat(c.x, c.z), screen: c.vis ? [+((v.x + 1) / 2).toFixed(4), +((1 - v.y) / 2).toFixed(4)] : null }; });
+    }
     return rec;
   };
   const survey = (R = 60) => {
@@ -798,7 +806,7 @@ try {
       const B = await page.evaluate(([p, c]) => window.__CLR.begin(p, c), [P, { fps: FPS, step: STEP, radius: RADIUS, min: P.minClear ?? MINC }]);
       console.log(`     ready in ${((Date.now() - t0) / 1000).toFixed(0)}s (warm ${warm}, cars ${s2?.cars}, peds ${s2?.peds ?? '-'}${P.clearTrees ? `, clearTrees ${P.clearTrees} m hid ${cleared} tree parts` : ''}): ${B.frames} frames, ${B.steps} steps (max ${B.maxStep} m), path ${B.len} m, corridor ${B.cells} cells`);
       const minC = P.minClear ?? MINC;
-      const frames = [], vehAll = [];
+      const frames = [], vehAll = [], offAll = [];   // offAll: TN38 off-road vehicles per frame
       let nStill = 0;
       const tw = Date.now();
       const f0 = FR ? FR[0] : 0, f1 = FR ? Math.min(FR[1], B.frames - 1) : B.frames - 1;
@@ -809,6 +817,14 @@ try {
         frames.push(r);
         const bad = r.cross.length || r.min < minC;
         if (r.veh?.length) for (const v of r.veh) vehAll.push({ frame: i, t: r.t, ...v });
+        if (r.off?.length) for (const v of r.off) offAll.push({ frame: i, t: r.t, ...v });
+        // TN38: a still at the first frame of each run with a vehicle off the carriageway in view
+        if (r.off?.some((v) => v.vis) && nStill < MAXSTILL && !(frames.length > 1 && frames[frames.length - 2].off?.some((v) => v.vis))) {
+          nStill++;
+          const vis = r.off.filter((v) => v.vis);
+          await still(page, path.join(outDir, 'stills', `${take.name}_f${String(i).padStart(3, '0')}_OFFROAD.jpg`), vis.map((v) => ({ scr: v.screen, col: '#ff3030', r: 34 })),
+            `${take.name} f${i} t=${r.t}s off the carriageway: ${vis.map((v) => `${v.id}${v.turn ? ' turning' : ''} ${v.hits.join(', ')} ${v.dist} m`).join('; ')}`).catch((e) => console.log('     still failed', e.message));
+        }
         if ((bad || r.veh?.some((v) => v.inView && v.depth > 0.15)) && nStill < MAXSTILL) {
           const prevBad = frames.length > 1 && (frames[frames.length - 2].cross.length || frames[frames.length - 2].min < minC);
           const vehNew = r.veh?.some((v) => v.inView && v.depth > 0.15) && !(frames.length > 1 && frames[frames.length - 2].veh?.some((v) => v.inView && v.depth > 0.15));
@@ -852,18 +868,35 @@ try {
           // in view and at least 0.15 m deep (a few centimetres of contact hundreds of metres out does not read)
           visibleFrames: new Set(vin.filter((v) => v.depth >= 0.15).map((v) => v.frame)).size, maxInView: vin.reduce((a, v) => Math.max(a, v.depth), 0),
           cases: (() => { const m = new Map(); for (const v of vehAll) { const k = v.a + ' x ' + v.b; const c = m.get(k); if (!c) m.set(k, { pair: k, f0: v.frame, f1: v.frame, depth: v.depth, simDepth: v.simDepth, rel: v.rel, inView: v.inView, at: v.at, ll: v.ll, dist: v.dist, va: v.va, vb: v.vb, sizeA: v.sizeA, sizeB: v.sizeB }); else { c.f1 = v.frame; if (v.depth > c.depth) Object.assign(c, { depth: v.depth, simDepth: v.simDepth, at: v.at, ll: v.ll, dist: v.dist, va: v.va, vb: v.vb }); c.inView = c.inView || v.inView; } } return [...m.values()].sort((a, b) => (b.inView - a.inView) || (b.depth - a.depth)); })() },
+        // TN38: vehicles with a wheel or their centre on a non-road surface (sidewalk, median, planting bed, plaza)
+        offroad: (() => {
+          const vin = offAll.filter((v) => v.vis), m = new Map();
+          for (const v of offAll) { const c = m.get(v.id); if (!c) m.set(v.id, { id: v.id, f0: v.frame, f1: v.frame, n: 1, inView: v.vis, turn: v.turn, dead: v.dead, hits: v.hits, dist: v.dist, ll: v.ll, e: v.e, from: v.from }); else { c.f1 = v.frame; c.n++; c.inView = c.inView || v.vis; if (v.hits.length > c.hits.length) Object.assign(c, { hits: v.hits, dist: v.dist, ll: v.ll, turn: v.turn }); } }
+          // out of view, a turning vehicle within 700 m counts too: a connector is the sim's own geometry (a vehicle on an edge
+          // out of view is listed only: the street graph and the surfaces disagree there, data rather than control)
+          // in view, within 400 m: further out a wheel over a kerb is under a pixel (2560 px across a 58 deg lens: 3.2 px a
+          // metre at 400 m); those are listed (inViewFrames) but do not fail the shot
+          const turnNear = offAll.filter((v) => !v.vis && v.turn && v.dist <= 700), vin4 = vin.filter((v) => v.dist <= 400);
+          return { frames: new Set(offAll.map((v) => v.frame)).size, inViewFrames: new Set(vin.map((v) => v.frame)).size, inView400Frames: new Set(vin4.map((v) => v.frame)).size, turningNearFrames: new Set(turnNear.map((v) => v.frame)).size,
+            cases: [...m.values()].sort((a, b) => (b.inView - a.inView) || (b.n - a.n)) };
+        })(),
         secs: Math.round((Date.now() - t0) / 1000),
       };
       // VF36 (VEHFIX 2026-10-02): a pair of vehicle bodies overlapping 0.15 m or more in view fails the shot too (the 13:00
       // audit listed "mini#2 x boxtruck#2 depth 0.54 m IN VIEW" on all 108 frames of t8StNickDiveE and passed it); --novehicles
       res.vehFail = VEH && res.vehicles.visibleFrames > 0;
-      res.pass = !ranges.length && !res.vehFail;
+      // TN38 (owner 2026-10-04 on t8LenoxDive: a van turning over a median's nose): a vehicle's wheel or centre on a
+      // non-road surface in view within 400 m, in any frame, fails the shot too, and so does a turning one out of view within 700 m
+      // (--novehicles skips it with the overlaps)
+      res.offFail = VEH && (res.offroad.inView400Frames > 0 || res.offroad.turningNearFrames > 0);
+      res.pass = !ranges.length && !res.vehFail && !res.offFail;
       if (!res.pass) anyFail = true;
       report.shots[take.name] = res;
-      console.log(`     ${res.pass ? 'PASS' : 'FAIL'}${res.vehFail ? ' (vehicles in view)' : ''} ${take.name}: min clearance ${res.min >= 9 ? 'over ' + RADIUS : res.min} m${res.min < 9 ? ` at f${res.minFrame} (${res.minAt?.obj || '-'})` : ''}, crossed ${res.crossed} frame(s), ${ranges.length} failing range(s); replica max ${res.replicaMaxDev} m; vehicle overlaps in ${res.vehicles.frames} frame(s) (${res.vehicles.inViewFrames} in view, max ${res.vehicles.maxDepth.toFixed(2)} m); ${res.secs}s`);
+      console.log(`     ${res.pass ? 'PASS' : 'FAIL'}${res.vehFail ? ' (vehicles in view)' : ''}${res.offFail ? ' (vehicle off the carriageway)' : ''} ${take.name}: min clearance ${res.min >= 9 ? 'over ' + RADIUS : res.min} m${res.min < 9 ? ` at f${res.minFrame} (${res.minAt?.obj || '-'})` : ''}, crossed ${res.crossed} frame(s), ${ranges.length} failing range(s); replica max ${res.replicaMaxDev} m; vehicle overlaps in ${res.vehicles.frames} frame(s) (${res.vehicles.inViewFrames} in view, max ${res.vehicles.maxDepth.toFixed(2)} m); ${res.secs}s`);
       if (res.roadRisk) console.log(`        WARN low over a roadway: ${res.roadRisk.steps} steps under the tallest vehicle (${res.roadRisk.tallest} m) + 0.6 m, the lens ${res.roadRisk.at.h} m over the road at t=${res.roadRisk.at.t}s (${res.roadRisk.at.ll.join(',')}): another take's traffic can meet the lens there`);
       for (const f of res.fail.slice(0, 8)) console.log(`        frames ${f.frames} (${f.t}) min ${f.min} m${f.cut ? ' CUT' : ''}${f.cross ? ' CROSSED ' + f.cross : ''} nearest ${f.nearest}`);
       for (const c of res.vehicles.cases.slice(0, 6)) console.log(`        vehicles f${c.f0}-${c.f1}: ${c.pair} depth ${c.depth} m (sim box ${c.simDepth}) ${c.rel} ${c.inView ? 'IN VIEW' : 'off view'} ${c.dist} m away at ${c.ll.join(',')}`);
+      console.log(`        off the carriageway: ${res.offroad.frames} frame(s), ${res.offroad.inViewFrames} in view (${res.offroad.inView400Frames} within 400 m), ${res.offroad.turningNearFrames} with a turning vehicle out of view within 700 m`); for (const c of res.offroad.cases.slice(0, 6)) console.log(`        off-road f${c.f0}-${c.f1} (${c.n}): ${c.id}${c.turn ? ' turning' : ''}${c.dead ? ' dead' : ''} ${c.hits.join(', ')} ${c.inView ? 'IN VIEW' : 'off view'} ${c.dist} m away at ${c.ll.join(',')} (edge ${c.e}${c.from !== null ? ' from ' + c.from : ''})`);
       await page.evaluate(() => window.__DRESS_HOLD?.(null));
       await fs.writeFile(path.join(outDir, 'report.json'), JSON.stringify(report, null, 1));
     }
@@ -881,10 +914,11 @@ await fs.writeFile(path.join(outDir, 'report.json'), JSON.stringify(report, null
 const lines = [`clearance audit ${report.when}`, `spec ${report.spec}; step ${STEP} m, radius ${RADIUS} m, threshold ${MINC} m (or the shot's minClear)`, ''];
 for (const [n, r] of Object.entries(report.shots)) {
   if (r.error || r.survey) { lines.push(`${n}: ${r.error || 'survey'}`); continue; }
-  lines.push(`${r.pass ? 'PASS' : 'FAIL'}${r.vehFail ? ' (vehicles in view)' : ''} ${n.padEnd(16)} min ${r.min >= 9 ? '>1.5' : String(r.min).padEnd(6)} m${r.min < 9 ? ` at f${r.minFrame} (${r.minAt?.obj || '-'})` : ''}  crossed ${r.crossed}  threshold ${r.minClear}${r.closeWhy ? ' (' + r.closeWhy + ')' : ''}  replica ${r.replicaMaxDev} m  path ${r.len} m / ${r.steps} steps  vehicles: ${r.vehicles.frames} frames (${r.vehicles.inViewFrames} in view, ${r.vehicles.visibleFrames} in view >= 0.15 m deep, max in view ${(r.vehicles.maxInView || 0).toFixed(2)} m)`);
+  lines.push(`${r.pass ? 'PASS' : 'FAIL'}${r.vehFail ? ' (vehicles in view)' : ''}${r.offFail ? ' (vehicle off the carriageway)' : ''} ${n.padEnd(16)} min ${r.min >= 9 ? '>1.5' : String(r.min).padEnd(6)} m${r.min < 9 ? ` at f${r.minFrame} (${r.minAt?.obj || '-'})` : ''}  crossed ${r.crossed}  threshold ${r.minClear}${r.closeWhy ? ' (' + r.closeWhy + ')' : ''}  replica ${r.replicaMaxDev} m  path ${r.len} m / ${r.steps} steps  vehicles: ${r.vehicles.frames} frames (${r.vehicles.inViewFrames} in view, ${r.vehicles.visibleFrames} in view >= 0.15 m deep, max in view ${(r.vehicles.maxInView || 0).toFixed(2)} m)`);
   if (r.roadRisk) lines.push(`     WARN low over a roadway: ${r.roadRisk.steps} steps, the lens ${r.roadRisk.at.h} m over the road at t=${r.roadRisk.at.t}s (${r.roadRisk.at.ll.join(',')}), tallest vehicle ${r.roadRisk.tallest} m`);
   for (const f of r.fail) lines.push(`     frames ${f.frames} (${f.t}) min ${f.min} m${f.cut ? ' CUT' : ''}${f.cross ? ' CROSSED ' + f.cross : ''} nearest ${f.nearest} at ${f.ll?.join(',')}`);
   for (const c of r.vehicles.cases.slice(0, 10)) lines.push(`     vehicles f${c.f0}-${c.f1}: ${c.pair} depth ${c.depth} m (sim box ${c.simDepth}) ${c.rel} ${c.inView ? 'IN VIEW' : 'off view'} ${c.dist} m from the lens at ${c.ll.join(',')} v ${c.va}/${c.vb} m/s sizes ${c.sizeA.join('x')} / ${c.sizeB.join('x')}`);
+  if (r.offroad) { lines.push(`     off the carriageway (TN38): ${r.offroad.frames} frames (${r.offroad.inViewFrames} in view, ${r.offroad.inView400Frames} of them within 400 m; ${r.offroad.turningNearFrames} with a turning vehicle out of view within 700 m)`); for (const c of r.offroad.cases.slice(0, 10)) lines.push(`     off-road f${c.f0}-${c.f1} (${c.n} frames): ${c.id}${c.turn ? ' turning' : ''}${c.dead ? ' dead' : ''} ${c.hits.join(', ')} ${c.inView ? 'IN VIEW' : 'off view'} ${c.dist} m from the lens at ${c.ll.join(',')} (edge ${c.e}${c.from !== null ? ', from ' + c.from : ''})`); }
   if (Object.keys(r.notAudited || {}).length) lines.push(`     not audited (custom instancing): ${Object.keys(r.notAudited).join(', ')}`);
 }
 await fs.writeFile(path.join(outDir, 'report.txt'), lines.join('\n') + '\n');

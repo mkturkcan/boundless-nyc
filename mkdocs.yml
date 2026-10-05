@@ -89,9 +89,14 @@ validation:
 nav:
   - Home: index.md
   - Guide:
+      - Quick start: quickstart.md
+      - Installation: install.md
       - Getting started: api/getting_started.md
+      - Data collection: data-collection.md
+      - Rendering in Blender Cycles: blender-cycles.md
       - Interactive client: client.md
       - Building from source: building.md
+      - Development and quality checks: development.md
   - Tutorials:
       - tutorials/index.md
       - First steps: tutorials/first-steps.md

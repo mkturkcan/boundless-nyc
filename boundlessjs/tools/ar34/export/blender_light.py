@@ -154,7 +154,30 @@ def beam_profile(aim, angle, penumbra):
     Hs = sorted(set([float(h) for h in range(0, 361, 10)] + list(np.round(np.arange(30, 150.01, 1.0), 3)) +
                     list(np.round(np.arange(70, 110.01, 0.5), 3))))
     x, y, z = ies_local_dirs(V, Hs)
-    D = np.stack([x, y, z], -1)
+    return V, Hs, beam_eval(np.stack([x, y, z], -1), aim, angle, penumbra)
+
+
+# BX-LEAF (2026-10-04): the beam as a SPOT light whose -Z is the beam axis. As a point light the light tree took every beam
+# for an isotropic 22,600 W emitter (4 pi x 1,800 cd) and gave it next-event samples everywhere within ~100 m, where it
+# lights nothing (its IES confines the light to a 41 deg cone ahead); a spot's cone is in the tree's bounds, so a crown
+# behind or beside a car no longer spends samples on its beams. The profile is the same function, re-tabulated in the
+# spot's frame: D_point = Q D_spot, Q the rotation about the light's Y by 90 deg - aim (Q (-Z) = the beam axis).
+def beam_q(aim):
+    t = math.pi / 2 - aim
+    return np.array([[math.cos(t), 0.0, math.sin(t)], [0.0, 1.0, 0.0], [-math.sin(t), 0.0, math.cos(t)]])
+
+
+def beam_profile_spot(aim, angle, penumbra):
+    V = sorted(set(list(np.round(np.arange(0, 30, 0.5), 3)) + list(np.round(np.arange(30, math.degrees(angle) + 1.01, 0.25), 3)) + [90.0, 180.0]))
+    Hs = sorted(set(list(np.round(np.arange(0, 360.01, 2.5), 3))))
+    x, y, z = ies_local_dirs(V, Hs)
+    D = np.stack([x, y, z], -1) @ beam_q(aim).T
+    return V, Hs, beam_eval(D, aim, angle, penumbra)
+
+
+def beam_eval(D, aim, angle, penumbra):
+    """the HL24 low beam x three's spot cone (candela share x 100) for light-local directions D (..., 3) of the point-light
+    frame (-Z down, the beam axis along -X tilted down by aim)."""
     ca, sa = math.cos(aim), math.sin(aim)
     F = np.array([-ca, 0.0, -sa]); R = np.array([0.0, 1.0, 0.0]); U = np.array([-sa, 0.0, ca])
     fz = np.maximum(D @ F, 1e-3)
@@ -174,15 +197,18 @@ def beam_profile(aim, angle, penumbra):
     coneCos, penCos = math.cos(angle), math.cos(angle * (1 - penumbra))
     spot = smooth(coneCos, penCos, D @ F)
     f = np.where((D @ F) > 0, beam * spot, 0.0)
-    return V, Hs, 100.0 * f
+    return 100.0 * f
 
 
 _light_tree_cache = {}
 
 
-def ies_light(name, text_name, ies_body, color, energy, radius):
-    """a point light datablock driven by an internal IES text (Fac / (K_IES x 100) = the profile's 0..1 share)."""
-    L = bpy.data.lights.new(name, 'POINT')
+def ies_light(name, text_name, ies_body, color, energy, radius, ltype='POINT', spot=None):
+    """a point light datablock driven by an internal IES text (Fac / (K_IES x 100) = the profile's 0..1 share); ltype 'SPOT'
+    with spot = its full cone angle (radians): the cone is in the light tree's bounds (BX-LEAF), its edge left to the IES."""
+    L = bpy.data.lights.new(name, ltype)
+    if ltype == 'SPOT':
+        L.spot_size = spot; L.spot_blend = 0.0; L.show_cone = False
     L.color = color; L.energy = energy; L.shadow_soft_size = radius
     try: L.use_soft_falloff = False   # the web's lamps are points with a 1/d^2 law; no soft falloff near the lens
     except Exception: pass
@@ -402,6 +428,64 @@ def setup_sun_moon(C):
         C.T['moon'] = moon
 
 
+# BX-LEAF (2026-10-04): the take's view frusta (cam_<shot>.json, three.js world, frame index k = frame_start + k) and a
+# sphere test against them. A street lamp lights nothing past its range (the web's cut, lamp_window) and a beam nothing past
+# the web's 75 m, but Cycles' light tree does not know either: a crown next to its lamp sent most next-event samples to the
+# region's other ~2,750 lamps and the beams (t8VictoriaCrane f046, 64 spp: the crown's direct light 4x noisier than its
+# mean; the lamps within 60 m only and no beams: 7.7x less noise, the same mean), and the per-frame denoiser made blotches
+# of that noise which moved every frame (the owner's "flickering with lights and trees").
+def cam_frusta(C):
+    try: cams = _j(os.path.join(C.H, f'cam_{C.shot}.json'))
+    except Exception: return None
+    out = []
+    for c in cams:
+        m = np.array(c['m'], dtype=np.float64).reshape(4, 4)   # three's column-major elements: rows are the axes
+        ty = math.tan(math.radians(float(c.get('fov', 50))) / 2) / float(c.get('zoom', 1) or 1)
+        out.append((m[3, :3], m[0, :3], m[1, :3], m[2, :3], ty * float(c.get('aspect', 16 / 9)), ty))
+    return out
+
+
+def in_frustum(fr, pts, R):
+    """spheres (pts (n, 3) three.js world, radii R) that meet the view frustum fr (no far plane)."""
+    P, X, Y, Z, tx, ty = fr
+    d = pts - P
+    x, y, f = d @ X, d @ Y, -(d @ Z)
+    return (f > -R) & ((np.abs(x) - f * tx) / math.sqrt(1 + tx * tx) < R) & ((np.abs(y) - f * ty) / math.sqrt(1 + ty * ty) < R)
+
+
+def frusta_vis(fr, pts, R):
+    """per frame (k, n): the sphere meets frame k's frustum or frame k - 1's (the shutter spans k - 1 .. k with --mbpos END)."""
+    vis = np.stack([in_frustum(f_, pts, R) for f_ in fr])
+    return vis | np.vstack([vis[:1], vis[:-1]])
+
+
+def cull_lamps(C):
+    """BX-LEAF: a street lamp whose range (+ --lampcull m, 10) meets no frame's view is off in that frame (hide_render keyed,
+    constant, as the beams'): it lights nothing in view (only bounce light from out of view, the 5 % indirect share),
+    and the light tree then spends the samples on the lamps that do. Takes only; --lampcull off keeps every lamp."""
+    mg = C.opt('lampcull', '10')
+    objs = getattr(C, 'lamp_objs', None)
+    if mg == 'off' or not getattr(C, 'take', False) or not objs: return
+    fr = cam_frusta(C)
+    if not fr: C.T['lampcull'] = 'no cameras'; return
+    vis = frusta_vis(fr, np.array([p for _, p, _ in objs]), np.array([r for _, _, r in objs]) + float(mg))
+    f0 = int(C.sc.frame_start)
+    never = always = keyed = 0
+    for i, (o, _, _) in enumerate(objs):
+        v = vis[:, i]
+        if v.all(): always += 1; continue
+        if not v.any(): o.hide_render = True; never += 1; continue
+        o.hide_render = not bool(v[0])
+        o.keyframe_insert('hide_render', frame=f0)
+        fcv = _fcurve(o, 'hide_render'); kp = fcv.keyframe_points; kp.clear(); kp.add(len(v))
+        co = []
+        for k in range(len(v)): co += [f0 + k, 0.0 if v[k] else 1.0]
+        kp.foreach_set('co', co); kp.foreach_set('interpolation', [0] * len(v)); fcv.update()
+        keyed += 1
+    C.T['lampcull'] = {'margin': float(mg), 'lamps': len(objs), 'never': never, 'always': always, 'keyed': keyed,
+                       'mean_on': round(float(vis.sum(axis=1).mean()), 1)}
+
+
 # ---------------------------------------------------------------------------------------------------------- street lamps
 def setup_lamps(C):
     sc, LS = C.sc, C.LS
@@ -417,6 +501,7 @@ def setup_lamps(C):
     datas = {}
     win = C.opt('nolampwin') is None
     n = 0
+    C.lamp_objs = []
     # BX-DUSK: --lampsfrom <light_static.json> takes the street lamps from another light pass of the same shot (harvests made
     # before 2026-10-03 16:56 kept the poles round the arch instead of the shot's own: harvest_lights.mjs lampsAlongPath)
     lamps = LS.get('lamps') or []
@@ -444,7 +529,8 @@ def setup_lamps(C):
         # the light sits 0.25 m under the luminaire point (the web's lens), clear of the head's housing
         p = b3(C, (x, y + h - 0.25, z))
         ad = (math.sin(yaw), -math.cos(yaw)) if cobra else None
-        place_light(sc, coll, datas[key], f'BXL_lamp{n}', p, ad)
+        o_ = place_light(sc, coll, datas[key], f'BXL_lamp{n}', p, ad)
+        C.lamp_objs.append((o_, (x, y + h - 0.25, z), float(F.get('range', 60))))   # BX-LEAF: for cull_lamps
         n += 1
     C.T['lamps'] = n
     C.T['lamp_datas'] = len(datas)
@@ -617,6 +703,21 @@ def setup_vehicles(C):
     C.T['veh'] = {'headlamps': nhl, 'masked_points': nmask, 'lamp_meshes': len(done_mesh), 'lamp_materials': len(done_mats)}
 
 
+def _fcurve(idb, path):
+    """the F-curve of idb's own animation slot (Blender 4.4+ slotted actions: one action may hold several IDs' slots, and
+    action.fcurves only shows the first one's), else the legacy lookup."""
+    ad = idb.animation_data
+    if not ad or not ad.action: return None
+    try:
+        from bpy_extras import anim_utils
+        cb = anim_utils.action_get_channelbag_for_slot(ad.action, ad.action_slot)
+        if cb is not None:
+            fc = cb.fcurves.find(path)
+            if fc is not None: return fc
+    except Exception: pass
+    return ad.action.fcurves.find(path)
+
+
 def take_beams(C):
     """BX-SEQ's takes (blender_moving.py: one Empty per car part in collection bx_moving, parented to the World root, so
     its local space is the car's model space; nyc_id, nyc_lamp keyframed): two HL24 beams per car, created ONCE and
@@ -644,6 +745,14 @@ def take_beams(C):
     aim, angle, pen = float(hl.get('aim', 0.021)), float(hl.get('angle', 0.72)), float(hl.get('penumbra', 0.35))
     datas = {}
     Rl = mathutils.Matrix(((0, -1, 0), (0, 0, 1), (-1, 0, 0))).to_4x4()   # light -Z = model -Y (down), -X = model +Z (forward)
+    # BX-LEAF: spot beams (--beampoint: the point lights as before), the web's range cut (headlamps distance, 75 m;
+    # --beamwin <m>, 0 none) and the view test (--beamcull <m>, 10; off): a beam whose range meets no frame's view is off
+    spot = C.opt('beampoint') is None
+    if spot: Rl = Rl @ mathutils.Matrix(beam_q(aim).tolist()).to_4x4()
+    bwin = float(C.opt('beamwin', str(hl.get('distance', 75) or 0)))
+    bmg = C.opt('beamcull', '10')
+    fr = cam_frusta(C) if bmg != 'off' else None
+    ncull = 0
     parents = {}
     for e in mv.objects:
         cid = e.get('nyc_id')
@@ -657,22 +766,48 @@ def take_beams(C):
         fc = (lambda path, i=0: act.fcurves.find(path, index=i)) if act else (lambda path, i=0: None)
         f_lamp, f_hid = fc('["nyc_lamp"]'), fc('hide_render')
         f_loc = [fc('location', i) for i in range(3)]
-        on = []
+        on = []; wt = []
         for k in range(nF):
             f = f0 + k
             mk = int(round(f_lamp.evaluate(f))) if f_lamp else int(e.get('nyc_lamp', 0))
             hid = (f_hid.evaluate(f) > 0.5) if f_hid else e.hide_render
             p = [f_loc[i].evaluate(f) if f_loc[i] else e.location[i] for i in range(3)]
-            near = (math.dist(p, campos[k]) < R) if k < len(campos) else True
-            on.append(bool(mk & 1) and not hid and near)
+            # BX-FIX: a smooth fade from R to R + 40 m (it was a hard cut at R: a beam's pool came and went with the car)
+            dd = math.dist(p, campos[k]) if k < len(campos) else 0.0
+            x_ = max(0.0, min(1.0, (R + 40.0 - dd) / 40.0)); fw = x_ * x_ * (3 - 2 * x_)
+            lit = bool(mk & 1) and not hid
+            if lit and fw > 0.0 and fr and k < len(fr):   # BX-LEAF: the view test (the car's origin, + 5 m for its lamps; the
+                p3 = np.array([p])                            # Empties' space is three.js world, as campos above)
+                rb = np.array([(bwin if bwin > 0 else R + 40.0) + float(bmg) + 5.0])
+                if not (in_frustum(fr[k], p3, rb)[0] or (k > 0 and in_frustum(fr[k - 1], p3, rb)[0])): lit = False; ncull += 1
+            on.append(lit and fw > 0.0); wt.append(fw if lit else 0.0)
         if not any(on): continue
         key = 'hal' if (float(car.get('seed', 0.5)) % 1.0) < float(hl.get('halogenShare', 0.34)) else 'led'
         if key not in datas:
-            V, Hs, cd = beam_profile(aim, angle, pen)
-            datas[key] = ies_light(f'BXL_beam_{key}', 'bxl_hl24.ies', ies_text(V, Hs, cd.tolist(), 'HL24 low beam'),
-                                   tuple(hl.get('halogen' if key == 'hal' else 'led', [1, 1, 1])), 4 * math.pi * cdcar / 2.0, 0.04)
+            if spot:
+                V, Hs, cd = beam_profile_spot(aim, angle, pen)
+                datas[key] = ies_light(f'BXL_beam_{key}', 'bxl_hl24_spot.ies', ies_text(V, Hs, cd.tolist(), 'HL24 low beam (spot frame)'),
+                                       tuple(hl.get('halogen' if key == 'hal' else 'led', [1, 1, 1])), 4 * math.pi * cdcar / 2.0, 0.04,
+                                       ltype='SPOT', spot=2.0 * angle + math.radians(1.0))
+            else:
+                V, Hs, cd = beam_profile(aim, angle, pen)
+                datas[key] = ies_light(f'BXL_beam_{key}', 'bxl_hl24.ies', ies_text(V, Hs, cd.tolist(), 'HL24 low beam'),
+                                       tuple(hl.get('halogen' if key == 'hal' else 'led', [1, 1, 1])), 4 * math.pi * cdcar / 2.0, 0.04)
+            if bwin > 0: lamp_window(datas[key], bwin)
+        faded = any(0.0 < w_ < 0.999 for w_ in wt)
         for hp in heads:
-            o = bpy.data.objects.new(f'BXL_beam_{cid}_{len(coll.objects)}', datas[key])
+            ld = datas[key]
+            if faded:   # its own light data, the energy keyed per frame (linear) through the fade
+                ld = datas[key].copy()
+                e0 = datas[key].energy
+                ld.energy = e0 * wt[0]
+                ld.keyframe_insert('energy', frame=f0)
+                fce = _fcurve(ld, 'energy')
+                kp_ = fce.keyframe_points; kp_.clear(); kp_.add(nF)
+                co_ = []
+                for k in range(nF): co_ += [f0 + k, e0 * wt[k]]
+                kp_.foreach_set('co', co_); kp_.foreach_set('interpolation', [1] * nF); fce.update()
+            o = bpy.data.objects.new(f'BXL_beam_{cid}_{len(coll.objects)}', ld)
             coll.objects.link(o)
             o.parent = e; o.matrix_parent_inverse = mathutils.Matrix.Identity(4)
             o.matrix_basis = mathutils.Matrix.Translation((float(hp[0]), float(hp[1]), float(hp[2]) + 0.12)) @ Rl
@@ -680,14 +815,14 @@ def take_beams(C):
             else:
                 o.hide_render = not on[0]
                 o.keyframe_insert('hide_render', frame=f0)
-                fcv = o.animation_data.action.fcurves.find('hide_render')
+                fcv = _fcurve(o, 'hide_render')
                 kp = fcv.keyframe_points; kp.clear(); kp.add(nF)
                 co = []
                 for k in range(nF): co += [f0 + k, 0.0 if on[k] else 1.0]
                 kp.foreach_set('co', co); kp.foreach_set('interpolation', [0] * nF); fcv.update()
             nb += 1
         non += sum(on)
-    C.T['veh'] = {'source': 'take', 'beams': nb, 'beam_frames_on': non, 'radius': R, 'cars': len(parents)}
+    C.T['veh'] = {'source': 'take', 'beams': nb, 'beam_frames_on': non, 'radius': R, 'cars': len(parents), 'spot': spot, 'win': bwin, 'culled_frames': ncull}
     try: wire_take_lamps(C)
     except Exception as ex: C.T.setdefault('errors', []).append(f'wire_take_lamps: {ex}')
     return True
@@ -1086,6 +1221,19 @@ def setup_emitters(C):
             if k != 1.0: es.default_value *= k
             n += 1
     C.T['emitters'] = n
+    # BX-FIX (2026-10-04): the mesh emitters out of the light tree (--emisamp auto keeps Cycles' choice). With them in it, the
+    # lit windows, signs, screens and the kit's lit rooms (millions of emissive triangles at night) took most of the next-
+    # event samples and the 763 street lamps got a few percent each: every lamp sample came back 20-50x its mean, and the
+    # denoiser turned those fireflies into blotches that moved from frame to frame (the night takes' flicker; the web casts
+    # no light from them at all, so they light nothing by next-event here and keep their glow for the camera and reflections)
+    es_mode = C.opt('emisamp', 'none').upper()
+    if es_mode in ('NONE', 'AUTO', 'FRONT', 'BACK', 'FRONT_BACK'):
+        ne = 0
+        for m in bpy.data.materials:
+            try:
+                if m.cycles.emission_sampling != es_mode: m.cycles.emission_sampling = es_mode; ne += 1
+            except Exception: pass
+        C.T['emission_sampling'] = {'mode': es_mode, 'materials': ne}
     # the street luminaires' lenses (the props kit's 'lum', o<i>_pk_lum): the web draws them at 3.2 and its lamp heads still
     # read 223 with a ~60 px halo at 2560 wide (t7DinoGlide f000), a real LED lens is orders brighter than the road; here
     # the lens is x --lumk (25) for camera and glossy rays only, so the head saturates and blooms (the bloom's 4.0 cap
@@ -1243,6 +1391,14 @@ def setup_film(C):
         fo.layer_slots.clear()
         for nm, so in (('Image', img), ('Position', pos_s), ('Depth', dep_s)):
             fo.layer_slots.new(nm); cp.L.new(so, fo.inputs[nm])
+    # BX-FIX (2026-10-04): the Depth pass (camera z) for bx_temporal.py as a 16-bit PNG, (log2(z) + 2) / 18 (0.25 m to 65 km,
+    # 0.02 % steps); muted here, blender_take.py points it at <take>/_depth/ and unmutes it
+    if C.opt('nodepthout') is None:
+        fo = cp.N.new('CompositorNodeOutputFile'); fo.name = fo.label = 'BXFIX_depth'
+        fo.format.file_format = 'PNG'; fo.format.color_mode = 'BW'; fo.format.color_depth = '16'
+        fo.base_path = '/tmp/bxfix_depth_unset/'; fo.file_slots[0].path = 'depth_####.png'; fo.mute = True   # (takes write without extensions)
+        enc = cp.m('DIVIDE', cp.m('ADD', cp.m('LOGARITHM', cp.m('MAXIMUM', dep_s, 0.25), 2.0), 2.0), 18.0)
+        cp.L.new(enc, fo.inputs[0])
     c = cp.sep(img)
     # ---- haze (core/engine.js HazePass): closed-form optical depth of exponential height fog along the ray, geometry only
     hz = LS.get('haze') or {}
@@ -1472,7 +1628,7 @@ def _run(C, steps):
 def light(ctx):
     C = _ctx(ctx)
     if not C: return False
-    _run(C, (setup_sky, setup_sun_moon, setup_far, setup_lamps, setup_trains, setup_emitters, setup_fill))
+    _run(C, (setup_sky, setup_sun_moon, setup_far, setup_lamps, cull_lamps, setup_trains, setup_emitters, setup_fill))   # BX-LEAF: cull_lamps
     return False   # the default sky and sun are edited in place, not replaced
 
 

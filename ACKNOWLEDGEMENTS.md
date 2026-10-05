@@ -21,6 +21,8 @@ licence requires. [LICENSING.md](LICENSING.md) gives the licence of each part of
 - LinkNYC Kiosks (`s4kf-3yrf`)
 - DOT Bicycle Parking (`592z-n7dk`)
 - Bus Lanes – Local Streets (`ycrg-ses3`)
+- Planimetric Database: Sidewalk (`52n9-sdep`), Roadbed (`i36f-5ih7`), Median (`ees7-4ufv`), Parking Lot (`7cgt-uhhz`), Public Plazas
+  (`ue2e-9jm2`) and Open Space, Parks (`y6ja-fw4f`) and Other (`b7j8-z8a7`)
 - drinking-water tank inspection records (building identification numbers only)
 - the DoITT NYC 3D Building Model (CityGML LOD2, 2014)
 

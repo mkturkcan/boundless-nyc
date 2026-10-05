@@ -96,6 +96,12 @@ const DEFS = {
   shelterSeat: ['metal_painted', { tint: '#34383a', dirt: 0.2 }, { color: 0x34383a, rough: 0.5, metal: 0.4, nrm: 0.25, grain: 0.4, env: 0.3 }],
   shelterRoof: ['metal_painted', { tint: '#6d7375', dirt: 0.35 }, { color: 0x6d7375, rough: 0.5, metal: 0.3, nrm: 0.25, grain: 0.4, env: 0.25 }],
   subGreen:  ['metal_painted', { tint: '#1c3a2c', dirt: 0.3 }, { color: 0x1c3a2c, rough: 0.5, metal: 0.2, nrm: 0.35, grain: 0.4, env: 0.25 }],
+  // ST38 (STATIONS2, stations/subEnt38.js): the stair well's glazed tile walls, concrete treads, yellow nosings, the soffit
+  subTile:   ['concrete_smooth', { tint: '#d9d5c8', dirt: 0.3 }, { color: 0xd9d5c8, rough: 0.32, metal: 0.0, nrm: 0.15, grain: 0.3, env: 0.15 }],
+  subTread:  ['concrete_precast', { tint: '#8e8a82', dirt: 0.5 }, { color: 0x8e8a82, rough: 0.88, metal: 0.0, nrm: 0.5, grain: 0.7 }],
+  subNosing: ['metal_painted', { tint: '#c9a227', dirt: 0.45 }, { color: 0xc9a227, rough: 0.55, metal: 0.2, nrm: 0.3, grain: 0.4 }],
+  subGranite: ['granite_grey', { tint: '#4c4c4a', dirt: 0.35 }, { color: 0x4c4c4a, rough: 0.6, metal: 0.0, nrm: 0.5, grain: 0.6 }],   // the heads' dark granite base (2026-08)
+  subDark:   ['concrete_smooth', { tint: '#4a4844', dirt: 0.4 }, { color: 0x4a4844, rough: 0.9, metal: 0.0, nrm: 0.3, grain: 0.5 }],
   shedDeck:  ['wood_painted', { tint: '#27392d', dirt: 0.4 }, { color: 0x27392d, rough: 0.8, metal: 0.0, nrm: 0.5, grain: 0.6 }],
   shedFascia: ['wood_painted', { tint: '#243c2e', dirt: 0.3 }, { color: 0x243c2e, rough: 0.75, metal: 0.0, nrm: 0.5, grain: 0.6 }],
   mailBlue:  ['metal_painted', { tint: '#1f418a', dirt: 0.25 }, { color: 0x1f418a, rough: 0.45, metal: 0.1, nrm: 0.3, grain: 0.4, env: 0.25 }],

@@ -13,7 +13,7 @@ hide:
 renders Manhattan, the Bronx, Brooklyn and Queens in real time, simulates traffic and pedestrians on the city's own
 street network, and returns pixel-exact ground truth through a Python API modelled on CARLA.</p>
 
-[Get started](api/getting_started.md){ .md-button .md-button--primary }
+[Quick start](quickstart.md){ .md-button .md-button--primary }
 [Tutorials](tutorials/index.md){ .md-button }
 [Python API](api/python_api.md){ .md-button }
 [Download for Windows](https://github.com/mkturkcan/boundless-nyc/releases){ .md-button }
@@ -105,7 +105,7 @@ BoundlessNYC, the compiled city or imagery rendered with it, please cite Boundle
   author  = {Turkcan, Mehmet Kerem},
   title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.2.0},
+  version = {0.2.1},
   url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```

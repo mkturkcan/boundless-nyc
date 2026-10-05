@@ -4,7 +4,7 @@ BoundlessNYC is the boundless.js digital twin of New York City as a simulation s
 and simulates, and your code drives it over TCP through a Python API: you spawn and control vehicles and pedestrians,
 attach cameras, step the world, and read back images, segmentation, depth and bounding boxes.
 
-The Windows x64 release, `BoundlessNYC-0.2.0-win64.zip` on the GitHub release page, holds the server, the compiled
+The Windows x64 release, `BoundlessNYC-0.2.1-win64.zip` on the GitHub release page, holds the server, the compiled
 city (`Content/`) and the Python package. Extract it anywhere; the commands below run in the extracted folder.
 
 ## Start the server

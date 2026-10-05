@@ -21,6 +21,7 @@ cached files are skipped). Compiled output: `public/tiles/`.
 | **LinkNYC Kiosks** | `s4kf-3yrf` | `linknyc.geojson` | Kiosk positions |
 | **DOT Bicycle Parking (CityRacks)** | `592z-n7dk` | `bikeracks.geojson` | 47,267 rack positions → bike racks, some with parked bicycles |
 | **Bus Lanes – Local Streets** | `ycrg-ses3` | `bus_lanes.json` (optional) | Red-lane segments, matched geometrically to CSCL roads → red bus lanes |
+| **Planimetric Database: Sidewalk, Roadbed, Median, Parking Lot, Public Plazas, Open Space (Parks and Other)** | `52n9-sdep`, `i36f-5ih7`, `ees7-4ufv`, `7cgt-uhhz`, `ue2e-9jm2`, `y6ja-fw4f`, `b7j8-z8a7` | `planimetric/*.geojson` (fetched 2026-10-05) | Polygons of walks, roadbeds, medians, lots, plazas and open space, baked per tile into the ground fill of the 125th Street tiles (`public/data/gf38/`, `tools/ar34/ground/gf38_bake.py`) |
 | **Drinking-water tank inspections** | — | `watertanks_bins.json` (optional) | Building identification numbers of buildings with rooftop tanks → water tanks |
 
 ## NY State Open Data (data.ny.gov)

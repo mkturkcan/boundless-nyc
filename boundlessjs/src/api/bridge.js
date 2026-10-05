@@ -247,7 +247,7 @@ export function initApi(ctx) {
     } else color = [0x1b1d21, 0xe9e9e6, 0x6d737a, 0x14233b, 0x7a1512, 0x2a3a2a][Math.floor(Math.random() * 6)];
     if (/taxi/.test(kind) && !attrs.color) color = 0xf7b500;
     const id = nextId++;
-    const car = { api: id, manual: true, kind, color, idx: pool.n++, v: 0, e: { cars: new Set() }, d: 0, dir: 1, lane: 0, laneF: 0, __percUid: `api${id}` };
+    const car = { api: id, manual: true, kind, color, idx: pool.n++, v: 0, e: { cars: new Set() }, d: 0, dir: 1, lane: 0, laneF: 0, _lfv: 0, __percUid: `api${id}` };   // _lfv: the lane-change spring's rate (sim/traffic.js TW26); undefined made every API car's pose NaN on autopilot
     traffic._c.set(color);
     pool.mb.setColorAt(car.idx, traffic._c);
     pool.mb.instanceColor.needsUpdate = true;
@@ -1081,7 +1081,7 @@ export function initApi(ctx) {
         const ok = snapCarToLane(car, p3.x, p3.z, yawToH(tr.rotation.yaw), 12);
         if (!ok) { car.manual = true; throw new ApiError('off_road', `vehicle ${a.id} is not within 12 m of a lane it can drive`); }
         car.v = Math.max(car.v || 0, Math.abs(a.st.v));
-        car.next = null; car.turn = null; car.dead = false;
+        car.next = null; car.turn = null; car.dead = false; car._lfv = 0;
         car.routePlan = Array.isArray(p.route) ? p.route.map((s) => String(s).toLowerCase()) : null;
       } else {
         const tr = actorTransform(a);

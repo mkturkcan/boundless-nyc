@@ -29,8 +29,8 @@ import numpy as np
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..', '..'))
 PEDS24 = os.path.join(ROOT, 'boundlessjs', 'public', 'models', 'peds24')
-BASISU = '/data0/projectnyc_aux/.tools/basisu/basis_universal-1_60/bin/basisu'
-TEXCACHE = '/data0/projectnyc_aux/tmp/bx/peds/tex'
+BASISU = os.environ.get('BASISU', '/data0/projectnyc_aux/.tools/basisu/basis_universal-1_60/bin/basisu')   # the basisu 1.60 CLI
+TEXCACHE = os.environ.get('BX_PEDS_TEXCACHE', '/data0/projectnyc_aux/tmp/bx/peds/tex')   # unpacked walker textures (also --pedtex)
 HW = 48
 SETS = {'peds24': os.path.join(PEDS24, 'manifest.json'), 'rb27': os.path.join(PEDS24, 'rb27', 'manifest.json')}
 

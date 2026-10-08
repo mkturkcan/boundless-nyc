@@ -439,6 +439,10 @@ try {
 
       let frozen = 0, invalid = 0, retorn = 0, lensHit = 0, carJump = 0, carOv = 0;   // carOv: OV32 frames with overlapping vehicle bodies in view
       let carOff = 0;   // TN38: frames with a vehicle's wheel or centre on a non-road surface in view (main.js __CAR_OFFROAD)
+      // OV41 (TRAILERUE 2026-10-08): frames with two PARKED bodies inside each other in view (the page's overlap list carries
+      // parked pairs with traffic.js OV41); any such frame fails the run below (the twin's packing, not a traffic draw)
+      let carOvP = 0;
+      const parkedPairs = (L) => (L || []).filter((s) => /\(parked\) x \S+ \(parked\)/.test(s));
       // WS37: the park water's mirrors per frame (main.js __REC_FRAME `water`): [frame, [body, ray share, mirror weight, drawn]...]
       const waterLog = [], waterSeen = new Map(), evLog = [];
       let waterDrop = 0;
@@ -511,6 +515,7 @@ try {
           if (r.lens) { lensHit++; if (lensHit <= 12) console.log(`     *** frame ${i}: the lens is inside ${r.lens.join(', ')}`); }
           if (r.jumps) { carJump += r.jumps.length; if (carJump <= 12) console.log(`     *** frame ${i}: car jump in view: ${r.jumps.slice(0, 3).join('; ')}`); }
           if (r.ovl) { carOv++; if (carOv <= 12) console.log(`     *** frame ${i}: vehicles overlap in view: ${r.ovl.slice(0, 3).join('; ')}`); }
+          { const pp = parkedPairs(r.ovl); if (pp.length) { carOvP++; if (carOvP <= 6) console.log(`     *** frame ${i}: PARKED vehicles inside each other in view: ${pp.slice(0, 3).join('; ')}`); } }   // OV41
           if (r.offr) { carOff++; if (carOff <= 12) console.log(`     *** frame ${i}: vehicle off the carriageway in view: ${r.offr.slice(0, 3).join('; ')}`); }
           if (r.events) evLog.push([i, r.events]);
           if (r.water) {
@@ -565,6 +570,7 @@ try {
         if (cj) { carJump += cj.length; if (carJump <= 12) console.log(`     *** frame ${i}: car jump in view: ${cj.slice(0, 3).join('; ')}`); }
         const co = i > startAt ? await page.evaluate(() => window.__CAR_OVERLAPS?.() ?? null).catch(() => null) : null;
         if (co) { carOv++; if (carOv <= 12) console.log(`     *** frame ${i}: vehicles overlap in view: ${co.slice(0, 3).join('; ')}`); }
+        { const pp = parkedPairs(co); if (pp.length) { carOvP++; if (carOvP <= 6) console.log(`     *** frame ${i}: PARKED vehicles inside each other in view: ${pp.slice(0, 3).join('; ')}`); } }   // OV41
         const cf = i > startAt ? await page.evaluate(() => window.__CAR_OFFROAD?.() ?? null).catch(() => null) : null;   // TN38
         if (cf) { carOff++; if (carOff <= 12) console.log(`     *** frame ${i}: vehicle off the carriageway in view: ${cf.slice(0, 3).join('; ')}`); }
         if (!ok) invalid++;
@@ -630,8 +636,8 @@ try {
       }
       const secs = (Date.now() - t0) / 1000;
       await page.evaluate(() => window.__DRESS_HOLD?.(null));   // FP26: the next take re-dresses round its own path
-      results.push({ tag: take.tag, outDir, frames: total, secs, frozen, invalid, retorn, probe: isProbe });
-      console.log(`     done ${total} frames in ${secs.toFixed(0)}s (${(secs / Math.max(1, total)).toFixed(2)} s/frame)${frozen ? ` FROZEN x${frozen}` : ''}${invalid ? ` INVALID x${invalid}` : ''}${retorn ? ` RE-SHOT x${retorn}` : ''}${lensHit ? ` LENS-INSIDE x${lensHit}` : ''}${carJump ? ` CAR-JUMP x${carJump}` : ''}${carOv ? ` CAR-OVERLAP x${carOv}` : ''}${carOff ? ` CAR-OFFROAD x${carOff}` : ''}${waterDrop ? ` REFLECTION-DROPOUT x${waterDrop}` : ''}`);
+      results.push({ tag: take.tag, outDir, frames: total, secs, frozen, invalid, retorn, probe: isProbe, carOvP });
+      console.log(`     done ${total} frames in ${secs.toFixed(0)}s (${(secs / Math.max(1, total)).toFixed(2)} s/frame)${frozen ? ` FROZEN x${frozen}` : ''}${invalid ? ` INVALID x${invalid}` : ''}${retorn ? ` RE-SHOT x${retorn}` : ''}${lensHit ? ` LENS-INSIDE x${lensHit}` : ''}${carJump ? ` CAR-JUMP x${carJump}` : ''}${carOv ? ` CAR-OVERLAP x${carOv}` : ''}${carOvP ? ` PARKED-OVERLAP x${carOvP}` : ''}${carOff ? ` CAR-OFFROAD x${carOff}` : ''}${waterDrop ? ` REFLECTION-DROPOUT x${waterDrop}` : ''}`);
     }
     const uniq = [...new Set(errors)];
     if (uniq.length) { console.log('    PAGE ERRORS:'); for (const e of uniq.slice(0, 6)) console.log('      ' + e); }
@@ -679,3 +685,12 @@ if (takesQA.length && !has('noqa')) {
     process.exitCode = 3;
   } else console.log('QA passed: no NaN blocks, flicker, alternation, pops or reflection dropouts found.');
 }
+// OV41 (TRAILERUE 2026-10-08, the lead: "It passed these takes, so treat that as a broken gate"): the CAR-OVERLAP check
+// skipped parked pairs, so t8MorningsideSwoop's two parked SUVs 0.29 m into each other at 29 m passed. With the page's
+// OV41 the overlap list carries parked pairs, and a take with any parked pair in view (> 0.1 m deep, within 150 m, in the
+// frustum) fails the run (exit 3). `--noparkgate` only logs them; the page's `ov41=0` drops the pairs from the list.
+const parkedFail = results.filter((r) => !r.probe && r.carOvP > 0);
+if (parkedFail.length && !has('noparkgate')) {
+  console.log(`\n*** CAR-OVERLAP FAILED: ${parkedFail.map((r) => `${r.tag} (${r.carOvP} frames)`).join(', ')}: parked vehicles stand inside each other in view (the twin's kerb packing, traffic.js PK41); fix the packing or re-frame.`);
+  process.exitCode = 3;
+} else if (results.some((r) => !r.probe)) console.log('Parked vehicles: none inside each other in view.');

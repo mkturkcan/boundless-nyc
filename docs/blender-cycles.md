@@ -11,7 +11,9 @@ three steps:
 
 This guide takes one shot through all three steps, then shows the full take, the batch that renders many shots and
 checks them, how to open the scene in Blender by hand, typical settings and times, and common problems. The commands
-are written for a Linux shell; on Windows, run them in Git Bash.
+are written for a Linux shell; on Windows, run them in Git Bash. The same USD can be rendered with Unreal Engine 5
+([Rendering in Unreal Engine 5](unreal.md)); [One city, three renderers](architecture.md) describes how the renderers
+share the export.
 
 ## What you need
 
@@ -57,17 +59,23 @@ uv run --no-project --with usd-core --with numpy --with pillow --with scipy pyth
 
 ## Download the Blender assets
 
-The street trees of the offline render and the rooms seen through windows are in the dataset's `Blender/` folder
-(197 files, about 470 MB):
+The street trees of the offline render and the rooms seen through windows are in the dataset's `Blender/` folder.
+`Blender/bxtrees2` is the tree set the writer uses by default: 51 trees of the 12 species forms the client plants
+(London plane, honeylocust, pin oak, zelkova, Callery pear, littleleaf linden, maple, sophora, cherry, purple-leaf plum,
+small ornamentals and ginkgo) in up to three sizes (young, mature, large) with up to two seeded variants each, with
+branches to the twigs, leaves cut from CC0 scans and 62K to 1.37M triangles a tree. With the window rooms the download is 220 files, about 2.2 GB:
 
 ```bash
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 --include "Blender/*" --local-dir .cache/hf
-export BXTREES_ASSETS=$PWD/.cache/hf/Blender/bxtrees
-export BXTREES_TEX=$BXTREES_ASSETS/tex
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
+    --include "Blender/bxtrees2/*" --include "Blender/bxwin/*" --local-dir .cache/hf
+export BXTREES_ASSETS=$PWD/.cache/hf/Blender/bxtrees2
+export BXTREES2_TEX=$BXTREES_ASSETS/tex
 export WINROOMS=$PWD/.cache/hf/Blender/bxwin/rooms_atlas.png
 ```
 
-Keep these variables set in every shell you use below. Pedestrians are optional: they need the `basisu` command line
+Keep these variables set in every shell you use below. The first tree set, `Blender/bxtrees` (20 trees with leaf
+cards), is still in the dataset: a USD written with `BXTREES_ASSETS` pointing to it renders with that set and needs
+`BXTREES_TEX` set to its `tex` folder. Pedestrians are optional: they need the `basisu` command line
 tool (version 1.60, from the [Basis Universal releases](https://github.com/BinomialLLC/basis_universal/releases)); set
 `BASISU` to its path and `BX_PEDS_TEXCACHE` to an empty folder, or leave pedestrians out with `--nopeds` in all three
 steps.
@@ -110,7 +118,16 @@ uv run --no-project --with usd-core --with numpy --with pillow --with scipy \
 
 The writer converts materials to `UsdPreviewSurface`, stores every mesh once and instances it, and writes the take's
 root layer `~/bx/u/t7ArchSoffit.usda` with the camera, the moving layer, the static city, the trees, the materials and
-the lights as sublayers, plus `textures/`. Its coplanar pass separates surfaces that lie in one plane (paint on asphalt,
+the lights as sublayers, plus `textures/`. The trees are the prototypes of `BXTREES_ASSETS` on the client's tree
+matrices: each instance takes its size from its pool and its own scale and its variant from a hash, at full detail
+within 400 m of the lens path and with a lighter level of detail to 800 m. The trees' geometry layer is about 1.2 GB a
+shot. `usd_trees.py --retake <usd dir>/<shot>.usda --out <dir>` swaps the trees of a USD already written in about 10 s.
+
+The client's road graph joins some elevated roads to the street by ramps that its traffic follows but its road builder
+does not deck, such as the Henry Hudson Parkway's ramps by West 125th Street, so the harvest has vehicles driving
+through the air there. The writer's ramp hook (`usd_ramps.py`) lays a deck under every such path, asphalt on top,
+concrete on its sides and underside and 1 m parapets along its edges, so that no vehicle is drawn without a surface
+under it; the client itself still draws these ramps without a deck. Its coplanar pass separates surfaces that lie in one plane (paint on asphalt,
 signs on walls), which a path tracer would otherwise show as flickering stripes. Pairs it cannot resolve are listed in
 `bx_fix.json`; with `--coplanar warn` they are reported, without it the writer exits with code 4 when any remain in
 view. "unresolved reference" warnings in the log are normal. For this shot the writer needed 4 minutes without the
@@ -130,9 +147,12 @@ goes to the script. `CUDA_VISIBLE_DEVICES` picks the GPU (the number `nvidia-smi
 `CUDA_DEVICE_ORDER=PCI_BUS_ID` is also set); without it Cycles uses every GPU it finds. On Windows `set` the variable
 before the command or prefix it in Git Bash as shown.
 
-The script imports the USD, builds the moving vehicles as animated objects, adds the sky and the sun from the page's
-lighting, the window rooms, the tree crowns and the film look (haze, bloom, grading), and renders with the OptiX
-denoiser. It writes `~/bx/frames/frame_00054.jpg`, the run's settings and times in `take_54-54.json`, and the frame's
+The script imports the USD, builds the moving vehicles as animated objects, adds the lights, the window rooms, the
+tree crowns and the film look (haze, bloom, grading), and renders with the OptiX denoiser. The light is physical by
+default (`--light phys`): the sun and the street and vehicle lamps at the client's own levels, the visible sky dome as
+the only sky light, no fill lights, untrimmed albedos and a fixed exposure per time of day from
+`boundlessjs/tools/ar34/export/phys_light.json`, the table the Unreal renderer reads too, so the two renderers light a
+take alike. `--light web` selects the earlier rig, calibrated against the web takes. It writes `~/bx/frames/frame_00054.jpg`, the run's settings and times in `take_54-54.json`, and the frame's
 depth in `_depth/`. On an RTX 6000 Ada shared with another render, the setup took 127 s (import 23 s) and the frame
 28 s; the whole command 158 s.
 
@@ -216,7 +236,9 @@ missing. The import is useful to inspect geometry and materials.
 Measured on RTX 6000 Ada GPUs (48 GB) with two Blender processes per GPU, over the 20 published takes: the setup took
 about 72 s, the first frame 23 to 51 s, and each further frame a median of 9.4 s at golden hour and 11.4 s at night
 or dusk, of which about 4.7 s is the scene update. A 108 frame take took 16 to 35 minutes. The harvest took 15 to
-26 minutes per shot and the USD step 9 to 19 minutes.
+26 minutes per shot and the USD step 9 to 19 minutes. These takes used the first tree set and the web-matched light;
+with physical light and bxtrees2, a golden hour take of `t7ArchTrack` needed 91 s of setup (31 s for the USD import)
+and about 8.5 s a frame.
 
 ## Common problems
 
@@ -228,7 +250,7 @@ or dusk, of which about 4.7 s is the scene update. A 108 frame take took 16 to 3
 | The writer stops with `COPLANAR FAIL` and exit code 4 | Run it with `--coplanar warn`; the pairs are listed in `bx_fix.json`. Do not use `--coplanar off`, which brings back flickering paint and decals. |
 | Facades or paving in wrong colours | The USD was written into a folder that holds textures of another harvest. Write each USD into a new folder. |
 | Trees look like the web version | `BXTREES_ASSETS` was not set when the USD was written. |
-| Tree crowns render black or fail in the log | `BXTREES_TEX` does not point to `Blender/bxtrees/tex`. |
+| Tree crowns render black or fail in the log | `BXTREES2_TEX` does not point to `Blender/bxtrees2/tex` (`BXTREES_TEX` and `Blender/bxtrees/tex` for the first set). |
 | Facades show plain glass instead of rooms | `--winrooms` does not point to `rooms_atlas.png`. |
 | Night frames are nearly dark | The lights step found no harvest: pass `--harvest` with the harvest folder. |
 | A setup step fails | Each step reports `hook <name> ... failed` in the log and the render goes on without it. Search the log for `hook`; `--nopeds` leaves pedestrians out. |

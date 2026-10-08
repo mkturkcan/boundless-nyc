@@ -74,7 +74,11 @@ markdown_extensions:
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.details
   - pymdownx.snippets:
       base_path: ["."]
@@ -93,7 +97,9 @@ nav:
       - Installation: install.md
       - Getting started: api/getting_started.md
       - Data collection: data-collection.md
+      - Renderer architecture: architecture.md
       - Rendering in Blender Cycles: blender-cycles.md
+      - Rendering in Unreal Engine 5: unreal.md
       - Interactive client: client.md
       - Building from source: building.md
       - Development and quality checks: development.md

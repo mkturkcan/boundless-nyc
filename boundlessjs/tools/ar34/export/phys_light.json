@@ -1,0 +1,5 @@
+{
+ "_doc": "Physical light (owner 2026-10-07), shared by blender_light.py and ue_light.py so that the Cycles and Unreal takes are lit alike: the sun, the street and vehicle lamps at the web's own levels, the visible dome as the only sky light at sky_k, no fills, untrimmed albedos, and the exposure fixed per time of day (the page's own value for the proof takes until a physical calibration replaces it). The web-matched rig stays behind --light web, for the gate baselines.",
+ "exposure": {"golden": 1.2414, "day": 1.0, "dusk": 1.4, "night": 1.5523},
+ "sky_k": 1.0
+}

@@ -1,6 +1,6 @@
 {
   "name": "boundless-nyc",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "BoundlessNYC: shared dependencies of the client (boundlessjs/), the building generator (src/) and the render tools (tools/)",
   "license": "MIT",

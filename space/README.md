@@ -51,4 +51,4 @@ repository explains the notice and the procedural alternative.
 
 **Citation.** BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. Please
 cite it as: M. K. Turkcan. *BoundlessNYC: a real-data, real-time digital twin of New York City.* Software, version
-0.2.1, 2026. <https://github.com/mkturkcan/boundless-nyc>
+0.3.0, 2026. <https://github.com/mkturkcan/boundless-nyc>

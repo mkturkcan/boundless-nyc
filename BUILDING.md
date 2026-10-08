@@ -44,7 +44,7 @@ The smaller banks (`basis/`, `data/`, `fonts/`, `luts/`, `settings/`) are commit
 ### Download (recommended)
 
 ```
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 \
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 ```
@@ -193,26 +193,30 @@ server headless at 1280 × 720 and stops it afterwards, and without it the scrip
 listening:
 
 ```
-bash tools/figures/tutorial_images.sh --server release/BoundlessNYC_0.2.1_win64/BoundlessNYC.exe [--python python]
+bash tools/figures/tutorial_images.sh --server release/BoundlessNYC_0.3.0_win64/BoundlessNYC.exe [--python python]
 ```
 
 ## Offline rendering in Blender
 
 The export reads a take of the film recorder (`tools/ad/shots.mjs`) from the running client and writes OpenUSD that
-Blender 4.5 (Cycles) or another USD renderer reads. The tools are in `boundlessjs/tools/ar34/export/`; the Python
-steps need `usd-core`, `numpy` and `pillow`. The film-detail street trees and the window interiors are in the dataset's
-`Blender/` folder; point `BXTREES_ASSETS` at the downloaded `Blender/bxtrees` and pass `--winrooms` the downloaded
-`Blender/bxwin/rooms_atlas.png`.
+Blender 4.5 (Cycles), Unreal Engine 5.8 or another USD renderer reads. The tools are in
+`boundlessjs/tools/ar34/export/`; the Python steps need `usd-core`, `numpy` and `pillow`. The film-detail street trees
+and the window interiors are in the dataset's `Blender/` folder; point `BXTREES_ASSETS` at the downloaded
+`Blender/bxtrees2` and pass `--winrooms` the downloaded `Blender/bxwin/rooms_atlas.png`. The guides
+`docs/blender-cycles.md` and `docs/unreal.md` give the full steps for each renderer.
 
 ```
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 --include "Blender/*" --local-dir .cache/hf
-export BXTREES_ASSETS=$PWD/.cache/hf/Blender/bxtrees
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
+    --include "Blender/bxtrees2/*" --include "Blender/bxwin/*" --local-dir .cache/hf
+export BXTREES_ASSETS=$PWD/.cache/hf/Blender/bxtrees2 BXTREES2_TEX=$PWD/.cache/hf/Blender/bxtrees2/tex
 node boundlessjs/tools/ar34/export/harvest.mjs --shots <shot> --frames 0,54,107 --out <harvest dir>   # 1. harvest
 uv run --no-project --with usd-core --with numpy --with pillow \
     python boundlessjs/tools/ar34/export/usd_write.py --in <harvest dir> --out <usd dir>          # 2. USD layers
 blender -b --factory-startup --python boundlessjs/tools/ar34/export/blender_take.py -- \
     --usd <usd dir>/<shot>.usda --frames 0-107 --outdir <frames dir> \
     --winrooms .cache/hf/Blender/bxwin/rooms_atlas.png                                            # 3. Cycles frames
+UE_ROOT=<engine> python3 boundlessjs/tools/ar34/export/ue_take.py --usd <usd dir>/<shot>.usda \
+    --outdir <frames dir> --work <work dir> --cine                                                # or Unreal frames
 ```
 
 ## Coordinate frames

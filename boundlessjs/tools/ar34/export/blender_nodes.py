@@ -965,7 +965,7 @@ def build_untrim(mat, P):
 
 def wall_k(P):
     """the factor on the facade value curve's output (walls are not trimmed in the web)."""
-    if TRIM_MODE == 'net':
+    if TRIM_MODE in ('net', 'phys'):   # R3-PHYS: the curve's output is the wall's own albedo
         return 1.0
     lt = P.get('lt') or 0.329
     return 1.0 / (float(lt) * ROAD_K)
@@ -2004,7 +2004,9 @@ def apply(sc, usd_path, root=None, opt=None):
     # (the hook runs before the tool sets the render size: the width from its --res)
     res = opt('res', None) if opt else None
     PIXA = lens_pixel_angle(sc, int(str(res).split('x')[0]) if res else None)
-    TRIM_MODE = os.environ.get('BXTRIM') or (opt('bxtrim', 'web') if opt else 'web') or 'web'
+    # R3-PHYS: physical albedos by default (blender_light --light phys); the web-matched baseline keeps 'web'
+    _dt = 'web' if (opt and str(opt('light', 'phys')) == 'web') else 'phys'
+    TRIM_MODE = os.environ.get('BXTRIM') or (opt('bxtrim', _dt) if opt else _dt) or _dt
     tags = read_tags(usd_path)
     root_dir = os.path.dirname(os.path.abspath(usd_path))
     set_road_k(tags)

@@ -215,57 +215,62 @@ def bleed(col, a):
     idx = ndimage.distance_transform_edt(~m, return_distances=False, return_indices=True)
     return col[idx[0], idx[1]]
 
-meta = {'cell': CELL, 'nc': NC, 'species': {}}
-for F, sp in SPECIES.items():
-    Ls = load_set(sp['set'])
-    # (spray / pinnate leaflets: the scan's cleaner leaves; the honeylocust and sophora leaflets from LeafSet022 as the web's)
-    cells = []
-    for k in range(NC * NC):
-        if sp['kind'] == 'single': cv = cell_single(Ls[k % len(Ls)])
-        elif sp['kind'] == 'spray': cv = cell_spray(Ls, k)
-        elif sp['kind'] == 'spur': cv = cell_pinnate(Ls, k, (11, 14), 0.115, curve=0.08, fan=int(rng.integers(5, 7)))
-        else: cv = cell_pinnate(Ls, k, (5, 7), 0.19, curve=0.05, fan=1)
-        cells.append(cv)
-    # colour: each cell's covered texels scaled to the species' target (linear, per channel)
-    atl_c = np.zeros((CELL * NC, CELL * NC, 3), np.float32)
-    atl_a = np.zeros((CELL * NC, CELL * NC), np.float32)
-    atl_n = np.zeros((CELL * NC, CELL * NC, 3), np.float32)
-    info = []
-    for k, cv in enumerate(cells):
-        a = cv.A
-        col = cv.C / np.maximum(a, 1e-4)[..., None]
-        nv = cv.N / np.maximum(a, 1e-4)[..., None]
-        m = a >= 0.42
-        mean = col[m].mean(axis=0)
-        col = col * (np.asarray(sp['target'], np.float32) / np.maximum(mean, 1e-4))
-        col = bleed(col, a)
-        nv[~m] = (0, 0, 1)
-        nv = nv / np.maximum(np.linalg.norm(nv, axis=-1, keepdims=True), 1e-4)
-        nv = bleed(nv, a)
-        cx, cy = k % NC, k // NC
-        ys = slice((NC - 1 - cy) * CELL, (NC - cy) * CELL); xs = slice(cx * CELL, (cx + 1) * CELL)   # v up: row 0 is the top
-        atl_c[ys, xs], atl_a[ys, xs], atl_n[ys, xs] = col, a, nv
-        oc = octagon(a)
-        vs = [p[1] for p in oc]
-        info.append({'octagon': oc, 'base': [0.5, float(min(vs))], 'len': float(max(vs) - min(vs)),
-                     'cover': float((a >= 0.42).mean()), 'mean': [float(x) for x in (col[m].mean(axis=0))]})
-    rgba = np.concatenate([l2s(atl_c), np.clip(atl_a, 0, 1)[..., None] * 255.0], -1).round().astype(np.uint8)
-    nrm8 = ((atl_n * 0.5 + 0.5) * 255.0).round().clip(0, 255).astype(np.uint8)
-    Image.fromarray(rgba, 'RGBA').save(f'{OUT}/{F}_leaf_col.png', optimize=False, compress_level=6)
-    Image.fromarray(nrm8, 'RGB').save(f'{OUT}/{F}_leaf_nrm.png', compress_level=6)
-    Image.fromarray(rgba, 'RGBA').resize((1024, 1024), Image.LANCZOS).save(f'{OUT}/{F}_leaf_col.webp', quality=90, method=6)
-    Image.fromarray(nrm8, 'RGB').resize((1024, 1024), Image.LANCZOS).save(f'{OUT}/{F}_leaf_nrm.webp', quality=88, method=6)
-    meta['species'][F] = {'set': 'ambientCG LeafSet' + sp['set'], 'kind': sp['kind'], 'len': sp['len'], 'target': sp['target'], 'cells': info}
-    print(F, sp['kind'], [round(c['cover'], 3) for c in info], [round(c['len'], 3) for c in info])
-json.dump(meta, open(f'{OUT}/leaves.json', 'w'), indent=1)
-# a contact sheet of the atlases over grey
-sheet = []
-for F in SPECIES:
-    im = Image.open(f'{OUT}/{F}_leaf_col.png').resize((512, 512), Image.LANCZOS)
-    bg = Image.new('RGBA', im.size, (200, 200, 205, 255)); bg.alpha_composite(im)
-    d = ImageDraw.Draw(bg); d.text((6, 4), F, fill=(0, 0, 0, 255))
-    sheet.append(bg.convert('RGB'))
-S = Image.new('RGB', (512 * len(sheet), 512))
-for i, im in enumerate(sheet): S.paste(im, (512 * i, 0))
-S.save(f'{OUT}/leaves_sheet.jpg', quality=88)
-print('wrote', OUT)
+# (TREEUE 2026-10-07: guarded, so leaves2.py can import the helpers above without building this set)
+def main():
+    meta = {'cell': CELL, 'nc': NC, 'species': {}}
+    for F, sp in SPECIES.items():
+        Ls = load_set(sp['set'])
+        # (spray / pinnate leaflets: the scan's cleaner leaves; the honeylocust and sophora leaflets from LeafSet022 as the web's)
+        cells = []
+        for k in range(NC * NC):
+            if sp['kind'] == 'single': cv = cell_single(Ls[k % len(Ls)])
+            elif sp['kind'] == 'spray': cv = cell_spray(Ls, k)
+            elif sp['kind'] == 'spur': cv = cell_pinnate(Ls, k, (11, 14), 0.115, curve=0.08, fan=int(rng.integers(5, 7)))
+            else: cv = cell_pinnate(Ls, k, (5, 7), 0.19, curve=0.05, fan=1)
+            cells.append(cv)
+        # colour: each cell's covered texels scaled to the species' target (linear, per channel)
+        atl_c = np.zeros((CELL * NC, CELL * NC, 3), np.float32)
+        atl_a = np.zeros((CELL * NC, CELL * NC), np.float32)
+        atl_n = np.zeros((CELL * NC, CELL * NC, 3), np.float32)
+        info = []
+        for k, cv in enumerate(cells):
+            a = cv.A
+            col = cv.C / np.maximum(a, 1e-4)[..., None]
+            nv = cv.N / np.maximum(a, 1e-4)[..., None]
+            m = a >= 0.42
+            mean = col[m].mean(axis=0)
+            col = col * (np.asarray(sp['target'], np.float32) / np.maximum(mean, 1e-4))
+            col = bleed(col, a)
+            nv[~m] = (0, 0, 1)
+            nv = nv / np.maximum(np.linalg.norm(nv, axis=-1, keepdims=True), 1e-4)
+            nv = bleed(nv, a)
+            cx, cy = k % NC, k // NC
+            ys = slice((NC - 1 - cy) * CELL, (NC - cy) * CELL); xs = slice(cx * CELL, (cx + 1) * CELL)   # v up: row 0 is the top
+            atl_c[ys, xs], atl_a[ys, xs], atl_n[ys, xs] = col, a, nv
+            oc = octagon(a)
+            vs = [p[1] for p in oc]
+            info.append({'octagon': oc, 'base': [0.5, float(min(vs))], 'len': float(max(vs) - min(vs)),
+                         'cover': float((a >= 0.42).mean()), 'mean': [float(x) for x in (col[m].mean(axis=0))]})
+        rgba = np.concatenate([l2s(atl_c), np.clip(atl_a, 0, 1)[..., None] * 255.0], -1).round().astype(np.uint8)
+        nrm8 = ((atl_n * 0.5 + 0.5) * 255.0).round().clip(0, 255).astype(np.uint8)
+        Image.fromarray(rgba, 'RGBA').save(f'{OUT}/{F}_leaf_col.png', optimize=False, compress_level=6)
+        Image.fromarray(nrm8, 'RGB').save(f'{OUT}/{F}_leaf_nrm.png', compress_level=6)
+        Image.fromarray(rgba, 'RGBA').resize((1024, 1024), Image.LANCZOS).save(f'{OUT}/{F}_leaf_col.webp', quality=90, method=6)
+        Image.fromarray(nrm8, 'RGB').resize((1024, 1024), Image.LANCZOS).save(f'{OUT}/{F}_leaf_nrm.webp', quality=88, method=6)
+        meta['species'][F] = {'set': 'ambientCG LeafSet' + sp['set'], 'kind': sp['kind'], 'len': sp['len'], 'target': sp['target'], 'cells': info}
+        print(F, sp['kind'], [round(c['cover'], 3) for c in info], [round(c['len'], 3) for c in info])
+    json.dump(meta, open(f'{OUT}/leaves.json', 'w'), indent=1)
+    # a contact sheet of the atlases over grey
+    sheet = []
+    for F in SPECIES:
+        im = Image.open(f'{OUT}/{F}_leaf_col.png').resize((512, 512), Image.LANCZOS)
+        bg = Image.new('RGBA', im.size, (200, 200, 205, 255)); bg.alpha_composite(im)
+        d = ImageDraw.Draw(bg); d.text((6, 4), F, fill=(0, 0, 0, 255))
+        sheet.append(bg.convert('RGB'))
+    S = Image.new('RGB', (512 * len(sheet), 512))
+    for i, im in enumerate(sheet): S.paste(im, (512 * i, 0))
+    S.save(f'{OUT}/leaves_sheet.jpg', quality=88)
+    print('wrote', OUT)
+
+if __name__ == '__main__':
+    main()

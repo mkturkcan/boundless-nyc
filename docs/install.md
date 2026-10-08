@@ -20,7 +20,7 @@ The Python package has no required dependencies and runs on any machine that can
 
 ## Windows
 
-**Release.** Download `BoundlessNYC-0.2.1-win64.zip` from the
+**Release.** Download `BoundlessNYC-0.3.0-win64.zip` from the
 [releases page](https://github.com/mkturkcan/boundless-nyc/releases) and extract it anywhere. The folder contains:
 
 | Path | Contents |
@@ -61,7 +61,7 @@ cd boundless-nyc
 (cd server && npm install)
 ls server/node_modules/electron/dist/electron        # the runtime; if missing: (cd server && node node_modules/electron/install.js)
 pip install -U "huggingface_hub>=1.0"
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 --include "Content/*" --local-dir .
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 --include "Content/*" --local-dir .
 cd server
 env -u ELECTRON_RUN_AS_NODE npx electron . --content ../Content
 ```

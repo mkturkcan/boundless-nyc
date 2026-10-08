@@ -56,6 +56,7 @@ HOOKS = [
     'usd_trees',     # BX-TREES: the tree asset set's species prototypes on the web's tree pools (trees_<shot>.usdc; --bxt-lod)
     'usd_mat',       # BX-MAT: primvars instead of material variants and the node-group tags (blender_nodes.py); --nobxmat: off
     'usd_peds',      # BX-PEDS: the walkers as UsdSkel (peds_<shot>.usdc, <shot>_peds.usda) and peds_<shot>.npz for blender_peds.py (--nopeds, --peds-usd 0)
+    'usd_ramps',     # R7-RAMP (UE track, 2026-10-08): decks under the vehicles the harvest has driving through the air (the web's undecked ramps)
 ]
 import importlib, types, traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

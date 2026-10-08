@@ -69,13 +69,16 @@ water bodies, paths and landmarks from OpenStreetMap; tree crowns are segmented 
 NAIP near-infrared imagery, and the resulting 16,951 trees are assigned to 33 species groups fitted to the park's
 published composition.
 
-## Offline rendering in Blender
+## Offline rendering
 
-A recorded take can be exported to OpenUSD and rendered in Blender Cycles. `boundlessjs/tools/ar34/export/harvest.mjs`
-boots the page as the film recorder does and writes every visible mesh, instance set and camera sample of the take;
-`usd_write.py` turns this into USD layers, and `blender_take.py` renders the frames with the web client's materials
-rebuilt as Cycles node groups, baked facade windows with interiors, film-detail street trees and the page's time of day.
-[Building from source](building.md#offline-rendering-in-blender) lists the commands.
+A recorded take can be exported to OpenUSD and rendered in Blender Cycles or Unreal Engine 5.
+`boundlessjs/tools/ar34/export/harvest.mjs` boots the page as the film recorder does and writes every visible mesh,
+instance set and camera sample of the take; `usd_write.py` turns this into USD layers. `blender_take.py` renders the
+frames in Cycles with the web client's materials rebuilt as node groups, baked facade windows with interiors,
+film-detail street trees and physical light; `ue_take.py` renders the same USD with Unreal's Lumen and Movie Render
+Queue, with master materials per family, CC0 layered materials, Nanite foliage and a cinematic preset.
+[One city, three renderers](architecture.md) describes the design, and the guides for
+[Blender Cycles](blender-cycles.md) and [Unreal Engine 5](unreal.md) take one shot through each renderer.
 
 ## Architecture
 
@@ -105,7 +108,7 @@ BoundlessNYC, the compiled city or imagery rendered with it, please cite Boundle
   author  = {Turkcan, Mehmet Kerem},
   title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.2.1},
+  version = {0.3.0},
   url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```

@@ -29,6 +29,7 @@
 //   --shotspp a=48     samples per shot over --samples and --nightspp (PIPEFIX; none by default)
 //   --uflags "..."     extra usd_write.py flags (e.g. "--coplanar warn": the writer reports unresolved pairs, no exit 4)
 //   --dry              print the plan only
+//   --nocoverage       no frontend coverage lines after the summary (DOCS30: frontend_coverage.py per shot's USD)
 //   PIPEFIX (2026-10-05): fail fast. A shot is stopped at the first check that can see its fault, before the hours go:
 //     1. geometry, right after its USD (bx_fix.json): more than --coplanartol coplanar pairs in view, a USD written
 //        without the coplanar pass, a missing walker file; the shot is not rendered (status.json stage usd-check). The
@@ -63,8 +64,9 @@ const SHOTS = opt('shots') ? opt('shots').split(',').filter(Boolean) : SEQS.flat
 const GPUS = [...new Set([...opt('gpus', '1,2').split(',').map(Number), ...(has('gpu0') ? [0] : [])])].filter((g) => g >= 0);
 const LANE = { 0: 34, 1: 32, 2: 33 };
 const RPG = Math.max(1, Number(opt('rpg', '1')));
-const WORK = path.resolve(opt('work', '/data0/projectnyc_aux/tmp/bx/batch'));
-const CLIPS = path.resolve(ROOT, opt('clips', 'boundlessjs/shots/ad/clips_cyc'));
+const UE = opt('target', 'cycles') === 'ue';   // UE (2026-10-06): --target ue, the UE block below
+const WORK = path.resolve(opt('work', UE ? '/data0/projectnyc_aux/tmp/ue/batch' : '/data0/projectnyc_aux/tmp/bx/batch'));
+const CLIPS = path.resolve(ROOT, opt('clips', UE ? 'boundlessjs/shots/ad/clips_ue' : 'boundlessjs/shots/ad/clips_cyc'));
 const FRAMES = opt('frames');
 const RES = opt('res', '2560x1440'), SPP = opt('samples', '24');
 // BX-FIX (2026-10-04): night and dusk takes at --nightspp samples; every take then goes through bx_temporal.py (the
@@ -230,6 +232,52 @@ function geoGate(s) {
 // against the web take. -> false: the shot stops here (its older take stays where it is)
 const takeArgs = (s, outdir) => ['-b', '--factory-startup', '--python', path.join(here, 'blender_take.py'), '--', '--usd', W(s, 'u', `${s}.usda`), '--harvest', W(s, 'h'),
   '--outdir', outdir, '--res', RES, '--leaves', '0.45', '--leafgain', '1.8'];
+// ---- UE (2026-10-06): --target ue renders the takes with Unreal Engine 5 (ue_take.py: ue_prep.py's layer, the import in
+// UnrealEditor-Cmd, Movie Render Queue in -game with Lumen) into boundlessjs/shots/ad/clips_ue/<shot>/ (and --work defaults
+// to /data0/projectnyc_aux/tmp/ue/batch), through the same gates as the Cycles takes: the geometry gate on the USD, the
+// three-frame preview against the web take (cyc_vs_web.py), the take check (cyc_vs_web, temporal_scan, coplanar, leaf; the
+// leaf test needs the take's depth, which UE does not write: "not tested"). No temporal filter after a UE take (TSR and
+// Lumen accumulate over frames). The preview's import is reused by the take (ue_take.py --noprep --noimport).
+//   --usdfrom <dir>    seed a shot's h/ and u/ as links to a Cycles batch's (<dir>/<shot>/, with its harvest.ok / usd.ok), so
+//                      the UE takes render the very USDs of the Cycles takes; --uetake "..." extra ue_take.py flags
+const UEFLAGS = split(opt('uetake', ''));
+const ueArgs = (s, outdir, gpu, frames, reuse) => [path.join(here, 'ue_take.py'), '--usd', W(s, 'u', `${s}.usda`), '--outdir', outdir, '--res', RES, '--gpu', String(gpu),
+  '--work', W(s, 'ue'), ...(frames ? ['--frames', frames] : []), ...(reuse ? ['--noprep', '--noimport'] : []), ...UEFLAGS];
+function ueSplit(logf) {   // per frame from ue_take.py's TAKE_FRAME lines (seconds between the frames' files); the stages from TAKE_STATS
+  const lines = fs.readFileSync(logf, 'utf8').split('\n');
+  let from = 0; lines.forEach((l, i) => { if (l.startsWith('### ') && l.includes('ue_take.py')) from = i; });
+  const tf = {}; let st = null;
+  for (const line of lines.slice(from)) {
+    if (line.startsWith('TAKE_FRAME ')) { try { const d = JSON.parse(line.slice(11)); tf[d.frame] = d; } catch {} }
+    if (line.startsWith('TAKE_STATS ')) { try { st = JSON.parse(line.slice(11)); } catch {} }
+  }
+  const fr = Object.keys(tf).map(Number).sort((a, b) => a - b);
+  const v = fr.slice(1).map((f) => tf[f].secs).sort((a, b) => a - b);
+  return { frames: fr.length, first_s: fr.length ? tf[fr[0]].secs : null, total_s: v.length ? v[Math.floor(v.length / 2)] : null,
+    prep_s: st?.prep_s ?? null, import_s: st?.import_s ?? null, render_s: st?.render_s ?? null };
+}
+// R3-PHYS: --cycref <dir> (the physical Cycles takes' root): ue_check.py against that take alone (--noweb), like with like
+const CYCREF = opt('cycref', '');
+async function ueCheck(s, take, jf, sheet, logf, frames) {   // UE: ue_check.py (regions against the web and the Cycles take)
+  fs.rmSync(jf, { force: true });
+  const code = await run('uv', ['run', '--no-project', '--with', 'numpy', '--with', 'pillow', '--with', 'scipy', 'python', path.join(here, 'ue_check.py'), take,
+    '--web', path.join(ROOT, 'boundlessjs', 'shots', 'ad', 'clips', s), '--cyc', CYCREF ? path.join(path.resolve(ROOT, CYCREF), s) : path.join(ROOT, 'boundlessjs', 'shots', 'ad', 'clips_cyc', s),
+    ...(CYCREF ? ['--noweb'] : []),
+    ...(frames ? ['--frames', frames] : []), '--json', jf, '--sheet', sheet], { cwd: here, logf, timeout: 900 });
+  let j = null; try { j = JSON.parse(fs.readFileSync(jf, 'utf8')); } catch {}
+  return j ? { pass: j.pass, why: j.why || [], regions: j.regions, sheet: j.sheet ?? null, at: new Date().toString() } : { pass: null, why: [`exit ${code}`] };
+}
+function ueSeed(s) {   // --usdfrom: h/ and u/ as links to a Cycles batch's, with its markers (R3-PHYS: Cycles takes too)
+  const from = opt('usdfrom'); if (!from) return;
+  for (const [d, ok] of [['h', 'harvest.ok'], ['u', 'usd.ok']]) {
+    const src = path.join(path.resolve(from), s, d);
+    if (exists(W(s, ok)) || !exists(path.join(path.resolve(from), s, ok)) || !exists(src)) continue;
+    fs.rmSync(W(s, d), { recursive: true, force: true }); fs.symlinkSync(src, W(s, d));
+    fs.writeFileSync(W(s, ok), `seeded from ${src} ${new Date().toString()}`);
+    log(`${s}: ${d}/ linked to ${src} (--usdfrom)`);
+  }
+}
+
 async function preview(s, gpu) {
   if (!PREVIEW || exists(W(s, 'preview.ok'))) return true;
   const fr = takeFrames(s) || [];
@@ -241,7 +289,8 @@ async function preview(s, gpu) {
   status(s, { stage: 'preview', gpu });
   log(`${s}: preview (frames ${pf.join(', ')}, ${PSPP} spp) on GPU ${gpu}`);
   const t0 = Date.now();
-  const code = await run(BLENDER, [...takeArgs(s, dir), '--samples', PSPP, '--frames', pf.join(','), '--nodepthout', ...TFLAGS],
+  const code = UE ? await run('python3', ueArgs(s, dir, gpu, pf.join(',')), { cwd: here, logf: W(s, 'preview.log'), timeout: 3600 })   // UE
+    : await run(BLENDER, [...takeArgs(s, dir), '--samples', PSPP, '--frames', pf.join(','), '--nodepthout', ...TFLAGS],
     { cwd: here, env: { CUDA_VISIBLE_DEVICES: String(gpu), CUDA_DEVICE_ORDER: 'PCI_BUS_ID' }, logf: W(s, 'preview.log'), timeout: 1800 });
   const got = pf.filter((f) => exists(path.join(dir, `frame_${String(f).padStart(5, '0')}.jpg`)));
   const rmin = +((Date.now() - t0) / 60000).toFixed(1);
@@ -260,6 +309,12 @@ async function preview(s, gpu) {
   status(s, { preview: { frames: pf, spp: PSPP, min: rmin, cyc_vs_web: j ? { pass: j.pass, score: j.score, lscore: j.lscore, sheet: j.sheet ?? null } : { pass: null, error: `exit ${c2}` }, at: new Date().toString() } });
   log(`${s}: preview ${rmin} min, cyc_vs_web ${j ? (j.pass ? 'pass' : 'FAIL') : '?'}: ${what}`);
   if (j && j.pass === false) { status(s, { stage: 'preview-check', error: `preview check: cyc_vs_web FAIL, ${what}; sheet ${sheet}` }); return false; }
+  if (UE) {   // UE: the region check against the web and the Cycles take (ue_check.py; no exposure normalisation)
+    const u = await ueCheck(s, dir, W(s, 'preview_ue_check.json'), W(s, 'preview_ue_check.jpg'), W(s, 'preview.log'), pf.join(','));
+    status(s, { preview_ue: u });
+    log(`${s}: preview ue_check ${u.pass === false ? 'FAIL: ' + u.why.join(' | ') : u.pass ? 'pass' : '?'}`);
+    if (u.pass === false) { status(s, { stage: 'preview-check', error: `preview check: ue_check FAIL, ${u.why.join(' | ')}; sheet ${u.sheet}` }); return false; }
+  }
   fs.writeFileSync(W(s, 'preview.ok'), new Date().toString());
   return true;
 }
@@ -277,17 +332,18 @@ async function render(s, gpu) {
   for (let a = 0, oom = 0, n = 0; a < 2; n++) {
     await waitFree(s, gpu);
     status(s, { stage: 'render', gpu, attempt: a + 1 });
-    log(`${s}: Cycles take on GPU ${gpu}, attempt ${a + 1}${oom ? ` (after ${oom} out-of-memory retries)` : ''}`);
+    log(`${s}: ${UE ? 'UE' : 'Cycles'} take on GPU ${gpu}, attempt ${a + 1}${oom ? ` (after ${oom} out-of-memory retries)` : ''}`);
     const t0 = Date.now();
     const nf = (takeFrames(s) || []).length || 108;
     const logf = W(s, `render_${n + 1}.log`);
-    const code = await run(BLENDER, [...takeArgs(s, dir), '--samples', sppOf(s), ...(FRAMES ? ['--frames', FRAMES] : []), ...TFLAGS],
+    const code = UE ? await run('python3', ueArgs(s, dir, gpu, FRAMES, exists(W(s, 'preview.ok')) && a === 0), { cwd: here, logf, timeout: 3600 + nf * 30 })   // UE
+      : await run(BLENDER, [...takeArgs(s, dir), '--samples', sppOf(s), ...(FRAMES ? ['--frames', FRAMES] : []), ...TFLAGS],
       { cwd: here, env: { CUDA_VISIBLE_DEVICES: String(gpu), CUDA_DEVICE_ORDER: 'PCI_BUS_ID' }, logf, timeout: 900 + nf * 90 });
     const miss = missingFrames(s);
-    let sp = null; try { sp = frameSplit(logf); } catch {}
+    let sp = null; try { sp = UE ? ueSplit(logf) : frameSplit(logf); } catch {}   // UE: ue_take.py's own lines
     log(`${s}: take exit ${code}, ${miss ? miss.length : '?'} frames missing, ${((Date.now() - t0) / 60000).toFixed(1)} min; per frame ${JSON.stringify(sp)}`);
     if (miss && !miss.length) {
-      if (!has('notemporal') && !(await temporal(s))) { a++; continue; }
+      if (!UE && !has('notemporal') && !(await temporal(s))) { a++; continue; }   // UE: no temporal filter
       fs.writeFileSync(W(s, 'render.ok'), new Date().toString());
       status(s, { stage: 'done', render_min: +((Date.now() - t0) / 60000).toFixed(1), per_frame: sp, error: null });
       if (!has('nocheck')) await check(s);
@@ -351,13 +407,15 @@ async function check(s) {
     { cwd: here, logf: W(s, 'check.log'), timeout: 1800 });
   let lr = null; try { lr = JSON.parse(fs.readFileSync(lj, 'utf8')); } catch {}
   c.leaf = lr ? { pass: !lr.fail, why: lr.why || [], frames_over: lr.frames_over, max_cells: lr.max_cells, mean_cells: lr.mean_cells, worst: (lr.worst || []).map((w) => w.frame) } : { pass: null, why: [`exit ${lcode} (not tested)`] };
+  if (UE) c.ue = await ueCheck(s, path.join(CLIPS, s), W(s, 'ue_check.json'), W(s, 'ue_check.jpg'), W(s, 'check.log'));   // UE
   c.web_pass = c.pass;
-  if (c.pass !== null || c.temporal.pass !== null) c.pass = c.pass !== false && c.temporal.pass !== false && c.coplanar.pass !== false && c.leaf.pass !== false;
+  if (c.pass !== null || c.temporal.pass !== null) c.pass = c.pass !== false && c.temporal.pass !== false && c.coplanar.pass !== false && c.leaf.pass !== false && !(c.ue && c.ue.pass === false);
   const st = status(s, { check: c });
   const pct = (v) => (v == null ? '?' : (v * 100).toFixed(2) + ' %');
   const what = (c.score != null ? `median off-colour area ${pct(c.score)} (limit ${pct(c.limit)}), off-lightness ${pct(c.lscore)} (limit ${pct(c.llimit)})` : '') +
     `; temporal ${c.temporal.pass === false ? 'FAIL ' + c.temporal.why.join(' | ') : c.temporal.pass ? 'pass' : '?'}; coplanar ${c.coplanar.pass ? 'pass' : 'FAIL ' + c.coplanar.why.join(' | ')}` +
-    `; leaf ${c.leaf.pass === false ? 'FAIL ' + c.leaf.why.join(' | ') : c.leaf.pass ? 'pass (' + c.leaf.frames_over + ' frames over)' : '?'}`;
+    `; leaf ${c.leaf.pass === false ? 'FAIL ' + c.leaf.why.join(' | ') : c.leaf.pass ? 'pass (' + c.leaf.frames_over + ' frames over)' : '?'}` +
+    (c.ue ? `; ue_check ${c.ue.pass === false ? 'FAIL ' + c.ue.why.join(' | ') : c.ue.pass ? 'pass' : '?'}` : '');
   if (c.pass === false) status(s, { error: `take check: ${what}; sheet ${sheet}` });
   else if (st.error && /^(cyc_vs_web|take check)/.test(String(st.error))) status(s, { error: null });
   log(`${s}: take check ${c.pass === true ? 'pass' : c.pass === false ? 'FAIL' : 'not run: ' + c.reason}, cyc_vs_web ${c.web_pass === false ? 'FAIL' : c.web_pass ? 'pass' : '?'}${what ? ', ' + what : ''}`);
@@ -426,6 +484,7 @@ if (!has('cutonly') && !has('checkonly')) {
     while (prepQ.length) {
       while (ready.length >= AHEAD) await waitEvent();
       const s = prepQ.shift();
+      ueSeed(s);   // UE: --usdfrom
       const ok = (await harvest(s, gpu)) && (await usd(s)) && geoGate(s);   // PIPEFIX: stopped before the GPU when the USD fails its geometry check
       if (ok) ready.push(s); else failed.push(s);
       ready.sort((a, b) => SHOTS.indexOf(a) - SHOTS.indexOf(b));
@@ -457,3 +516,17 @@ const sum = SHOTS.map((s) => { let j = {}; try { j = JSON.parse(fs.readFileSync(
   harvest_min: j.harvest_min, usd_min: j.usd_min, render_min: j.render_min, per_frame: j.per_frame }; });
 fs.writeFileSync(path.join(WORK, 'summary.json'), JSON.stringify(sum, null, 1));
 log(`summary: ${path.join(WORK, 'summary.json')}; ${sum.filter((x) => x.stage === 'done').length}/${SHOTS.length} shots done; take check (cyc_vs_web, temporal_scan, coplanar, leaf) failing: ${sum.filter((x) => x.check === false).map((x) => x.shot).join(', ') || 'none'}`);
+// DOCS30 (2026-10-08): the frontend coverage of every shot's USD (frontend_coverage.py: per material family and pbrLib set,
+// whether Blender and Unreal draw it with their own builder or master, with an HQ set, or on the preview surface); the
+// table goes to <work>/<shot>/coverage.txt, one line per shot to the log. Never fails the batch.
+if (!has('dry') && !has('nocoverage')) {
+  for (const s of SHOTS) {
+    const u = W(s, 'u', `${s}.usda`);
+    if (!exists(u)) continue;
+    try {
+      const out = execFileSync('uv', ['run', '--no-project', '--with', 'usd-core', 'python', path.join(here, 'frontend_coverage.py'), u, '--brief', '--out', W(s, 'coverage.txt')],
+        { encoding: 'utf8', timeout: 180000, stdio: ['ignore', 'pipe', 'pipe'] });
+      log(`${out.trim()} (table: ${W(s, 'coverage.txt')})`);
+    } catch (e) { log(`${s}: coverage report failed: ${String(e.message || e).split('\n')[0]}`); }
+  }
+}

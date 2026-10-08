@@ -17,7 +17,7 @@ streetscape studies in which every modelled element can be traced to a public re
 | Streaming | Binary tiles streamed around the camera at full detail, with coarser far-field tiles beyond |
 | Simulation | IDM car following on the lane graph with signal phases and turn planning; pedestrians on the sidewalk graph with signal-aware crossings; vehicles of the NYC fleet: taxis, private cars, MTA buses on their routes, school buses, police, postal, sanitation and delivery vehicles, vans, box trucks and emergency vehicles; the 1 train on the Manhattan Valley viaduct and Metro-North on the Park Avenue tracks |
 | Sensors | RGB; semantic segmentation (Cityscapes-compatible classes); instance segmentation with visible and amodal boxes, occlusion ratios and 3D poses; metric depth |
-| Interfaces | Interactive browser client; simulation server with a TCP API and a Python client (synchronous stepping, actor control, sensors, map queries); export of a recorded take to OpenUSD for offline rendering in Blender Cycles |
+| Interfaces | Interactive browser client; simulation server with a TCP API and a Python client (synchronous stepping, actor control, sensors, map queries); export of a recorded take to OpenUSD, rendered offline in Blender Cycles and Unreal Engine 5 |
 
 Links:
 
@@ -35,6 +35,13 @@ facade filings and classified into facade typologies. Street centrelines become 
 paint and the lane and sidewalk graphs. The client streams the tiles around the camera, dresses the facades, simulates
 vehicles and pedestrians, and renders every frame together with its labels.
 
+The same city renders in three engines. The three.js client is where the city is authored and simulated; a recorded
+take of a camera path is exported to OpenUSD, and Blender Cycles and Unreal Engine 5 render that export with the same
+geometry, traffic, trees and light, each with its own materials for the families it supports. The documentation
+describes the design ([One city, three renderers](https://mkturkcan.github.io/boundless-nyc/architecture/)) and takes
+one shot through each offline renderer ([Blender Cycles](https://mkturkcan.github.io/boundless-nyc/blender-cycles/),
+[Unreal Engine 5](https://mkturkcan.github.io/boundless-nyc/unreal/)).
+
 ## Quick start
 
 **Binary release (Windows x64).** Download `BoundlessNYC-<version>-win64.zip` from Releases (the server with the
@@ -51,7 +58,7 @@ python PythonAPI/examples/intersection_120_amsterdam.py
 ```
 npm install && (cd boundlessjs && npm install)
 # binary banks (tiles, models, textures): download, or compile the tiles (BUILDING.md)
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 \
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 cd boundlessjs && npm run dev        # http://127.0.0.1:5219
@@ -108,7 +115,7 @@ one script per step in [PythonAPI/examples/tutorials/](PythonAPI/examples/tutori
 boundlessjs/            renderer, simulation and perception client (three.js, Vite)
   src/                  engine, streaming, materials, traffic, pedestrians, perception, API bridge
   tools/pipeline/       city compiler: NYC Open Data -> binary tiles
-  tools/ar34/export/    take export to OpenUSD and the Blender Cycles renderer
+  tools/ar34/export/    take export to OpenUSD; the Blender Cycles and Unreal Engine 5 renderers
   tools/                asset builders (vehicles, trees, vegetation, materials, Central Park), tile probes and audits
   public/               LUTs, fonts, data; tiles, models and textures are downloaded (BUILDING.md)
 src/                    building-generator library shared with the client (@nyc alias); index.html is its demo
@@ -156,7 +163,7 @@ BoundlessNYC, the compiled city or imagery rendered with it, please cite Boundle
   author  = {Turkcan, Mehmet Kerem},
   title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.2.1},
+  version = {0.3.0},
   url     = {https://github.com/mkturkcan/boundless-nyc}
 }
 ```

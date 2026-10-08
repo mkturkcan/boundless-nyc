@@ -66,6 +66,20 @@ FILL_K = {'night': 2.0, 'golden': 2.0, 'day': 2.0}
 # 22:16 warmer, from the BID check (t8ApolloGlide f054 R/B 1.12 -> 1.14 against the web's 1.24; t7ArchTrack 1.05 -> 1.11
 # against 1.13): (1.16, 1.0, 0.78)
 SKY_TINT = {'golden': (1.16, 1.0, 0.78), 'day': (1.16, 1.0, 0.78)}
+# R3-PHYS (2026-10-07, owner: physical light for Cycles and Unreal; the web-matched takes stay as gate baselines):
+# --light phys (default) | web. phys: the visible dome is the only sky light (x phys_light.json sky_k, untinted), no
+# structure or hemisphere fill, no probe term, untrimmed albedos (blender_nodes --bxtrim phys), the exposure fixed per
+# time of day (phys_light.json, which ue_light.py reads too); web: the rig as calibrated against the web takes.
+PHYS_JSON = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'phys_light.json')
+
+
+def _phys(C=None):
+    """the physical light table, or None when this take uses the web-matched rig (--light web)."""
+    if C is not None and str(C.opt('light', 'phys')) == 'web': return None
+    try:
+        with open(PHYS_JSON) as f: return json.load(f)
+    except Exception: return {}
+# R3-PHYS end
 
 
 # ---------------------------------------------------------------------------------------------------------- utilities
@@ -320,7 +334,8 @@ def setup_sky(C):
         print('[bx-light] no sky capture: the pilot sky stays'); return
     # golden (round 2): the captured visible dome lights the scene as it does the camera, white-balanced (SKY_TINT): the
     # pilot's Nishita at 0.15-0.25 starved the shade (R/B 1.48 under the viaduct); dusk and night: the web's ambient rig
-    src = C.opt('skysrc', 'vis' if C.mode in ('golden', 'day') else 'web')
+    PH = _phys(C)   # R3-PHYS: the visible dome at every time of day
+    src = C.opt('skysrc', 'vis' if (PH is not None or C.mode in ('golden', 'day')) else 'web')
     # dusk and night: the web's ambient rig (hemisphere lights, the IBL dome) is unoccluded, Cycles' dome is occluded by the
     # city; x2 brings the open surfaces (a lamp-lit wall, a white truck's side) to the web's level (t7DinoGlide f000:
     # wall 146 -> 151 at x2.5 against the web's 157) without lifting the lamp-lit road further
@@ -329,6 +344,7 @@ def setup_sky(C):
     # (BX-DUSK 2026-10-03: back to x2 at dusk: the x4 stood in for the street lamps the path harvests had missed,
     # harvest_lights.mjs lampsAlongPath / --lampsfrom, and over-lit the open facades; the probe's share is setup_ambient)
     k = float(C.opt('skylight', '1.0' if C.mode in ('golden', 'day') else '2.0'))
+    if PH is not None and C.opt('skylight') is None: k = float(PH.get('sky_k', 1.0))   # R3-PHYS
     world = sc.world or bpy.data.worlds.new('sky')
     sc.world = world; world.use_nodes = True
     nt = world.node_tree
@@ -380,8 +396,8 @@ def setup_sky(C):
         else:
             # the visible dome as the diffuse light, white-balanced: --skysat (saturation of the light it gives) and
             # --skytint r,g,b (golden defaults below: calibrated against the web's shade at 1:1)
-            sat = float(C.opt('skysat', str(SKY_SAT.get(C.mode, 1.0))))
-            tint = [float(v) for v in C.opt('skytint', ','.join(str(v) for v in SKY_TINT.get(C.mode, (1.0, 1.0, 1.0)))).split(',')]
+            sat = float(C.opt('skysat', str(SKY_SAT.get(C.mode, 1.0) if PH is None else 1.0)))   # R3-PHYS: untinted
+            tint = [float(v) for v in C.opt('skytint', ','.join(str(v) for v in (SKY_TINT.get(C.mode, (1.0, 1.0, 1.0)) if PH is None else (1.0, 1.0, 1.0)))).split(',')]
             col = tv.outputs['Color']
             if abs(sat - 1.0) > 1e-4:
                 hsv = nt.nodes.new('ShaderNodeHueSaturation'); hsv.inputs['Saturation'].default_value = sat
@@ -1127,7 +1143,7 @@ def setup_fill(C):
     # x3 matches the web's means under the viaduct (night f000: the arch 75 / 74, the deck 79 / 73, the crowns 37 / 44) but
     # flattens the viaduct into a milky grey at 1:1; x2 keeps its modelling and stays legible (the lead: darker than the
     # web is fine where it is physically right, if it reads)
-    kf = float(C.opt('fill', str(FILL_K.get(C.mode, 0.0))))
+    kf = float(C.opt('fill', str(FILL_K.get(C.mode, 0.0) if _phys(C) is None else 0.0)))   # R3-PHYS: no fill
     hemi = getattr(C, 'hemi', None)
     if kf <= 0: return
     if not hemi:
@@ -1371,8 +1387,11 @@ def setup_film(C):
     expo = float(LS.get('exposure') or 1.0)
     LF = C.LF
     if LF and C.frame < len(LF) and LF[C.frame] and LF[C.frame].get('exposure'): expo = float(LF[C.frame]['exposure'])
+    PH = _phys(C)   # R3-PHYS: the exposure fixed per time of day
+    if PH is not None and (PH.get('exposure') or {}).get(C.mode): expo = float(PH['exposure'][C.mode])
     expo *= 2.0 ** float(C.opt('exposure', '0'))
     C.T['exposure'] = round(expo, 4)
+    C.T['light'] = 'web' if PH is None else 'phys'
     if C.opt('nograde') is not None:
         sc.view_settings.view_transform = 'AgX'; sc.view_settings.exposure = math.log2(max(1e-4, expo)); return
     vl = sc.view_layers[0]
@@ -1572,7 +1591,7 @@ AMB_ADD = {'dusk': 0.03}
 
 
 def setup_ambient(C):
-    f = float(C.opt('ambadd', str(AMB_ADD.get(C.mode, 0.0))))
+    f = float(C.opt('ambadd', str(AMB_ADD.get(C.mode, 0.0) if _phys(C) is None else 0.0)))   # R3-PHYS: no probe term
     w = C.sc.world
     if f <= 0 or w is None: return
     cy = C.sc.cycles
@@ -1649,7 +1668,7 @@ def frame(ctx, f):
             for o in list(old.objects): bpy.data.objects.remove(o, do_unlink=True)
             bpy.data.collections.remove(old)
         _run(C, (setup_vehicles,))
-    if C.LF and C.frame < len(C.LF) and (C.LF[C.frame] or {}).get('exposure'):
+    if C.LF and C.frame < len(C.LF) and (C.LF[C.frame] or {}).get('exposure') and _phys(C) is None:   # R3-PHYS: fixed exposure
         e = float(C.LF[C.frame]['exposure']) * 2.0 ** float(C.opt('exposure', '0'))
         for n in getattr(C, 'expo_nodes', []) or []:
             try: n.inputs[1].default_value = e

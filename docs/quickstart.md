@@ -11,9 +11,9 @@ checkout. The [installation guide](install.md) covers requirements, servers with
 
 The release archive contains the server, the compiled city (`Content/`) and the Python package.
 
-1. Download `BoundlessNYC-0.2.1-win64.zip` (about 2 GB) from the
+1. Download `BoundlessNYC-0.3.0-win64.zip` (about 2 GB) from the
    [releases page](https://github.com/mkturkcan/boundless-nyc/releases) and extract it.
-2. In the extracted folder `BoundlessNYC_0.2.1_win64`, double-click `StartServer.bat`. A window opens; on the first
+2. In the extracted folder `BoundlessNYC_0.3.0_win64`, double-click `StartServer.bat`. A window opens; on the first
    start the city appears after one to two minutes, while the shaders compile. `StartServer_Headless.bat` starts the
    same server without a window.
 3. Open a terminal in that folder and install the Python package:
@@ -34,7 +34,7 @@ git clone https://github.com/mkturkcan/boundless-nyc.git
 cd boundless-nyc
 (cd server && npm install)
 pip install -U "huggingface_hub>=1.0"
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 --include "Content/*" --local-dir .
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 --include "Content/*" --local-dir .
 cd server
 env -u ELECTRON_RUN_AS_NODE npx electron . --content ../Content
 ```
@@ -67,7 +67,7 @@ npm install
 (cd boundlessjs && npm install)
 (cd server && npm install)
 pip install -U "huggingface_hub>=1.0"
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.2.1 \
+hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 ```

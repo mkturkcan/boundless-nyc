@@ -5468,6 +5468,294 @@
           ]
         }
       ]
+    },
+    "tuHudsonSwoop": {
+      "act": "trailerUE",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "In from the Hudson: a swoop over the Riverside Drive Viaduct down to the 125th Street arch",
+      "keys": [
+        {
+          "p": [
+            -73.961533,
+            40.8186803,
+            95
+          ],
+          "look": [
+            -73.9589155,
+            40.81716,
+            5
+          ]
+        },
+        {
+          "p": [
+            -73.9612054,
+            40.8183871,
+            60
+          ],
+          "look": [
+            -73.9598016,
+            40.8176176,
+            10
+          ]
+        },
+        {
+          "p": [
+            -73.9608973,
+            40.8181226,
+            32
+          ],
+          "look": [
+            -73.9603022,
+            40.8178604,
+            16
+          ]
+        }
+      ]
+    },
+    "tuValleyShafts": {
+      "act": "trailerUE",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "golden",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "Under the Manhattan Valley Viaduct toward the low sun, the open deck lit through",
+      "keys": [
+        {
+          "p": [
+            -73.9589875,
+            40.8149182,
+            5.5
+          ],
+          "look": [
+            -73.9597303,
+            40.8137901,
+            7.5
+          ]
+        },
+        {
+          "p": [
+            -73.9591161,
+            40.8147459,
+            5.6
+          ],
+          "look": [
+            -73.9598568,
+            40.813617,
+            7.5
+          ]
+        },
+        {
+          "p": [
+            -73.9592515,
+            40.8145662,
+            5.8
+          ],
+          "look": [
+            -73.9599891,
+            40.813436,
+            7.5
+          ]
+        }
+      ]
+    },
+    "tuValleyTrainDusk": {
+      "act": "trailerUE",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "The 1 train on the Manhattan Valley Viaduct at dusk",
+      "keys": [
+        {
+          "p": [
+            -73.956765,
+            40.8175333,
+            8
+          ],
+          "look": [
+            -73.9570956,
+            40.817415,
+            17
+          ]
+        },
+        {
+          "p": [
+            -73.9568059,
+            40.8174681,
+            11
+          ],
+          "look": [
+            -73.9571531,
+            40.8173363,
+            18
+          ]
+        },
+        {
+          "p": [
+            -73.9568467,
+            40.817403,
+            14.5
+          ],
+          "look": [
+            -73.9572106,
+            40.8172576,
+            18.5
+          ]
+        }
+      ]
+    },
+    "tuApolloSweep": {
+      "act": "trailerUE",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "The Apollo's marquee at night: a rising arc in from the east over the westbound lanes",
+      "keys": [
+        {
+          "p": [
+            -73.9501199,
+            40.8097274,
+            5.2
+          ],
+          "look": [
+            -73.9502129,
+            40.8098693,
+            4.9
+          ]
+        },
+        {
+          "p": [
+            -73.9501499,
+            40.809742,
+            5.9
+          ],
+          "look": [
+            -73.9502129,
+            40.8098693,
+            5.3
+          ]
+        },
+        {
+          "p": [
+            -73.9501793,
+            40.8097575,
+            6.8
+          ],
+          "look": [
+            -73.9501933,
+            40.8098868,
+            7.2
+          ]
+        }
+      ]
+    },
+    "tuForumGlass": {
+      "act": "trailerUEout",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "night",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "Night glass: north along Broadway past the Forum, the Manhattan Valley Viaduct beside it",
+      "keys": [
+        {
+          "p": [
+            -73.9582706,
+            40.8159645,
+            6.5
+          ],
+          "look": [
+            -73.9582222,
+            40.8163557,
+            6.5
+          ]
+        },
+        {
+          "p": [
+            -73.9581221,
+            40.8161696,
+            6.8
+          ],
+          "look": [
+            -73.9580727,
+            40.8165603,
+            7
+          ]
+        },
+        {
+          "p": [
+            -73.9579747,
+            40.8163751,
+            7.2
+          ],
+          "look": [
+            -73.9579024,
+            40.8167562,
+            8
+          ]
+        }
+      ]
+    },
+    "tuForumGlassDusk": {
+      "act": "trailerUEout",
+      "flags": "fall=0&gfx=saturation:1.16,contrast:0.2,motionBlur:0.5",
+      "time": "dusk",
+      "duration": 3.6,
+      "ease": 0.12,
+      "warm": 450,
+      "fov": 58,
+      "title": "Glass at dusk: north along Broadway past the Forum, the Manhattan Valley Viaduct beside it",
+      "keys": [
+        {
+          "p": [
+            -73.9582706,
+            40.8159645,
+            6.5
+          ],
+          "look": [
+            -73.9582222,
+            40.8163557,
+            6.5
+          ]
+        },
+        {
+          "p": [
+            -73.9581221,
+            40.8161696,
+            6.8
+          ],
+          "look": [
+            -73.9580727,
+            40.8165603,
+            7
+          ]
+        },
+        {
+          "p": [
+            -73.9579747,
+            40.8163751,
+            7.2
+          ],
+          "look": [
+            -73.9579024,
+            40.8167562,
+            8
+          ]
+        }
+      ]
     }
   },
   "probes": {

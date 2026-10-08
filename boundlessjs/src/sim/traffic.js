@@ -258,6 +258,18 @@ const cpDrive = (r) => {
 // 15 ft of a hydrant (PROPS' survey); each kind stands off the kerb by its own wheel track. The rebucket keeps the
 // records nearest the camera, everywhere. `?pk34=0` restores all of it.
 const PK34 = typeof location === 'undefined' || new URLSearchParams(location.search).get('pk34') !== '0';
+// PK41 (TRAILERUE 2026-10-08, for the lead: the trailer's vehicle check found parked cars inside each other on 125th
+// Street, two SUVs 0.29 m deep on Morningside, a Lincoln, a Charger and an SUV 1.3-2.0 m into the 26 ft box trucks'
+// rears): PK34's packer took each slot's length from vlen(), and a tile that parks before fleet24 has published its sizes
+// gets the hand table there (no suv, charger, lincoln, mercedes, mini, cargovan or boxtruck26 in it: 4.6 m), so the 9.84 m
+// box truck took a 4.6 m slot. Each slot now takes the drawn model's length (fleet24's kind size, or twice its LOD0 body's
+// longer reach) plus the gap, and a 125th Street tile parked before those sizes existed parks again once they do (in
+// update(), at boot: a take's settle and warm-up come later). `?pk41=0` restores the old packing.
+const PK41 = typeof location === 'undefined' || new URLSearchParams(location.search).get('pk41') !== '0';
+// OV41 (TRAILERUE 2026-10-08): drawnOverlaps(), the recorder's CAR-OVERLAP test, skipped pairs of two parked bodies, so the
+// packer's overlaps never showed in a take's log; they are tested too now (tagged "(parked)" on both sides, which
+// tools/ad/record.mjs fails a take on). `?ov41=0` restores the skip.
+const OV41 = typeof location === 'undefined' || new URLSearchParams(location.search).get('ov41') !== '0';
 // STREET's repaint of the kerbside red (sk/skBus.js SK_BUS_ON: off with `?skbus=0` or `?sk=0`, the compiled paint): with
 // the compiled paint the red stays a lane
 const SKBUS = typeof location === 'undefined' || !['skbus', 'sk'].some((k) => new URLSearchParams(location.search).get(k) === '0');
@@ -684,6 +696,8 @@ export class Traffic {
       (this._hydWait || (this._hydWait = new Map())).set(key, data);
       if (!this._hydHooked) { this._hydHooked = true; HYD_P.then(() => { for (const [k, d] of this._hydWait) if (this.parkedRecs.has(k)) this._parkTile(k, d); this._hydWait.clear(); }); }
     }
+    // PK41: a 125th Street tile packed before fleet24 published its sizes parks again once they exist (update())
+    if (PK41 && PK34 && this._bag125 && !this.vehDims && data.roads.some((r) => C125.test(r.name || ''))) (this._dimWait || (this._dimWait = new Map())).set(key, data);
     for (const r of data.roads) {
       if (r.rclass > 2 || r.level > 0 || !r.park || r.pts.length < 2 || cpDrive(r)) continue;
       const e = { pts: r.pts, cum: [0] };
@@ -759,6 +773,13 @@ export class Traffic {
     }
     return best;
   }
+  // PK41: a parked kind's slot length, the drawn model's (fleet24's kind size, or twice its LOD0 body's longer reach as
+  // VLEN_FLEET takes it), the hand table only before fleet24 exists
+  _parkLen(kind) {
+    const d = this.vehDims && this.vehDims[kind];
+    if (d && d[2] > 2) return this.fleet24 ? Math.max(d[2], 2 * this.carHalf({ kind })[1]) : d[2];
+    return vlen({ kind });
+  }
   _park125(r, e, recs) {
     const bag = this._bag125;
     const nsz = XW_DEPTH(r.rclass, r.width) + 2.4;
@@ -801,7 +822,7 @@ export class Traffic {
         const h = hash01(r.segId, side, n), h2 = hash01(r.segId + 7, side, n), h3 = hash01(r.segId + 13, side, n);
         n++;
         const kind = bag[(h * bag.length) | 0];
-        const L = vlen({ kind }), gap = 0.6 + h2;
+        const L = PK41 ? this._parkLen(kind) : vlen({ kind }), gap = 0.6 + h2;   // PK41: the drawn model's length
         if (d + L > d1) break;
         if (h3 < PK_FREE) { d += 5.5 + gap; continue; }   // a free space
         let z = null;
@@ -1790,6 +1811,8 @@ export class Traffic {
       // (VC36: or twice the drawn body's longer reach from its pose: the MTA buses' fronts reach 0.3 m past half their length)
       VLEN_FLEET = Object.fromEntries(Object.entries(this.vehDims).filter(([, d]) => d && d[2] > 2).map(([k, d]) => [k, VC36 && this.fleet24 ? Math.max(d[2], 2 * this.carHalf({ kind: k })[1]) : d[2]]));
     }
+    // PK41: the 125th Street tiles packed before fleet24's sizes existed park again with them
+    if (PK41 && this.vehDims && this._dimWait && this._dimWait.size) { const wait = this._dimWait; this._dimWait = null; for (const [k, d] of wait) if (this.parkedRecs.has(k)) this._parkTile(k, d); }
     this._frame = (this._frame || 0) + 1;
     if (PY25) this._pedPass(dt);
     if (this._compDirty) this._relabelComponents();
@@ -2986,7 +3009,7 @@ export class Traffic {
         if (j <= i) continue;
         const b = L[j];
         if (a.car && a.car === b.car) continue;   // a bus's own two bodies
-        if (!a.car && !b.car && a.tag === ' (parked)' && b.tag === ' (parked)') continue;
+        if (!OV41 && !a.car && !b.car && a.tag === ' (parked)' && b.tag === ' (parked)') continue;   // OV41: parked pairs too
         if (Math.abs(a.y - b.y) > 3) continue;
         const dx = b.x - a.x, dz = b.z - a.z;
         let dep = 1e9;

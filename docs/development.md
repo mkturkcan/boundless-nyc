@@ -90,7 +90,11 @@ shot right after the USD when more than 100 coplanar pairs remain in view (stage
 frames at 8 samples when they differ from the web take (stage `preview-check`), before the full take uses a GPU. After
 the take, four checks must pass: colour and lightness against the web take of the same shot (`cyc_vs_web.py`), the
 temporal scan with `--fine`, at most 100 unresolved coplanar pairs in view (`bx_fix.json`), and tree crowns without
-flicker (`bx_leafcheck.py`). A failing take is marked in its `status.json` and in the batch summary.
+flicker (`bx_leafcheck.py`). A failing take is marked in its `status.json` and in the batch summary. With
+`--target ue` the batch renders the same shots with Unreal Engine 5 ([Rendering in Unreal Engine 5](unreal.md)) through
+the same gates, and `ue_check.py` compares each Unreal frame region by region with the web and Cycles takes. After the
+summary, `frontend_coverage.py` reports for every shot's USD which material families each renderer draws with its own
+builder and which fall back to the preview surface ([One city, three renderers](architecture.md)).
 
 ## Release gates
 

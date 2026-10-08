@@ -1,0 +1,1737 @@
+{
+ "_doc": [
+  "UE (AR34, 2026-10-06): the table ue_mat.py applies. Each `bx` family (usd_mat.py's tag `kind`) and each asset kind matched",
+  "by prim name names a master of ue_project/Python/ue_masters.py and fills its parameters from the tag alone (the",
+  "canonical parameters: no other assets). A parameter row is [UE parameter, type, source, default]: type s scalar, v",
+  "vector, ts texture sRGB, tl texture linear; source a dotted path into the tag ('tex.alb', 'pbMetal.0', 'gpA.4') or",
+  "{\"fn\": name, ...} for the values ue_mat.py derives (blender_nodes.py's trims and flags: see FN in ue_mat.py).",
+  "`requires` lists tag paths without which the family keeps the importer's material; `two_sided` follows the tag's side."
+ ],
+ "trim": {
+  "mode": "net",
+  "_doc": "'net': every surface at the web's net diffuse albedo (applyLightTrim's mix(0.30, 0.88, night) x the trim, the walls' value curve, the ground's LB14 x the same), so the web's own lights, ambient rig and exposure give the web's levels; 'web': blender_nodes.py's mode (relative to the road, the road at its scanned albedo)"
+ },
+ "families": {
+  "pbr": {
+   "master": "pbr",
+   "requires": [
+    "tex.alb"
+   ],
+   "params": [
+    [
+     "Origin",
+     "v",
+     {
+      "fn": "origin"
+     }
+    ],
+    [
+     "Alb",
+     "ts",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.alb",
+       "tex.alb"
+      ]
+     }
+    ],
+    [
+     "Nrm",
+     "tl",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.nrm",
+       "tex.nrm"
+      ]
+     }
+    ],
+    [
+     "Orm",
+     "tl",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.arm",
+       "tex.orm"
+      ]
+     }
+    ],
+    [
+     "Size",
+     "v",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.size",
+       "pbSize"
+      ],
+      "default": [
+       1,
+       1
+      ]
+     }
+    ],
+    [
+     "Rot",
+     "v",
+     "pbRot",
+     [
+      1,
+      0,
+      0,
+      1
+     ]
+    ],
+    [
+     "Seed",
+     "s",
+     "pbSeed",
+     0
+    ],
+    [
+     "Unit",
+     "v",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.unit",
+       "pbUnit"
+      ],
+      "default": [
+       0,
+       0
+      ]
+     }
+    ],
+    [
+     "World",
+     "s",
+     "pbWorld",
+     0
+    ],
+    [
+     "Ratio",
+     "v",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.ratio",
+       "pbRatio"
+      ],
+      "default": [
+       1,
+       1,
+       1
+      ]
+     }
+    ],
+    [
+     "FkOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "fktr"
+     }
+    ],
+    [
+     "VcOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "vc"
+     }
+    ],
+    [
+     "Bl",
+     "v",
+     "pbBl",
+     [
+      0.25,
+      0.75,
+      0.5
+     ]
+    ],
+    [
+     "NrmK",
+     "s",
+     "pbNrmK",
+     1.0
+    ],
+    [
+     "WallK",
+     "s",
+     {
+      "fn": "wall_k"
+     }
+    ],
+    [
+     "TrimV",
+     "v",
+     {
+      "fn": "trim_v"
+     }
+    ],
+    [
+     "Dirt",
+     "s",
+     "pbDirt",
+     0.3
+    ],
+    [
+     "BaseY",
+     "s",
+     {
+      "fn": "base_y"
+     }
+    ],
+    [
+     "TopY",
+     "s",
+     "pbTopY",
+     100000
+    ],
+    [
+     "Street",
+     "s",
+     {
+      "fn": "flag",
+      "key": "street"
+     }
+    ],
+    [
+     "RoughK",
+     "s",
+     "pbRough",
+     1.0
+    ],
+    [
+     "MetalOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "pbMetal.1"
+     }
+    ],
+    [
+     "MetalV",
+     "s",
+     "pbMetal.0",
+     0
+    ],
+    [
+     "MacroK",
+     "s",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.macro"
+      ],
+      "default": 0.0
+     }
+    ],
+    [
+     "DetK",
+     "s",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.detail"
+      ],
+      "default": 0.0
+     }
+    ],
+    [
+     "CavK",
+     "s",
+     {
+      "fn": "first",
+      "keys": [
+       "hq.cavity"
+      ],
+      "default": 0.0
+     }
+    ],
+    [
+     "PaintOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "paint"
+     }
+    ],
+    [
+     "Chips",
+     "s",
+     "pbChips",
+     1.0
+    ],
+    [
+     "RefL",
+     "s",
+     "pbRefL",
+     0.25
+    ],
+    [
+     "Scan",
+     "v",
+     "pbScan",
+     [
+      0,
+      0,
+      0,
+      1
+     ]
+    ],
+    [
+     "SubK",
+     "s",
+     {
+      "fn": "flag",
+      "key": "pbSubK"
+     }
+    ]
+   ]
+  },
+  "plain": {
+   "master": "plain",
+   "params": [
+    [
+     "Color",
+     "v",
+     "color",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ],
+    [
+     "FkOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "fktr"
+     }
+    ],
+    [
+     "VcOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "vc"
+     }
+    ],
+    [
+     "Gain",
+     "v",
+     {
+      "fn": "trim_kit"
+     }
+    ],
+    [
+     "Rough",
+     "s",
+     "rough",
+     0.8
+    ],
+    [
+     "Metal",
+     "s",
+     "metal",
+     0.0
+    ],
+    [
+     "HasTex",
+     "s",
+     {
+      "fn": "flag",
+      "key": "preview.tex.diffuseColor.file"
+     }
+    ],
+    [
+     "Tex",
+     "ts",
+     "preview.tex.diffuseColor.file"
+    ],
+    [
+     "EmiC",
+     "v",
+     {
+      "fn": "emi_color"
+     }
+    ],
+    [
+     "EmiK",
+     "s",
+     {
+      "fn": "emit_k"
+     }
+    ],
+    [
+     "HasEmiTex",
+     "s",
+     {
+      "fn": "flag",
+      "key": "preview.tex.emissiveColor.file"
+     }
+    ],
+    [
+     "EmiTex",
+     "ts",
+     "preview.tex.emissiveColor.file"
+    ],
+    [
+     "Xf",
+     "v",
+     {
+      "fn": "xf",
+      "keys": [
+       "preview.tex.diffuseColor",
+       "preview.tex.emissiveColor"
+      ]
+     }
+    ],
+    [
+     "XfR",
+     "v",
+     {
+      "fn": "xf_rot",
+      "keys": [
+       "preview.tex.diffuseColor",
+       "preview.tex.emissiveColor"
+      ]
+     }
+    ]
+   ]
+  },
+  "vk": {
+   "master": "vk",
+   "params": [
+    [
+     "Origin",
+     "v",
+     {
+      "fn": "origin"
+     }
+    ],
+    [
+     "Paint",
+     "v",
+     "vkPaint",
+     [
+      0.03,
+      0.07,
+      0.07
+     ]
+    ],
+    [
+     "Paint2",
+     "v",
+     "vkPaint2",
+     [
+      0.02,
+      0.06,
+      0.07
+     ]
+    ],
+    [
+     "RustC",
+     "v",
+     "vkRustC",
+     [
+      0.15,
+      0.06,
+      0.03
+     ]
+    ],
+    [
+     "RustD",
+     "v",
+     "vkRustD",
+     [
+      0.06,
+      0.03,
+      0.014
+     ]
+    ],
+    [
+     "RustAmt",
+     "s",
+     "vkRustAmt",
+     0.3
+    ],
+    [
+     "Ground",
+     "s",
+     "vkGround",
+     3.4
+    ],
+    [
+     "Seed",
+     "s",
+     "vkSeed",
+     0
+    ],
+    [
+     "Guano",
+     "s",
+     "vkGuanoAmt",
+     0.3
+    ],
+    [
+     "Gain",
+     "v",
+     {
+      "fn": "trim_all"
+     }
+    ],
+    [
+     "HqOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "hq.P.alb"
+     }
+    ],
+    [
+     "HSz",
+     "v",
+     "hq.sizes",
+     [
+      1,
+      2.2,
+      1
+     ]
+    ],
+    [
+     "HP",
+     "ts",
+     "hq.P.alb"
+    ],
+    [
+     "HPN",
+     "tl",
+     "hq.P.nrm"
+    ],
+    [
+     "HPR",
+     "tl",
+     "hq.P.arm"
+    ],
+    [
+     "HPm",
+     "v",
+     "hq.P.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ],
+    [
+     "HR",
+     "ts",
+     "hq.R.alb"
+    ],
+    [
+     "HRN",
+     "tl",
+     "hq.R.nrm"
+    ],
+    [
+     "HRR",
+     "tl",
+     "hq.R.arm"
+    ],
+    [
+     "HRm",
+     "v",
+     "hq.R.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ]
+   ]
+  },
+  "ground": {
+   "master": "ground6",
+   "requires": [
+    "gpA.4"
+   ],
+   "params": [
+    [
+     "Origin",
+     "v",
+     {
+      "fn": "origin"
+     }
+    ],
+    [
+     "G0",
+     "ts",
+     "gpA.0"
+    ],
+    [
+     "G1",
+     "ts",
+     "gpA.1"
+    ],
+    [
+     "G2",
+     "ts",
+     "gpA.2"
+    ],
+    [
+     "G4",
+     "ts",
+     "gpA.4"
+    ],
+    [
+     "AsphC",
+     "v",
+     {
+      "fn": "lb14",
+      "base": [
+       0.1991,
+       0.1991,
+       0.199
+      ],
+      "cal": "lb14StCal",
+      "only_if": "lb14Road"
+     }
+    ],
+    [
+     "WalkC",
+     "v",
+     {
+      "fn": "lb14",
+      "base": [
+       0.53,
+       0.47,
+       0.28
+      ],
+      "cal": "lb14Walk"
+     }
+    ],
+    [
+     "KerbC",
+     "v",
+     {
+      "fn": "lb14",
+      "base": [
+       0.3848,
+       0.3062,
+       0.1717
+      ],
+      "cal": "lb14StCal"
+     }
+    ],
+    [
+     "Gain",
+     "v",
+     [
+      1,
+      1,
+      1
+     ]
+    ],
+    [
+     "HqOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "hq.A.alb"
+     }
+    ],
+    [
+     "HSz",
+     "v",
+     "hq.sizes",
+     [
+      3,
+      1.8,
+      1.9
+     ]
+    ],
+    [
+     "HA",
+     "ts",
+     "hq.A.alb"
+    ],
+    [
+     "HAN",
+     "tl",
+     "hq.A.nrm"
+    ],
+    [
+     "HAR",
+     "tl",
+     "hq.A.arm"
+    ],
+    [
+     "HAm",
+     "v",
+     "hq.A.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ],
+    [
+     "HW",
+     "ts",
+     "hq.W.alb"
+    ],
+    [
+     "HWN",
+     "tl",
+     "hq.W.nrm"
+    ],
+    [
+     "HWR",
+     "tl",
+     "hq.W.arm"
+    ],
+    [
+     "HWm",
+     "v",
+     "hq.W.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ],
+    [
+     "HK",
+     "ts",
+     "hq.K.alb"
+    ],
+    [
+     "HKN",
+     "tl",
+     "hq.K.nrm"
+    ],
+    [
+     "HKR",
+     "tl",
+     "hq.K.arm"
+    ],
+    [
+     "HKm",
+     "v",
+     "hq.K.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ]
+   ],
+   "no_shadow": true
+  },
+  "decal": {
+   "master": "decal",
+   "params": [
+    [
+     "Tex",
+     "ts",
+     "tex.map"
+    ],
+    [
+     "OpacityK",
+     "s",
+     1.0
+    ],
+    [
+     "Gain",
+     "v",
+     [
+      1,
+      1,
+      1
+     ]
+    ],
+    [
+     "Xf",
+     "v",
+     {
+      "fn": "xf",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ],
+    [
+     "XfR",
+     "v",
+     {
+      "fn": "xf_rot",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ]
+   ]
+  },
+  "sign": {
+   "master": "sign",
+   "params": [
+    [
+     "Tex",
+     "ts",
+     "tex.map"
+    ],
+    [
+     "MaskOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "mask"
+     }
+    ],
+    [
+     "GlowK",
+     "s",
+     {
+      "fn": "night",
+      "k": 0.6
+     }
+    ],
+    [
+     "Gain",
+     "v",
+     {
+      "fn": "trim_all"
+     }
+    ],
+    [
+     "Xf",
+     "v",
+     {
+      "fn": "xf",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ],
+    [
+     "XfR",
+     "v",
+     {
+      "fn": "xf_rot",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ]
+   ]
+  },
+  "untrim": {
+   "keep": true,
+   "scale_colors": {
+    "fn": "untrim_k"
+   }
+  }
+ },
+ "assets": [
+  {
+   "match": "hidden",
+   "how": "suffix",
+   "master": "hidden",
+   "params": []
+  },
+  {
+   "match": "bxw_",
+   "how": "prefix",
+   "master": "facade",
+   "source": "bxwin_usd.json",
+   "params": [
+    [
+     "Alb",
+     "ts",
+     "tex.alb"
+    ],
+    [
+     "Emi",
+     "tl",
+     "tex.emi"
+    ],
+    [
+     "Dat",
+     "tl",
+     "tex.dat"
+    ],
+    [
+     "EmitK",
+     "s",
+     {
+      "fn": "night",
+      "k": 1.0
+     }
+    ],
+    [
+     "Gain",
+     "v",
+     {
+      "fn": "untrim_road"
+     }
+    ],
+    [
+     "SkyC",
+     "v",
+     {
+      "fn": "sky_mean"
+     }
+    ],
+    [
+     "ReflK",
+     "s",
+     0.0
+    ],
+    [
+     "RoomC",
+     "v",
+     [
+      1.0,
+      0.8,
+      0.45
+     ]
+    ],
+    [
+     "RoomK",
+     "s",
+     0.96
+    ],
+    [
+     "HqOn",
+     "s",
+     {
+      "fn": "flag",
+      "key": "hq.B.alb"
+     }
+    ],
+    [
+     "HSz",
+     "v",
+     "hq.sizes",
+     [
+      1.4,
+      3.0,
+      2.71
+     ]
+    ],
+    [
+     "HB",
+     "ts",
+     "hq.B.alb"
+    ],
+    [
+     "HBN",
+     "tl",
+     "hq.B.nrm"
+    ],
+    [
+     "HBR",
+     "tl",
+     "hq.B.arm"
+    ],
+    [
+     "HBm",
+     "v",
+     "hq.B.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ],
+    [
+     "HS",
+     "ts",
+     "hq.S.alb"
+    ],
+    [
+     "HSN",
+     "tl",
+     "hq.S.nrm"
+    ],
+    [
+     "HSR",
+     "tl",
+     "hq.S.arm"
+    ],
+    [
+     "HSm",
+     "v",
+     "hq.S.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ],
+    [
+     "HC",
+     "ts",
+     "hq.C.alb"
+    ],
+    [
+     "HCN",
+     "tl",
+     "hq.C.nrm"
+    ],
+    [
+     "HCR",
+     "tl",
+     "hq.C.arm"
+    ],
+    [
+     "HCm",
+     "v",
+     "hq.C.mean",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ]
+   ],
+   "no_nanite": true,
+   "_doc_shadow": "R3-PHYS: the facade bake casts its shadows, as in Cycles (a ray test of its triangles against the golden sun finds the plaza ahead of t7ArchTrack's lens in its shade, where UE had sun); batch16's dark street with them on was the sky light's error (its cubemap turned 90 deg, its lower half black), fixed since"
+  },
+  {
+   "match": "bxt_leaf_",
+   "how": "prefix",
+   "master": "leaf",
+   "source": "preview",
+   "params": [
+    [
+     "Tex",
+     "ts",
+     "tex.diffuseColor.file"
+    ],
+    [
+     "Nrm",
+     "tl",
+     "tex.normal.file"
+    ],
+    [
+     "Tint",
+     "v",
+     [
+      1.0,
+      1.0,
+      1.0
+     ]
+    ],
+    [
+     "Trans",
+     "s",
+     1.0
+    ],
+    [
+     "Rough",
+     "s",
+     "roughness",
+     0.45
+    ],
+    [
+     "Metal",
+     "s",
+     0.0
+    ]
+   ]
+  },
+  {
+   "match": "bxt_imp_",
+   "how": "prefix",
+   "master": "leaf",
+   "source": "preview",
+   "params": [
+    [
+     "Tex",
+     "ts",
+     "tex.diffuseColor.file"
+    ],
+    [
+     "Tint",
+     "v",
+     [
+      1.0,
+      1.0,
+      1.0
+     ]
+    ],
+    [
+     "Trans",
+     "s",
+     1.0
+    ],
+    [
+     "Rough",
+     "s",
+     "roughness",
+     0.8
+    ],
+    [
+     "Metal",
+     "s",
+     0.0
+    ]
+   ]
+  },
+  {
+   "match": "bxt_bark_",
+   "how": "prefix",
+   "master": "plain",
+   "source": "preview",
+   "params": [
+    [
+     "Color",
+     "v",
+     "tex.diffuseColor.scale",
+     [
+      0.8,
+      0.8,
+      0.8
+     ]
+    ],
+    [
+     "HasTex",
+     "s",
+     1.0
+    ],
+    [
+     "Tex",
+     "ts",
+     "tex.diffuseColor.file"
+    ],
+    [
+     "FkOn",
+     "s",
+     0.0
+    ],
+    [
+     "VcOn",
+     "s",
+     0.0
+    ],
+    [
+     "Gain",
+     "v",
+     [
+      1,
+      1,
+      1
+     ]
+    ],
+    [
+     "Rough",
+     "s",
+     0.85
+    ],
+    [
+     "Metal",
+     "s",
+     0.0
+    ]
+   ]
+  },
+  {
+   "match": "peds24_",
+   "how": "prefix",
+   "contains": "_opaque_",
+   "master": "walker",
+   "source": "preview",
+   "_doc": "R4-PEDS: the crowd's walkers (usd_peds.py's looks): M_bx_walker, the garment recolour by part and tint",
+   "params": [
+    [
+     "Alb",
+     "ts",
+     "tex.diffuseColor.file"
+    ],
+    [
+     "Mean",
+     "ts",
+     {
+      "fn": "sibling",
+      "key": "tex.diffuseColor.file",
+      "from": "albedo_",
+      "to": "albedo6_"
+     }
+    ],
+    [
+     "Nrm",
+     "tl",
+     "tex.normal.file"
+    ],
+    [
+     "Orm",
+     "tl",
+     "tex.roughness.file"
+    ],
+    [
+     "Cls",
+     "s",
+     {
+      "fn": "path_tail",
+      "default": 1
+     }
+    ],
+    [
+     "Trim",
+     "s",
+     {
+      "fn": "mixnight",
+      "a0": 0.9,
+      "a1": 1.0
+     }
+    ]
+   ]
+  },
+  {
+   "match": "rb27_",
+   "how": "prefix",
+   "contains": "_opaque_",
+   "master": "walker",
+   "source": "preview",
+   "_doc": "R4-PEDS: the crowd's walkers (usd_peds.py's looks): M_bx_walker, the garment recolour by part and tint",
+   "params": [
+    [
+     "Alb",
+     "ts",
+     "tex.diffuseColor.file"
+    ],
+    [
+     "Mean",
+     "ts",
+     {
+      "fn": "sibling",
+      "key": "tex.diffuseColor.file",
+      "from": "albedo_",
+      "to": "albedo6_"
+     }
+    ],
+    [
+     "Nrm",
+     "tl",
+     "tex.normal.file"
+    ],
+    [
+     "Orm",
+     "tl",
+     "tex.roughness.file"
+    ],
+    [
+     "Cls",
+     "s",
+     {
+      "fn": "path_tail",
+      "default": 1
+     }
+    ],
+    [
+     "Trim",
+     "s",
+     {
+      "fn": "mixnight",
+      "a0": 0.9,
+      "a1": 1.0
+     }
+    ]
+   ]
+  }
+ ],
+ "regions": {
+  "_doc": [
+   "The data pass's regions (custom stencil per component, read back by ue_check.py): a component takes the first rule that",
+   "matches: its actor under a moving set's group (ue_<instancer>), a material of a family, a material name prefix; else",
+   "the default. The sky sphere is 'sky'."
+  ],
+  "ids": {
+   "none": 0,
+   "ground": 1,
+   "vegetation": 2,
+   "structure": 3,
+   "buildings": 4,
+   "vehicles": 5,
+   "sky": 6
+  },
+  "rules": [
+   {
+    "_r4peds": true,
+    "material_prefix": [
+     "MI_peds24_",
+     "peds24_",
+     "MI_rb27_",
+     "rb27_"
+    ],
+    "region": "vehicles"
+   },
+   {
+    "moving": true,
+    "region": "vehicles"
+   },
+   {
+    "family": "ground",
+    "region": "ground"
+   },
+   {
+    "material_prefix": [
+     "MI_bxt_",
+     "bxt_"
+    ],
+    "region": "vegetation"
+   },
+   {
+    "family": "vk",
+    "region": "structure"
+   }
+  ],
+  "default": "buildings"
+ },
+ "emitters": {
+  "_doc": "an emissive colour of this warm white (at least min), without a map and not named not_names, is a luminaire lens: x lens_k (blender_light --lumk 25 lights camera and glossy rays only; here the lens would light its housing through Lumen and bloom 25x the web's halo, whose high pass is capped at 4: the web's own radiance)",
+  "min": 0.9,
+  "r": [
+   0.99,
+   1.01
+  ],
+  "g": [
+   0.6,
+   0.95
+  ],
+  "b": [
+   0.3,
+   0.8
+  ],
+  "lens_k": 1.0,
+  "k": 1.0,
+  "not_names": [
+   "fk:",
+   "tr:"
+  ]
+ },
+ "tag_rules": [
+  {
+   "_doc": "the MTA buses' paint: fleet24's semi-gloss bus coat (clear coat 0.6 / 0.12)",
+   "kind": "untrim",
+   "name_contains": [
+    ":mta",
+    ":paint"
+   ],
+   "master": "paint",
+   "cpd": "paint",
+   "params": [
+    [
+     "Color",
+     "v",
+     "color",
+     [
+      0.8,
+      0.8,
+      0.8
+     ]
+    ],
+    [
+     "Gain",
+     "v",
+     {
+      "fn": "untrim_k3"
+     }
+    ],
+    [
+     "HasTex",
+     "s",
+     {
+      "fn": "flag",
+      "key": "preview.tex.diffuseColor.file"
+     }
+    ],
+    [
+     "Tex",
+     "ts",
+     "preview.tex.diffuseColor.file"
+    ],
+    [
+     "Xf",
+     "v",
+     {
+      "fn": "xf",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ],
+    [
+     "XfR",
+     "v",
+     {
+      "fn": "xf_rot",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ],
+    [
+     "RoughK",
+     "s",
+     "rough",
+     0.35
+    ],
+    [
+     "CcK",
+     "s",
+     0.6
+    ],
+    [
+     "CcR",
+     "s",
+     0.12
+    ]
+   ]
+  },
+  {
+   "_doc": "the fleet's paint materials (R3-PAINT): fleet24.js's clear-coat paint, the car's own colour, metalness, road-film dirt and roughness as custom primitive data (ue_prep's moving, set per car), the livery map; clear coat 1 / 0.035",
+   "kind": "untrim",
+   "name_contains": ":paint",
+   "master": "paint",
+   "cpd": "paint",
+   "params": [
+    [
+     "Color",
+     "v",
+     "color",
+     [
+      0.8,
+      0.8,
+      0.8
+     ]
+    ],
+    [
+     "Gain",
+     "v",
+     {
+      "fn": "untrim_k3"
+     }
+    ],
+    [
+     "HasTex",
+     "s",
+     {
+      "fn": "flag",
+      "key": "preview.tex.diffuseColor.file"
+     }
+    ],
+    [
+     "Tex",
+     "ts",
+     "preview.tex.diffuseColor.file"
+    ],
+    [
+     "Xf",
+     "v",
+     {
+      "fn": "xf",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ],
+    [
+     "XfR",
+     "v",
+     {
+      "fn": "xf_rot",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ],
+    [
+     "RoughK",
+     "s",
+     "rough",
+     0.35
+    ],
+    [
+     "CcK",
+     "s",
+     1.0
+    ],
+    [
+     "CcR",
+     "s",
+     0.035
+    ]
+   ]
+  }
+ ],
+ "roles": {
+  "_doc": "the window kit's material roles (bxwin_usd.json roles beside the take's USD, by material name), as blender_windows.after_import: each row a master and its parameter rows, the family it extends (its rows, these replacing them by name); role.* is the role's record",
+  "_kitglass_alias": {
+   "color": [
+    0.776,
+    0.839,
+    0.823
+   ],
+   "tol": 0.06,
+   "shop_below": 0.2,
+   "shop": {
+    "f0": 0.07,
+    "rough": 0.02,
+    "dirt": 0.22
+   },
+   "pane": {
+    "f0": 0.2,
+    "rough": 0.03,
+    "dirt": 0.3
+   }
+  },
+  "kitglass": {
+   "master": "glass",
+   "params": [
+    [
+     "Op",
+     "s",
+     "role.opacity",
+     0.36
+    ],
+    [
+     "Dirt",
+     "s",
+     "role.dirt",
+     0.3
+    ],
+    [
+     "Col",
+     "v",
+     "role.color",
+     [
+      0.89,
+      0.92,
+      0.92
+     ]
+    ],
+    [
+     "Rgh",
+     "s",
+     "role.rough",
+     0.03
+    ]
+   ]
+  },
+  "fill": {
+   "_doc": "the rooms' fill (the web's MeshBasicMaterial): its colour as emission, no diffuse response",
+   "master": "plain",
+   "extends": "plain",
+   "params": [
+    [
+     "BaseK",
+     "s",
+     0.0
+    ],
+    [
+     "SelfK",
+     "s",
+     1.0
+    ],
+    [
+     "EmiK",
+     "s",
+     0.0
+    ]
+   ]
+  },
+  "nightemit": {
+   "_doc": "lit blinds and rooms: the USD's emission x the night level",
+   "master": "plain",
+   "extends": "plain",
+   "params": [
+    [
+     "EmiK",
+     "s",
+     {
+      "fn": "night",
+      "k": 1.0
+     }
+    ]
+   ]
+  },
+  "selflit": {
+   "_doc": "sheers and shops: the base colour as emission at the record's day / night levels",
+   "master": "plain",
+   "extends": "plain",
+   "params": [
+    [
+     "SelfK",
+     "s",
+     {
+      "fn": "lerp_night",
+      "a": "role.day",
+      "b": "role.night"
+     }
+    ],
+    [
+     "EmiK",
+     "s",
+     0.0
+    ]
+   ]
+  },
+  "lvlit": {
+   "_doc": "the kit's storefront interiors (usd_windows.lv_variants): the USD's emission as it is",
+   "master": "plain",
+   "extends": "plain",
+   "params": [
+    [
+     "Color",
+     "v",
+     "preview.diffuseColor",
+     [
+      0.5,
+      0.5,
+      0.5
+     ]
+    ],
+    [
+     "Rough",
+     "s",
+     "preview.roughness",
+     0.8
+    ],
+    [
+     "EmiK",
+     "s",
+     1.0
+    ]
+   ]
+  }
+ },
+ "hq": {
+  "_doc": "R3-HQ (owner 2026-10-07: high-quality materials for asphalt and buildings): the CC0 sets of tools/assets/fetch_hq.py (manifest: files, real size, mean albedo) for each pbrLib set (pbr), the ground's kinds (A asphalt, W the flags, K the kerbs), the viaduct (P paint over steel, R rust) and the facade bake's wall classes (B brick, S stone, C concrete). A set keeps its material's own mean colour (ue_prep's tint), at its real size; unit: the offset step against tiling in tiles (1: whole tiles, for coursed bricks and blocks; else free). layers: the pbr master's macro tone, detail normal and cavity grime.",
+  "manifest": "/data0/projectnyc_aux/assets/hq/hq.json",
+  "pbr": {
+   "asphalt_worn": "asphalt_02",
+   "asphalt_patch": "asphalt_02",
+   "sidewalk_concrete": "concrete_pavement",
+   "curb_granite": "granite_wall",
+   "brick_red": "red_brick",
+   "brick_brown": "brick_wall_10",
+   "brick_tan": "brown_brick_02",
+   "brick_buff": "brown_brick_02",
+   "brick_painted": "painted_brick",
+   "stone_lime": "large_sandstone_blocks",
+   "cast_stone": "large_sandstone_blocks",
+   "brownstone": "large_sandstone_blocks",
+   "granite_grey": "granite_wall",
+   "granite_pink": "granite_wall",
+   "granite_black": "granite_wall",
+   "concrete_precast": "preconcrete_wall_001",
+   "concrete_smooth": "concrete_wall_008",
+   "concrete_board": "concrete_wall_008",
+   "stucco": "white_stucco"
+  },
+  "unit": {
+   "red_brick": [
+    1.0,
+    1.0
+   ],
+   "brick_wall_10": [
+    1.0,
+    1.0
+   ],
+   "brown_brick_02": [
+    1.0,
+    1.0
+   ],
+   "painted_brick": [
+    1.0,
+    1.0
+   ],
+   "large_sandstone_blocks": [
+    1.0,
+    1.0
+   ],
+   "granite_wall": [
+    1.0,
+    1.0
+   ]
+  },
+  "ground": {
+   "A": "asphalt_02",
+   "W": "concrete_pavement",
+   "K": "granite_wall"
+  },
+  "vk": {
+   "P": "green_metal_rust",
+   "R": "rust_coarse_01"
+  },
+  "facade": {
+   "B": "red_brick",
+   "S": "large_sandstone_blocks",
+   "C": "white_stucco"
+  },
+  "layers": {
+   "pbr": {
+    "macro": 0.08,
+    "detail": 0.35,
+    "cavity": 0.5
+   }
+  }
+ },
+ "preview_rules": [
+  {
+   "_doc": "R5-ROOF: untagged preview surfaces whose opacity is their colour map's alpha (the writer's stain and paint layers) as matte decals",
+   "when": "opacity_in_diffuse",
+   "master": "decal",
+   "params": [
+    [
+     "Tex",
+     "ts",
+     "preview.tex.diffuseColor.file"
+    ],
+    [
+     "OpacityK",
+     "s",
+     1.0
+    ],
+    [
+     "Gain",
+     "v",
+     [
+      1,
+      1,
+      1
+     ]
+    ],
+    [
+     "Xf",
+     "v",
+     {
+      "fn": "xf",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ],
+    [
+     "XfR",
+     "v",
+     {
+      "fn": "xf_rot",
+      "keys": [
+       "preview.tex.diffuseColor"
+      ]
+     }
+    ]
+   ]
+  }
+ ]
+}

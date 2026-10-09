@@ -12,7 +12,7 @@ const dir = process.argv[2];
 if (!dir) { console.error('usage: node tools/cp/flora_naip.mjs <outDir> [cols] [rows] [px]'); process.exit(2); }
 const NC = +process.argv[3] || 5, NR = +process.argv[4] || 7, PX = +process.argv[5] || 1200;
 const LON0 = -73.9825, LON1 = -73.9485, LAT0 = 40.7640, LAT1 = 40.8010;
-const UA = 'boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)';
+const UA = 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)';
 const SVC = 'https://imagery.nationalmap.gov/arcgis/rest/services/USGSNAIPImagery/ImageServer/exportImage';
 fs.mkdirSync(dir, { recursive: true });
 // the park's corners (lon, lat): a tile wholly outside the park's quadrilateral (+80 m) is skipped

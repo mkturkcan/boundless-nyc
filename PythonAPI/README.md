@@ -1,6 +1,7 @@
-# boundless: the Python API of the boundless.js NYC simulator
+# valdrada: the Python API of the Valdrada simulator
 
-`boundless` drives a running **BoundlessNYC** server (the boundless.js digital twin of New York City, packaged as a
+`valdrada` drives a running **Valdrada** server (the Valdrada
+digital twin of New York City, packaged as a
 desktop simulator) over TCP, the way the `carla` package drives a CARLA server:
 
 - spawn vehicles from the NYC fleet and pedestrians (37 outfit variants);
@@ -19,15 +20,15 @@ helpers.
 ## Install
 
 ```sh
-pip install dist/boundless-0.1.0-py3-none-any.whl      # from a release
+pip install dist/valdrada-0.1.0-py3-none-any.whl      # from a release
 pip install -e PythonAPI                                # from a source checkout
 ```
 
 ## Five lines
 
 ```python
-import boundless
-client = boundless.Client("127.0.0.1", 2000)
+import valdrada
+client = valdrada.Client("127.0.0.1", 2000)
 world = client.get_world()
 here = world.get_map().geolocation_to_location(40.80955, -73.95905)    # W 120th St & Amsterdam Ave
 print(world.get_map().get_junctions(center=here, radius=60)[0])
@@ -51,6 +52,6 @@ print(world.get_map().get_junctions(center=here, radius=60)[0])
 | `examples/intersection_120_amsterdam.py` | a scripted scenario at W 120th St & Amsterdam Ave: a taxi under direct control that stops for the light, autopilot cars with planned turns, pedestrians crossing with AI routes, a pole-mounted camera writing RGB, semantic, instance and COCO boxes, and a dashcam |
 | `examples/generate_traffic.py` | fill an area with autopilot vehicles and wandering pedestrians |
 | `examples/benchmark.py` | seconds per tick for common sensor setups on your machine |
-| `examples/tutorials/` | the scripts of the [tutorials](https://mkturkcan.github.io/boundless-nyc/tutorials/): first steps, cameras, segmentation, depth, bounding boxes, recording a dataset, controlling actors |
+| `examples/tutorials/` | the scripts of the [tutorials](https://mkturkcan.github.io/valdrada/tutorials/): first steps, cameras, segmentation, depth, bounding boxes, recording a dataset, controlling actors |
 
 The full reference is `Docs/python_api.md`, and the wire protocol is `Docs/protocol.md`.

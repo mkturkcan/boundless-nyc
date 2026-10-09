@@ -28,7 +28,7 @@ const BASISU = `${HOME}/.tools/basisu/basis_universal-1_60/bin/basisu.exe`;
 const SRC = `${HOME}/.tools/texcache/cp33rocks`;
 const OUT_T = path.join(ROOT, 'public', 'textures', 'cp33', 'rocks');
 const OUT_M = process.env.ROCKS_OUT_M || path.join(ROOT, 'public', 'models', 'cp33', 'rocks');   // (ROCKS_OUT_M: stage elsewhere first)
-const UA = 'boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)';
+const UA = 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)';
 const args = process.argv.slice(2);
 const has = (k) => args.includes('--' + k);
 const doTex = has('tex') || !has('models'), doModels = has('models') || !has('tex');

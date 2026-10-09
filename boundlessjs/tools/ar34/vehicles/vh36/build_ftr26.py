@@ -456,7 +456,7 @@ meta = {
     'wheelbase': round(abs(hubs[1]['c'].y - hubs[3]['c'].y), 3), 'tris': [t0, t1, t2],
     'box': {'y0': round(-(Y0 - ymid), 3), 'y1': round(-(Y1 - ymid), 3), 'top': Z_TOP - zmin},
     'source': "mekanismo, 'Isuzu FFR' (cab and chassis), sketchfab.com/3d-models/29931659dfe84909a226a625cf5a8f75, CC-BY 4.0; "
-              "re-materialised, chassis lengthened to a 6.10 m wheelbase, 26 ft box, lamps and markers: BoundlessNYC "
+              "re-materialised, chassis lengthened to a 6.10 m wheelbase, 26 ft box, lamps and markers: Valdrada "
               "(boundlessjs/tools/ar34/vehicles/vh36/build_ftr26.py)",
 }
 json.dump(meta, open(OUT_META, 'w'), indent=1)

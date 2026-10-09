@@ -5,7 +5,7 @@ import os
 import posixpath
 import re
 
-REPO = "https://github.com/mkturkcan/boundless-nyc"
+REPO = "https://github.com/mkturkcan/valdrada"
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SITE = {  # repository path -> site page (directory URL)
     "BUILDING.md": "building/",

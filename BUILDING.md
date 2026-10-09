@@ -17,8 +17,8 @@ platform-independent. Commands are written for a POSIX shell; on Windows, use Gi
 ## Dependencies
 
 ```
-git clone https://github.com/mkturkcan/boundless-nyc.git
-cd boundless-nyc
+git clone https://github.com/mkturkcan/valdrada.git
+cd valdrada
 npm install                        # three.js, postprocessing, n8ao (shared by boundlessjs/ and src/)
 (cd boundlessjs && npm install)    # Vite, earcut, ez-tree
 (cd server && npm install)         # Electron runtime and packager; simulation server only
@@ -31,7 +31,7 @@ the packager fetches the runtime itself.
 ## Binary banks: tiles, models and textures
 
 Three binary banks under `boundlessjs/public/` are not under version control. The Hugging Face dataset
-`mehmetkeremturkcan/boundless-nyc` distributes them (folder `Content/`):
+`mehmetkeremturkcan/valdrada` distributes them (folder `Content/`):
 
 | Folder | Contents |
 |---|---|
@@ -44,7 +44,7 @@ The smaller banks (`basis/`, `data/`, `fonts/`, `luts/`, `settings/`) are commit
 ### Download (recommended)
 
 ```
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
+hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 ```
@@ -118,7 +118,7 @@ built-in pedestrians instead of the photoreal bank; use it for frames meant as A
 node server/build.mjs [--link] [--zip] [--skip-content] [--platform linux] [--out <dir>]
 ```
 
-The command produces `release/BoundlessNYC_<version>_<platform>/` in four steps:
+The command produces `release/Valdrada_<version>_<platform>/` in four steps:
 
 1. Package the server with `@electron/packager`.
 2. Run the Vite production build and assemble `Content/`, which holds the built client and every runtime asset
@@ -130,7 +130,7 @@ Options:
 
 - `--link` hardlinks `Content/` instead of copying it; the output must be on the same volume.
 - `--skip-content` keeps `Content/` from the previous build.
-- `--zip` also writes `release/BoundlessNYC-<version>-<platform>.zip`: the release folder with `Content/`, as
+- `--zip` also writes `release/Valdrada-<version>-<platform>.zip`: the release folder with `Content/`, as
   published on GitHub Releases (about 2 GB for Windows x64; GitHub limits one release asset to 2 GiB).
 - `--platform linux` cross-packages a Linux x64 server. It downloads that Electron runtime once. It has not been
   tested for this release.
@@ -139,7 +139,7 @@ Options:
 
 ```
 pip install -e PythonAPI                          # editable install from source
-uv build --wheel PythonAPI                        # -> PythonAPI/dist/boundless-<version>-py3-none-any.whl
+uv build --wheel PythonAPI                        # -> PythonAPI/dist/valdrada-<version>-py3-none-any.whl
 ```
 
 The package has no required dependencies. `numpy` enables the array accessors (`to_numpy`, `instance_ids`, `mask`).
@@ -193,7 +193,7 @@ server headless at 1280 × 720 and stops it afterwards, and without it the scrip
 listening:
 
 ```
-bash tools/figures/tutorial_images.sh --server release/BoundlessNYC_0.3.0_win64/BoundlessNYC.exe [--python python]
+bash tools/figures/tutorial_images.sh --server release/Valdrada_0.3.1_win64/Valdrada.exe [--python python]
 ```
 
 ## Offline rendering in Blender
@@ -206,7 +206,7 @@ and the window interiors are in the dataset's `Blender/` folder; point `BXTREES_
 `docs/blender-cycles.md` and `docs/unreal.md` give the full steps for each renderer.
 
 ```
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
+hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Blender/bxtrees2/*" --include "Blender/bxwin/*" --local-dir .cache/hf
 export BXTREES_ASSETS=$PWD/.cache/hf/Blender/bxtrees2 BXTREES2_TEX=$PWD/.cache/hf/Blender/bxtrees2/tex
 node boundlessjs/tools/ar34/export/harvest.mjs --shots <shot> --frames 0,54,107 --out <harvest dir>   # 1. harvest

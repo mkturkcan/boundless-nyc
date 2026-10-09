@@ -7,7 +7,7 @@ import GUI from 'three/addons/libs/lil-gui.module.min.js';
 import { GFX, applyGfx } from '../world/weather.js';
 
 export function initEditor(ctx = {}) {
-  const gui = new GUI({ title: 'boundless.js Weather / Post (G)', width: 300 });
+  const gui = new GUI({ title: 'Valdrada Weather / Post (G)', width: 300 });
   gui.domElement.style.cssText += 'position:fixed;top:12px;right:12px;z-index:40;';
 
   const fW = gui.addFolder('Weather');

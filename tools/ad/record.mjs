@@ -1,6 +1,6 @@
 // AD VIDEO — recording orchestrator.
 //
-// Reads tools/ad/shots.json and drives boundless.js in ?record=1 mode (the
+// Reads tools/ad/shots.json and drives Valdrada in ?record=1 mode (the
 // fixed-timestep capture in boundlessjs/src/main.js). Two differences from
 // tools/trailer/record.mjs, both about cost:
 //

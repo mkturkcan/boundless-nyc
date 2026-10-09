@@ -1,7 +1,7 @@
 {
-  "name": "boundless.js",
+  "name": "valdrada",
   "version": "1.0.0",
-  "description": "boundless.js - photorealistic, real-data NYC digital twin for public-facing simulation",
+  "description": "Valdrada - photorealistic, real-data NYC digital twin for public-facing simulation",
   "main": "index.js",
   "scripts": {
     "test": "node tools/tests/geometry.mjs",

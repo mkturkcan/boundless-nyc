@@ -130,7 +130,7 @@ def throw_profile(shape, cobra):
 
 
 def ies_text(V, Hs, cd, title):
-    rows = ['IESNA:LM-63-2002', f'[TEST] {title}', '[MANUFAC] BoundlessNYC (tabulated from the web shader)', 'TILT=NONE',
+    rows = ['IESNA:LM-63-2002', f'[TEST] {title}', '[MANUFAC] Valdrada (tabulated from the web shader)', 'TILT=NONE',
             f'1 -1 1 {len(V)} {len(Hs)} 1 2 0 0 0', '1 1 0']
     wrap = lambda vals: [' '.join(vals[i:i + 12]) for i in range(0, len(vals), 12)]
     rows += wrap([f'{v:g}' for v in V]) + wrap([f'{h:g}' for h in Hs])

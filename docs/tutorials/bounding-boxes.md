@@ -58,7 +58,7 @@ pts = [project_point(p, boxes.transform, boxes.width, boxes.height, boxes.fov) f
 Labels carry the object's pose in the world frame where it is known. `location` is the point on the ground below the
 object's centre, `extent` holds its half sizes (x along its heading, y across it, z up) and `yaw` its heading in
 degrees, counter-clockwise from east. Vehicles have all three; pedestrians have `location` and `extent` but no
-heading, trees and street furniture a `location` only, and buildings none of them. `boundless.util.project_point`
+heading, trees and street furniture a `location` only, and buildings none of them. `valdrada.util.project_point`
 projects a world point into the camera that captured the labels, whose pose is the event's `transform`, and returns
 the pixel coordinates and the depth, or `None` behind the camera.
 

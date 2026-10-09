@@ -16,8 +16,8 @@ import random
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform, util  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform, util  # noqa: E402
 
 try:
     import numpy  # noqa: F401
@@ -39,11 +39,11 @@ def main():
     a = ap.parse_args()
     random.seed(3)
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(120.0)
     world = client.get_world()
     original = world.get_settings()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
 
     m = world.get_map()
     here = m.geolocation_to_location(*AMSTERDAM_120)

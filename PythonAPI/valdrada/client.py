@@ -5,12 +5,12 @@ import time
 from typing import Optional
 
 from . import __version__
-from .transport import BoundlessError, Transport
+from .transport import ValdradaError, Transport
 from .world import World
 
 
 class Client:
-    """A connection to a running boundless server (BoundlessNYC.exe, default port 2000).
+    """A connection to a running Valdrada server (Valdrada.exe, default port 2000).
 
     The world loads for a minute or two after the server starts; get_world() waits for it (up to the timeout).
     """
@@ -26,7 +26,7 @@ class Client:
             except OSError as e:
                 last = e
                 if time.time() > deadline:
-                    raise ConnectionError(f"no boundless server on {host}:{port} ({e})") from e
+                    raise ConnectionError(f"no Valdrada server on {host}:{port} ({e})") from e
                 time.sleep(1.0)
         self._world: Optional[World] = None
 

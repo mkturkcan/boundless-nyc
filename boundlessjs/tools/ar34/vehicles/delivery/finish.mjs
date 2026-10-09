@@ -29,7 +29,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlv-'));
 
 const node = root.listNodes().find((n) => n.getName() === kind);
 if (!node) throw new Error('no root node ' + kind);
-node.setExtras({ kind, size: meta.size, hubs: meta.hubs, wheelbase: meta.wheelbase, lights: [], source: 'procedural, BoundlessNYC (tools/ar34/vehicles/delivery)', built: new Date().toISOString() });
+node.setExtras({ kind, size: meta.size, hubs: meta.hubs, wheelbase: meta.wheelbase, lights: [], source: 'procedural, Valdrada (tools/ar34/vehicles/delivery)', built: new Date().toISOString() });
 for (const n of ['LOD0', 'LOD1', 'LOD2']) if (!root.listNodes().some((x) => x.getName() === n)) throw new Error('missing ' + n);
 
 const srgb = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(Math.max(0, v), 1 / 2.4) - 0.055));

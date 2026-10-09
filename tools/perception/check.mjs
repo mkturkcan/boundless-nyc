@@ -16,7 +16,7 @@
 //   * amodal/<id>.png + visible/<id>.png — that the mask areas match
 //     `amodal_area` / `area` and that amodal >= visible for every instance.
 //
-// pngjs lives in boundlessjs/node_modules (it is a boundless.js dependency).
+// pngjs lives in boundlessjs/node_modules (it is a Valdrada dependency).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

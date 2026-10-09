@@ -1,4 +1,4 @@
-# boundless.js — rendering performance notes
+# Valdrada — rendering performance notes
 
 Target set by the project owner: 60 fps at native resolution **with no visual
 change**. Everything below is a lossless restructuring of how the same pixels

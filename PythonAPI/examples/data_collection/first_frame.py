@@ -2,10 +2,10 @@
 
     python first_frame.py        (a server on 127.0.0.1:2000; writes _out/rgb.png and _out/boxes.json)
 """
-import boundless
-from boundless import Location, Rotation, Transform
+import valdrada
+from valdrada import Location, Rotation, Transform
 
-world = boundless.Client("127.0.0.1", 2000).get_world()
+world = valdrada.Client("127.0.0.1", 2000).get_world()
 spot = world.get_map().geolocation_to_location(40.80955, -73.95905)   # W 120th St and Amsterdam Ave
 pose = Transform(spot + Location(-30, -30, 12), Rotation(pitch=-15, yaw=45))
 world.get_spectator().set_transform(pose)                              # the city streams in around the spectator

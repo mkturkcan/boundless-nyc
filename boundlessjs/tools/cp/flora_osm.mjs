@@ -43,7 +43,7 @@ const Q = `[out:json][timeout:170][bbox:${BB}];
 );
 out geom;`;
 const HOSTS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter'];
-const H = { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)', Accept: 'application/json' };
+const H = { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)', Accept: 'application/json' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 for (let attempt = 0; attempt < 6; attempt++) {
   const host = HOSTS[attempt % HOSTS.length], t0 = Date.now();

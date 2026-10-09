@@ -394,7 +394,7 @@ def write_usd(OUT, shot, walkers, A, nF, man, IN, take_root=None):
             UsdSkel.BindingAPI.Apply(mp).CreateSkeletonRel().SetTargets([sk_prim.GetPath()])
             UsdGeom.PrimvarsAPI(mp).CreatePrimvar('nyc_tint', Sdf.ValueTypeNames.Float4Array, UsdGeom.Tokens.constant).Set(Vt.Vec4fArray([Gf.Vec4f(*[float(x) for x in w['tint'][j * 4:j * 4 + 4]]) for j in range(3)]))
         n += 1
-    st.GetRootLayer().customLayerData = {'shot': shot, 'frames': nF, 'walkers': n, 'source': 'BoundlessNYC crowd (BX-PEDS)'}
+    st.GetRootLayer().customLayerData = {'shot': shot, 'frames': nF, 'walkers': n, 'source': 'Valdrada crowd (BX-PEDS)'}
     st.GetRootLayer().Save()
     if take_root and os.path.exists(os.path.join(OUT, take_root)):   # the take root with the walkers, for any USD renderer
         src = Usd.Stage.Open(os.path.join(OUT, take_root), load=Usd.Stage.LoadNone)

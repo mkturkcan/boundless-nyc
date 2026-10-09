@@ -1,7 +1,7 @@
 """Live test against a running server: a vehicle spawned through the API keeps a finite pose on autopilot.
-Skipped unless BOUNDLESS_TEST_PORT names the port of a running server (BOUNDLESS_TEST_HOST, default 127.0.0.1).
+Skipped unless VALDRADA_TEST_PORT names the port of a running server (VALDRADA_TEST_HOST, default 127.0.0.1).
 
-    BOUNDLESS_TEST_PORT=2000 python -m unittest discover -s PythonAPI/tests
+    VALDRADA_TEST_PORT=2000 python -m unittest discover -s PythonAPI/tests
 """
 import math
 import os
@@ -9,20 +9,20 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform  # noqa: E402
 
-PORT = os.environ.get("BOUNDLESS_TEST_PORT")
+PORT = os.environ.get("VALDRADA_TEST_PORT", os.environ.get("BOUNDLESS_TEST_PORT"))
 
 
-@unittest.skipUnless(PORT, "set BOUNDLESS_TEST_PORT to the port of a running server")
+@unittest.skipUnless(PORT, "set VALDRADA_TEST_PORT to the port of a running server")
 class AutopilotTest(unittest.TestCase):
     def test_api_vehicle_on_autopilot_keeps_a_finite_pose(self):
-        client = boundless.Client(os.environ.get("BOUNDLESS_TEST_HOST", "127.0.0.1"), int(PORT), timeout=30.0)
+        client = valdrada.Client(os.environ.get("VALDRADA_TEST_HOST", os.environ.get("BOUNDLESS_TEST_HOST", "127.0.0.1")), int(PORT), timeout=30.0)
         client.set_timeout(120.0)
         world = client.get_world()
         original = world.get_settings()
-        world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+        world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
         m = world.get_map()
         here = m.geolocation_to_location(40.80955, -73.95905)       # W 120th St and Amsterdam Ave
         world.get_spectator().set_transform(Transform(here + Location(0, 0, 40), Rotation(pitch=-90)))

@@ -10,7 +10,7 @@ python PythonAPI/examples/tutorials/first_steps.py
 ## Connect
 
 ```python
-client = boundless.Client(a.host, a.port)       # retries until the server accepts the connection
+client = valdrada.Client(a.host, a.port)       # retries until the server accepts the connection
 client.set_timeout(120.0)
 world = client.get_world()                       # waits until the simulator has booted
 ```
@@ -23,7 +23,7 @@ waits for its answer.
 
 ```python
 original = world.get_settings()
-world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
 ```
 
 In synchronous mode, the default, the simulation advances by `fixed_delta_seconds` on each `world.tick()` and waits

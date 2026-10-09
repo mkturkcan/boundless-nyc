@@ -1,4 +1,4 @@
-// boundless.js legacy game mode (?play=1) — grapple-gun traversal character.
+// Valdrada legacy game mode (?play=1) — grapple-gun traversal character.
 import * as THREE from 'three';
 import { COLLIDERS } from '../city/colliders.js';
 import { applySnowCap } from '../world/materials.js';

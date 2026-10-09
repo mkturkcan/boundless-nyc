@@ -99,7 +99,7 @@ function boxes(labels, classes, [cx, cy, cw, ch], { minArea = 700, labelMinH = 7
 const FIGS = {};
 
 const HERO = {   // base render, crop [x0, y0, w] (height follows 2.4:1), band edges as [x at top, x at bottom], caption
-  lenox: { shot: 'lenox_oblique', crop: [0, 250, 2880], e1: [1930, 1600], e2: [2430, 2100],
+  lenox: { shot: 'lenox_oblique', crop: [0, 250, 2880], e1: [2330, 1990], e2: [2640, 2300],
     caption: 'W 125th St and Lenox Ave in Harlem: one simulator frame and its ground truth' },
   street: { shot: 'sensors', crop: [700, 470, 2180], e1: [2040, 1800], e2: [2480, 2240],
     caption: 'W 120th St and Amsterdam Ave: one simulator frame and its ground truth' },
@@ -123,7 +123,7 @@ FIGS.hero = () => {
     <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(4,7,11,0.94) 0%,rgba(4,7,11,0.80) 30%,rgba(4,7,11,0.30) 50%,rgba(4,7,11,0) 60%)"></div>
     <div style="position:absolute;inset:0;background:linear-gradient(0deg,rgba(4,7,11,0.60) 0%,rgba(4,7,11,0) 24%)"></div>
     <div style="position:absolute;left:112px;top:205px;width:1060px">
-      <div style="font-size:136px;font-weight:700;letter-spacing:-0.035em;line-height:1">BoundlessNYC</div>
+      <div style="font-size:136px;font-weight:700;letter-spacing:-0.035em;line-height:1">Valdrada</div>
       <div style="font-size:34px;line-height:1.42;color:#d9e2ea;margin-top:34px;max-width:990px">A real-time digital twin of New York City, compiled from public records, with simulated traffic, pixel-exact ground truth and a Python API.</div>
     </div>
     ${lab(bx(e1[1][0]) - 118, 'RGB')}${lab(bx((e1[1][0] + e2[1][0]) / 2) - 70, 'Semantic')}${lab(bx((e2[1][0] + R) / 2) - 50, 'Depth')}
@@ -271,7 +271,7 @@ FIGS.social = () => {
   return doc(W, H, `<img src="${f(RAW, 'g_fifth_rgb.png')}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 64%">
     <div style="position:absolute;inset:0;background:linear-gradient(90deg,rgba(4,7,11,0.94) 0%,rgba(4,7,11,0.72) 40%,rgba(4,7,11,0.05) 72%)"></div>
     <div style="position:absolute;left:68px;top:196px;width:720px">
-      <div style="font-size:82px;font-weight:700;letter-spacing:-0.035em">BoundlessNYC</div>
+      <div style="font-size:82px;font-weight:700;letter-spacing:-0.035em">Valdrada</div>
       <div style="font-size:24px;line-height:1.45;color:#d9e2ea;margin-top:22px">A real-time digital twin of New York City built from public records, with simulated traffic, pixel-exact ground truth and a Python API.</div></div>`);
 };
 

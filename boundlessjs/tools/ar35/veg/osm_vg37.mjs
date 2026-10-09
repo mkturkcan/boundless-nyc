@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 const out = process.argv[2];
 if (!out) { console.error('usage: node osm_vg37.mjs <out.json>'); process.exit(2); }
-const UA = 'boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)';
+const UA = 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)';
 // south, west, north, east
 const BOXES = {
   centralPark: '40.7630,-73.9830,40.8015,-73.9480',

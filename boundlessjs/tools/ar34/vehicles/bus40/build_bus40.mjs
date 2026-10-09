@@ -1344,7 +1344,7 @@ async function writeKind(kind) {
       pages: routes.map((r) => `${r.num} ${r.dest} ${r.via}`), page: M.route, pageV: PAGE,
       atlas: `${rset}_signs 1024 x 2048: ${routes.length} pages of 256 px from v = 0 (front sign 1024 x 128 px; curb-side sign and rear number in the next 64 px row; light strip, amber lamp)` },
     ...art,
-    source: 'BoundlessNYC BUS40 / BUSES, modelled from scratch (boundlessjs/tools/ar34/vehicles/bus40/build_bus40.mjs)', built: new Date().toISOString(),
+    source: 'Valdrada BUS40 / BUSES, modelled from scratch (boundlessjs/tools/ar34/vehicles/bus40/build_bus40.mjs)', built: new Date().toISOString(),
   });
   await doc.transform(prune(), dedup());
   await MeshoptEncoder.ready;

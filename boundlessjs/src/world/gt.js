@@ -1,4 +1,4 @@
-// Ground-truth export for synthetic data generation (the Boundless mission):
+// Ground-truth export for synthetic data generation (the Valdrada mission):
 //   window.__GT.boxes()  -> JSON: vehicles + pedestrians with 3D pose and
 //                           projected 2D boxes, plus camera intrinsics.
 //   ?gt=seg (or __GT.setMode('seg')) -> instance segmentation view: every

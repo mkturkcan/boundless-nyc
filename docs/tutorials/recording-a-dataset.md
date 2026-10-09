@@ -73,7 +73,7 @@ _out/record_dataset/
   contact_sheet.png
 ```
 
-`boundless.util.CocoWriter` collects the labels frame by frame into one COCO detection file. Its `bbox` is the visible
+`valdrada.util.CocoWriter` collects the labels frame by frame into one COCO detection file. Its `bbox` is the visible
 box; the amodal box, the occlusion, the instance id and the actor id ride along as extra keys of each annotation, and
 the instance id stays with an object from frame to frame. The categories are the semantic classes passed to the
 writer, here the road users. An excerpt of the file:

@@ -10,8 +10,8 @@ import queue
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform  # noqa: E402
 
 LENOX_125 = (40.80776, -73.94549)          # W 125th St & Lenox Ave, Harlem
 UPTOWN = 61.0                              # Manhattan's avenues run at this yaw (degrees counter-clockwise from east)
@@ -26,11 +26,11 @@ def main():
     ap.add_argument("--out", default="_out/cameras")
     a = ap.parse_args()
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(120.0)
     world = client.get_world()
     original, ambient = world.get_settings(), world.get_ambient_traffic()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
     world.set_ambient_traffic(vehicles=200)         # thinner background traffic, for a clear run up the avenue
 
     m = world.get_map()

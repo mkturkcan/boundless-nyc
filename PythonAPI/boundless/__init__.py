@@ -1,28 +1,21 @@
-"""boundless — the Python API of the boundless.js NYC simulator.
+"""boundless: the former name of the valdrada package (Valdrada, formerly BoundlessNYC, a NYC digital twin).
 
-    import boundless
-    client = boundless.Client("127.0.0.1", 2000)
-    world = client.get_world()
-
-Frames: ENU metres (x east, y north, z up) from 40.7831 N, 73.9712 W; Rotation(pitch, yaw, roll) in degrees with yaw
-counter-clockwise from east. Attachments: x forward, y left, z up. See docs/api/ for the full reference.
+Scripts written for boundless keep working: this package imports valdrada, maps the old submodule names onto the new
+ones (boundless.util, boundless.png, ...) and keeps the old error class name, BoundlessError. Import valdrada instead.
 """
-__version__ = "0.1.0"
+import importlib as _importlib
+import sys as _sys
+import warnings as _warnings
 
-from .geometry import BoundingBox, GeoLocation, Location, Rotation, Transform, Vector3D
-from .transport import BoundlessError, ConnectionClosed
-from .actors import Actor, Sensor, Spectator, Vehicle, VehicleControl, Walker, WalkerAIController, WalkerControl
-from .world import (ActorBlueprint, ActorList, BlueprintLibrary, Junction, JunctionArm, Map, TrafficLightState, Waypoint,
-                    WeatherParameters, World, WorldSettings, WorldSnapshot)
-from .sensor_data import (BoundingBoxes, DepthImage, Image, InstanceSegmentationImage, ObjectLabel, SemanticSegmentationImage,
-                          SensorData)
-from .client import Client
-from . import util
+_warnings.warn("the boundless package is now valdrada (Valdrada, formerly BoundlessNYC); import valdrada instead",
+               FutureWarning, stacklevel=2)
 
-__all__ = [
-    "Actor", "ActorBlueprint", "ActorList", "BlueprintLibrary", "BoundingBox", "BoundingBoxes", "BoundlessError", "Client",
-    "ConnectionClosed", "DepthImage", "GeoLocation", "Image", "InstanceSegmentationImage", "Junction", "JunctionArm",
-    "Location", "Map", "ObjectLabel", "Rotation", "SemanticSegmentationImage", "Sensor", "SensorData", "Spectator",
-    "TrafficLightState", "Transform", "Vector3D", "Vehicle", "VehicleControl", "Walker", "WalkerAIController",
-    "WalkerControl", "Waypoint", "WeatherParameters", "World", "WorldSettings", "WorldSnapshot", "util",
-]
+from valdrada import *  # noqa: E402,F401,F403
+from valdrada import __all__ as _all, __version__, ValdradaError  # noqa: E402,F401
+
+BoundlessError = ValdradaError
+__all__ = list(_all) + ["BoundlessError"]
+
+for _m in ("actors", "client", "geometry", "png", "sensor_data", "transport", "util", "world",):
+    _sys.modules[__name__ + "." + _m] = _importlib.import_module("valdrada." + _m)
+    globals()[_m] = _sys.modules[__name__ + "." + _m]

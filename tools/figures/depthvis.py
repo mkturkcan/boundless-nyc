@@ -10,7 +10,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "PythonAPI"))
-from boundless.png import write_png  # noqa: E402
+from valdrada.png import write_png  # noqa: E402
 from capture import turbo  # noqa: E402
 
 ap = argparse.ArgumentParser()

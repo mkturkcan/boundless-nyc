@@ -1,8 +1,8 @@
 {
-  "name": "boundless-server",
-  "productName": "BoundlessNYC",
-  "version": "0.3.0",
-  "description": "boundless.js NYC simulation server: the digital twin as a CARLA-style server, driven over TCP by the boundless Python API",
+  "name": "valdrada-server",
+  "productName": "Valdrada",
+  "version": "0.3.1",
+  "description": "Valdrada simulation server: the digital twin as a CARLA-style server, driven over TCP by the valdrada Python API",
   "main": "main.js",
   "private": true,
   "license": "MIT",

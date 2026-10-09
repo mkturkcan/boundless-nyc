@@ -3,7 +3,7 @@
 `boundlessjs/` is the main project: the real-data digital twin (930k footprints,
 streamed tiles, traffic, weather, post chain). The procedural building generator
 one directory up (`../src`: `materials.js`, `batcher.js`, `kit.js`, `textures.js`,
-`buildings/*`) is a **subproject** that boundless.js consumes for building detail.
+`buildings/*`) is a **subproject** that Valdrada consumes for building detail.
 
 ```
 projectnyc/
@@ -11,7 +11,7 @@ projectnyc/
   boundlessjs/         main project (Vite app)
     src/world/nycDress.js    the bridge: dresses real footprints with the generator's kit
     vite.config.js           resolve.alias '@nyc' → ../src, server.fs.allow ..
-  tools/bshot.mjs      GPU screenshot + perf harness for boundless.js (Playwright, RTX)
+  tools/bshot.mjs      GPU screenshot + perf harness for Valdrada (Playwright, RTX)
   tools/shot.mjs       screenshot harness for the generator's own demo city
 ```
 

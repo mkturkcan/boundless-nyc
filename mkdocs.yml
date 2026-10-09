@@ -1,11 +1,11 @@
-site_name: BoundlessNYC
-site_url: https://mkturkcan.github.io/boundless-nyc/
+site_name: Valdrada
+site_url: https://mkturkcan.github.io/valdrada/
 site_description: >-
   A real-time digital twin of New York City compiled from public records, with simulated traffic,
   pixel-exact ground truth and a Python API.
 site_author: M. K. Turkcan
-repo_url: https://github.com/mkturkcan/boundless-nyc
-repo_name: mkturkcan/boundless-nyc
+repo_url: https://github.com/mkturkcan/valdrada
+repo_name: mkturkcan/valdrada
 edit_uri: ""
 copyright: Code MIT, documentation CC BY 4.0, compiled city ODbL 1.0. Data © NYC Open Data, NY State open data and OpenStreetMap contributors.
 

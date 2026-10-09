@@ -12,10 +12,10 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform  # noqa: E402
-from boundless.png import write_png  # noqa: E402
-from boundless.util import project_point  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform  # noqa: E402
+from valdrada.png import write_png  # noqa: E402
+from valdrada.util import project_point  # noqa: E402
 
 AMSTERDAM_120 = (40.80955, -73.95905)      # W 120th St & Amsterdam Ave, Morningside Heights
 UPTOWN = 61.0                              # Manhattan's avenues run at this yaw (degrees counter-clockwise from east)
@@ -69,11 +69,11 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(120.0)
     world = client.get_world()
     original = world.get_settings()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
     m = world.get_map()
     here = m.geolocation_to_location(*AMSTERDAM_120)
     world.get_spectator().set_transform(Transform(here + Location(0, 0, 30)))

@@ -120,7 +120,7 @@ def smooth(e0, e1, x):
 
 def ies_text(V, Hs, cd, title):
     """an IESNA LM-63-2002 file, type C, absolute candela; cd[h][v]."""
-    rows = ['IESNA:LM-63-2002', f'[TEST] {title}', '[MANUFAC] BoundlessNYC (tabulated from the web shader)', 'TILT=NONE',
+    rows = ['IESNA:LM-63-2002', f'[TEST] {title}', '[MANUFAC] Valdrada (tabulated from the web shader)', 'TILT=NONE',
             f'1 -1 1 {len(V)} {len(Hs)} 1 2 0 0 0', '1 1 0']
     def wrap(vals):
         out, line = [], []

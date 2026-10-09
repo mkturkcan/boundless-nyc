@@ -6,7 +6,7 @@
 // world x / z in decimetres, sp the furnitureKit TREE_SPECIES class (0-12), dbh in inches. Only live trees (structure
 // 'Full', condition not 'Dead'); each tile's list also holds the trees within 8 m outside it, for matching across edges.
 // world/assemble.js (TFO) matches the compiled street trees to them.
-//   curl the boxes (UA boundless-nyc-research/0.1), then: node boundlessjs/tools/pipeline/tree_forestry.mjs
+//   curl the boxes (UA valdrada-research/0.1), then: node boundlessjs/tools/pipeline/tree_forestry.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

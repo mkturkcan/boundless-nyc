@@ -1,11 +1,11 @@
 cff-version: 1.2.0
-title: "BoundlessNYC: a real-data, real-time digital twin of New York City"
+title: "Valdrada: a real-data, real-time digital twin of New York City"
 message: >-
   If you use this software, the compiled city or imagery rendered with it, please
-  cite it as below. BoundlessNYC is a separate follow-up project, developed and
-  maintained by Mehmet Kerem Turkcan, and is cited on its own.
+  cite it as below. Valdrada is developed and
+  maintained by Mehmet Kerem Turkcan.
 type: software
-version: "0.3.0"
+version: "0.3.1"
 abstract: >-
   A city-scale digital twin of four New York City boroughs compiled from public
   municipal records. 930,787 building footprints, joined to tax-lot records and
@@ -22,7 +22,7 @@ authors:
   - family-names: Turkcan
     given-names: Mehmet Kerem
     affiliation: Columbia University
-repository-code: "https://github.com/mkturkcan/boundless-nyc"
+repository-code: "https://github.com/mkturkcan/valdrada"
 license: MIT
 keywords:
   - digital twin

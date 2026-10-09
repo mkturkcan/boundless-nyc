@@ -8,8 +8,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform, WeatherParameters  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform, WeatherParameters  # noqa: E402
 
 LENOX_125 = (40.80776, -73.94549)          # W 125th St & Lenox Ave, Harlem
 
@@ -21,7 +21,7 @@ def main():
     ap.add_argument("--out", default="_out/first_steps")
     a = ap.parse_args()
 
-    client = boundless.Client(a.host, a.port)       # retries until the server accepts the connection
+    client = valdrada.Client(a.host, a.port)       # retries until the server accepts the connection
     client.set_timeout(120.0)
     world = client.get_world()                       # waits until the simulator has booted
     info = client.get_server_info()
@@ -29,7 +29,7 @@ def main():
 
     # synchronous mode: the world advances one fixed step per world.tick() and waits in between
     original, original_weather = world.get_settings(), world.get_weather()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
 
     # the city streams in around the spectator: move it to the intersection and wait for the tiles
     m = world.get_map()

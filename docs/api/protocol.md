@@ -1,4 +1,4 @@
-# BoundlessNYC wire protocol (API 0.1.0)
+# Valdrada wire protocol (API 0.1.0)
 
 The Python package speaks this protocol; any language with TCP sockets and JSON can too.
 

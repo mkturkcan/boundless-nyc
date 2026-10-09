@@ -1,6 +1,6 @@
 # Quick start
 
-BoundlessNYC runs as a simulation server. The server renders the city and simulates its traffic, and your Python code
+Valdrada runs as a simulation server. The server renders the city and simulates its traffic, and your Python code
 drives it over TCP (port 2000): it moves cameras, spawns vehicles and pedestrians, steps the world and receives
 images and labels. This page gets a first frame on disk. Option A uses the published release, option B a source
 checkout. The [installation guide](install.md) covers requirements, servers without a display and common errors.
@@ -11,15 +11,15 @@ checkout. The [installation guide](install.md) covers requirements, servers with
 
 The release archive contains the server, the compiled city (`Content/`) and the Python package.
 
-1. Download `BoundlessNYC-0.3.0-win64.zip` (about 2 GB) from the
-   [releases page](https://github.com/mkturkcan/boundless-nyc/releases) and extract it.
-2. In the extracted folder `BoundlessNYC_0.3.0_win64`, double-click `StartServer.bat`. A window opens; on the first
+1. Download `Valdrada-0.3.1-win64.zip` (about 2 GB) from the
+   [releases page](https://github.com/mkturkcan/valdrada/releases) and extract it.
+2. In the extracted folder `Valdrada_0.3.1_win64`, double-click `StartServer.bat`. A window opens; on the first
    start the city appears after one to two minutes, while the shaders compile. `StartServer_Headless.bat` starts the
    same server without a window.
 3. Open a terminal in that folder and install the Python package:
 
     ```
-    pip install PythonAPI\dist\boundless-0.1.0-py3-none-any.whl numpy
+    pip install PythonAPI\dist\valdrada-0.1.0-py3-none-any.whl numpy
     ```
 
 4. Save the example at the end of this page as `first_frame.py` and run it with `python first_frame.py`.
@@ -30,11 +30,11 @@ The release has no Linux executable. The same server runs from a source checkout
 installs, with the release's `Content/` from the dataset (3.9 GB):
 
 ```bash
-git clone https://github.com/mkturkcan/boundless-nyc.git
-cd boundless-nyc
+git clone https://github.com/mkturkcan/valdrada.git
+cd valdrada
 (cd server && npm install)
 pip install -U "huggingface_hub>=1.0"
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 --include "Content/*" --local-dir .
+hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 --include "Content/*" --local-dir .
 cd server
 env -u ELECTRON_RUN_AS_NODE npx electron . --content ../Content
 ```
@@ -61,13 +61,13 @@ Node.js 22.12 or later. The tiles, models and textures (3.8 GB) come from the da
 in Git Bash.
 
 ```bash
-git clone https://github.com/mkturkcan/boundless-nyc.git
-cd boundless-nyc
+git clone https://github.com/mkturkcan/valdrada.git
+cd valdrada
 npm install
 (cd boundlessjs && npm install)
 (cd server && npm install)
 pip install -U "huggingface_hub>=1.0"
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
+hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 ```
@@ -99,10 +99,10 @@ Both cameras deliver their data for that step before `world.tick()` returns. The
 `PythonAPI/examples/data_collection/first_frame.py`.
 
 ```python
-import boundless
-from boundless import Location, Rotation, Transform
+import valdrada
+from valdrada import Location, Rotation, Transform
 
-world = boundless.Client("127.0.0.1", 2000).get_world()
+world = valdrada.Client("127.0.0.1", 2000).get_world()
 spot = world.get_map().geolocation_to_location(40.80955, -73.95905)   # W 120th St and Amsterdam Ave
 pose = Transform(spot + Location(-30, -30, 12), Rotation(pitch=-15, yaw=45))
 world.get_spectator().set_transform(pose)                              # the city streams in around the spectator

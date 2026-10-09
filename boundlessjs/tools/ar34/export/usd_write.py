@@ -1315,7 +1315,7 @@ def root_layer(rfn, shot, info, sublayers, cpath, frame=None, extra=None):
           'sunColor': Gf.Vec3d(*(sun['color'] if sun else [1, 1, 1])), 'sunIntensity': float(sun['intensity']) if sun else 3.0,
           'exposure': float(LIG.get('exposure', 1.0)), 'toneMapping': int(LIG.get('toneMapping', 0)), 'envIntensity': float(LIG.get('environmentIntensity') or 0),
           'time': str(info.get('time') or ''), 'frames': int(info['frames']), 'harvest': os.path.abspath(IN),
-          'source': 'BoundlessNYC harvest ' + man['when']}
+          'source': 'Valdrada harvest ' + man['when']}
     cd.update(extra or {})
     r.GetRootLayer().customLayerData = cd
     r.SetDefaultPrim(r.GetPrimAtPath('/World')) if r.GetPrimAtPath('/World') else None

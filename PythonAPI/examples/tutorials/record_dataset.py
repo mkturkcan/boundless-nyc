@@ -18,9 +18,9 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform  # noqa: E402
-from boundless.png import write_png  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform  # noqa: E402
+from valdrada.png import write_png  # noqa: E402
 
 AMSTERDAM_120 = (40.80955, -73.95905)      # W 120th St & Amsterdam Ave, Morningside Heights
 DT = 0.05
@@ -54,7 +54,7 @@ def spawn_traffic(world, m, lib, junction, n_vehicles, n_walkers, rng):
         ai.set_max_speed(rng.uniform(1.1, 1.6))
         try:
             ai.go_to_location(rng.choice(corners))
-        except boundless.BoundlessError:          # no sidewalk route between those corners
+        except valdrada.ValdradaError:          # no sidewalk route between those corners
             pass
         walkers.append(ai)
         actors += [ai, w]
@@ -85,11 +85,11 @@ def main():
     for sub in ("rgb", "semantic", "instance", "depth"):
         os.makedirs(os.path.join(a.out, sub), exist_ok=True)
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(120.0)
     world = client.get_world()
     original = world.get_settings()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=DT))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=DT))
     m = world.get_map()
     here = m.geolocation_to_location(*AMSTERDAM_120)
     world.get_spectator().set_transform(Transform(here + Location(0, 0, 30)))
@@ -97,7 +97,7 @@ def main():
     junction = m.get_junctions(center=here, radius=60)[0]
     lib = world.get_blueprint_library()
     actors, walkers, corners = spawn_traffic(world, m, lib, junction, a.vehicles, a.walkers, rng)
-    print(f"{sum(isinstance(x, boundless.Vehicle) for x in actors)} vehicles, {len(walkers)} pedestrians")
+    print(f"{sum(isinstance(x, valdrada.Vehicle) for x in actors)} vehicles, {len(walkers)} pedestrians")
     sensors = []
     try:
         for _ in range(int(a.warmup / DT)):          # let the traffic spread out before recording
@@ -118,7 +118,7 @@ def main():
             sensors.append(cam)
 
         classes = [c for c in world.get_semantic_classes() if c["name"] in ROAD_USERS]
-        coco = boundless.util.CocoWriter(classes)
+        coco = valdrada.util.CocoWriter(classes)
         thumbs, step = [], 0
         while len(coco.images) < a.frames and step < (a.frames + 1) * a.every:
             frame = world.tick()
@@ -128,7 +128,7 @@ def main():
                     if ai.get_state() == "arrived":
                         try:
                             ai.go_to_location(rng.choice(corners))
-                        except boundless.BoundlessError:
+                        except valdrada.ValdradaError:
                             pass
             if queues["rgb"].empty():                  # the rig is not due on this step
                 continue

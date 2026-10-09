@@ -20,7 +20,7 @@ Start the server as described in [Getting started](../api/getting_started.md) an
 Python package and numpy, which every tutorial from segmentation on uses for arrays and drawing:
 
 ```
-pip install PythonAPI/dist/boundless-0.1.0-py3-none-any.whl numpy
+pip install PythonAPI/dist/valdrada-0.1.0-py3-none-any.whl numpy
 python PythonAPI/examples/tutorials/first_steps.py
 ```
 

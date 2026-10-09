@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // -----------------------------------------------------------------------------
-// tools/package.mjs — assemble the boundless.js SHIP PACKAGE
+// tools/package.mjs — assemble the Valdrada SHIP PACKAGE
 //
 // Runs the Vite production build of boundlessjs/ and assembles `dist-package/`
 // with ONLY what the shipped app touches at runtime: the built JS/CSS/HTML plus
@@ -138,7 +138,7 @@ async function viteBuild() {
 }
 
 // ---------------------------------------------------------------- 2. runner
-const SERVE_MJS = `// boundless.js ship package — self-contained static server (no dependencies).
+const SERVE_MJS = `// Valdrada ship package — self-contained static server (no dependencies).
 //
 //   node serve.mjs [port] [host]      default 8231 127.0.0.1
 //
@@ -204,13 +204,13 @@ http.createServer((req, res) => {
     s.pipe(res);
   });
 }).listen(port, host, () => {
-  console.log(\`boundless.js — serving \${root}\`);
+  console.log(\`Valdrada — serving \${root}\`);
   console.log(\`open http://\${host}:\${port}/\`);
 });
 `;
 
 const START_CMD = `@echo off
-rem boundless.js ship package — Windows launcher
+rem Valdrada ship package — Windows launcher
 setlocal
 set PORT=%1
 if "%PORT%"=="" set PORT=8231
@@ -225,7 +225,7 @@ node "%~dp0serve.mjs" %PORT%
 `;
 
 const START_SH = `#!/bin/sh
-# boundless.js ship package — macOS/Linux launcher
+# Valdrada ship package — macOS/Linux launcher
 PORT="\${1:-8231}"
 command -v node >/dev/null 2>&1 || { echo "Node.js 20+ is required and was not found on PATH."; exit 1; }
 echo "open http://127.0.0.1:$PORT/"
@@ -236,7 +236,7 @@ function readmeRun(manifest) {
   const rows = manifest.folders
     .map((f) => `| \`${f.name}\` | ${f.files.toLocaleString('en-US')} | ${MB(f.bytes)} MB | ${f.what} |`)
     .join('\n');
-  return `# boundless.js — how to run this package
+  return `# Valdrada — how to run this package
 
 A real-time, photorealistic digital twin of New York City (Manhattan, Bronx,
 Brooklyn, Queens) built from public NYC Open Data. This folder is the **runtime
@@ -296,7 +296,7 @@ somewhere else, \`?play=1\` the legacy grapple-traversal character.
 
 One hard requirement: **the package must sit at the server root.** The app
 fetches \`/settings/graphics.json\` with a leading slash, so hosting it under
-\`/boundless/\` breaks the boot settings. Everything else is relative
+\`/valdrada/\` breaks the boot settings. Everything else is relative
 (\`base: './'\`), so a root-mounted bucket or vhost works unchanged.
 
 Recommendations for a public deployment:
@@ -332,13 +332,13 @@ sources it derives from (NYC Open Data terms / public domain, OpenStreetMap
 ODbL, Poly Haven and ambientCG CC0, CARLA assets CC-BY 4.0, ez-tree MIT). See
 the repository's \`README.md\` and \`boundlessjs/DATA_SOURCES.md\`.
 
-BoundlessNYC is a separate follow-up project, developed and maintained by
+Valdrada is developed and maintained by
 Mehmet Kerem Turkcan. If you use it, the compiled city or imagery rendered
-with it, please cite BoundlessNYC itself:
+with it, please cite Valdrada itself:
 
-    M. K. Turkcan. "BoundlessNYC: a real-data, real-time digital twin of New
-    York City." Software, version 0.3.0, 2026.
-    https://github.com/mkturkcan/boundless-nyc
+    M. K. Turkcan. "Valdrada: a real-data, real-time digital twin of New
+    York City." Software, version 0.3.1, 2026.
+    https://github.com/mkturkcan/valdrada
 `;
 }
 
@@ -386,7 +386,7 @@ async function verify(pkgDir) {
 
 // ---------------------------------------------------------------- main
 (async () => {
-  log(`boundless.js packager\n  repo   ${root}\n  output ${outDir}\n`);
+  log(`Valdrada packager\n  repo   ${root}\n  output ${outDir}\n`);
 
   if (!skipBuild) await viteBuild();
   else log('· skipping vite build (--skip-build)');
@@ -428,10 +428,10 @@ async function verify(pkgDir) {
     await fs.writeFile(path.join(outDir, 'start.cmd'), START_CMD.replace(/\n/g, '\r\n'));
     await fs.writeFile(path.join(outDir, 'start.sh'), START_SH);
     await fs.writeFile(path.join(outDir, 'package.json'), JSON.stringify({
-      name: 'boundless-js-runtime',
+      name: 'valdrada-runtime',
       private: true,
       version: '1.0.0',
-      description: 'boundless.js — NYC digital twin, runtime package (built app + streamed assets)',
+      description: 'Valdrada — NYC digital twin, runtime package (built app + streamed assets)',
       type: 'module',
       scripts: { start: 'node serve.mjs' },
     }, null, 2) + '\n');
@@ -441,7 +441,7 @@ async function verify(pkgDir) {
   const entryFiles = (await walk(buildDir)).map((f) => path.relative(buildDir, f).split(path.sep).join('/'));
   const totals = folders.reduce((a, f) => ({ files: a.files + f.files, bytes: a.bytes + f.bytes }), { files: 0, bytes: 0 });
   const manifest = {
-    name: 'boundless.js runtime package',
+    name: 'Valdrada runtime package',
     built: new Date().toISOString().slice(0, 19).replace('T', ' ') + 'Z',
     node: process.version,
     hardlinked: useLink,

@@ -525,7 +525,7 @@ meta = {
     'hubs': [{'id': k, 'p': rt(hb['c1']), 'r': round(hb['r1'], 4), 'w': round(hb['w1'], 4)} for k, hb in sorted(hubs.items())],
     'wheelbase': round(abs(hubs[1]['c1'].y - hubs[3]['c1'].y), 3),
     'roof': round(ROOF, 3), 'tris': [t0, t1, t2],
-    'source': "memoov, 'Dhl delivery van' (Nissan NV200), sketchfab.com/3d-models/6f952a34d1f44905af42c803cba2805f, CC-BY 4.0; re-proportioned, re-wheeled, glazed, interior, roof equipment and TLC livery: BoundlessNYC",
+    'source': "memoov, 'Dhl delivery van' (Nissan NV200), sketchfab.com/3d-models/6f952a34d1f44905af42c803cba2805f, CC-BY 4.0; re-proportioned, re-wheeled, glazed, interior, roof equipment and TLC livery: Valdrada",
 }
 json.dump(meta, open(OUT_META, 'w'), indent=1)
 print('[nv200] meta', json.dumps(meta))

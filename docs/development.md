@@ -1,6 +1,6 @@
 # Development and quality checks
 
-BoundlessNYC changes in small steps that each stay reversible and measurable. Three mechanisms keep a change from
+Valdrada changes in small steps that each stay reversible and measurable. Three mechanisms keep a change from
 breaking the city: every visible change sits behind a URL flag that turns it off, recorded takes pass automated render
 gates before anyone uses them, and a release passes its own gates before it is published. This page describes each
 mechanism and the commands that run it. All commands run from the top of a source checkout.
@@ -27,7 +27,7 @@ checking out older code. Node tools that import a module have no `location`, so 
 ```bash
 (cd boundlessjs && npm test)                          # geometry and tiling invariants, 81 checks
 python -m unittest discover -s PythonAPI/tests        # the Python package; offline
-BOUNDLESS_TEST_PORT=2000 python -m unittest discover -s PythonAPI/tests   # adds the tests that need a running server
+VALDRADA_TEST_PORT=2000 python -m unittest discover -s PythonAPI/tests   # adds the tests that need a running server
 ```
 
 `npm test` needs the compiled tiles. It checks wall winding and, on sampled tiles, that terrain heights are finite,

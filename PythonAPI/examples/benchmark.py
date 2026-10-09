@@ -10,8 +10,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform  # noqa: E402
 
 
 def main():
@@ -24,12 +24,12 @@ def main():
     ap.add_argument("--only", default=None, help="comma-separated setup numbers to run (0-based)")
     a = ap.parse_args()
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     world = client.get_world()
     info = client.get_server_info()
     print(f"server {info.get('api_version')} at {info.get('resolution')} on {info.get('gpu', '?')}")
     old = world.get_settings()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=a.dt))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=a.dt))
     if a.idle_nap is not None:
         world._call("world.apply_settings", idle_nap_ms=a.idle_nap)
     m = world.get_map()

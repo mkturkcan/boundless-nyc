@@ -1,5 +1,5 @@
 ---
-title: BoundlessNYC
+title: Valdrada
 sdk: docker
 license: mit
 app_port: 7860
@@ -7,11 +7,12 @@ pinned: false
 short_description: Real-time digital twin of New York City from public records
 ---
 
-# BoundlessNYC: interactive demo
+# Valdrada: interactive demo
 
 ![A simulator frame at W 125th St and Lenox Ave in Harlem, with its semantic segmentation and depth](assets/hero.jpg)
 
-A real-time WebGL2 rendering of BoundlessNYC, a digital twin of Manhattan, the Bronx, Brooklyn and Queens compiled
+A real-time WebGL2 rendering of Valdrada, a digital twin of
+Manhattan, the Bronx, Brooklyn and Queens compiled
 from public municipal records. It includes 937,965 buildings, the street network with its recorded lane geometry,
 street trees and street furniture, and simulated traffic, trains and pedestrians; 125th Street, Central Park and
 Hunters Point are modelled in detail. The browser streams 512 m tiles within
@@ -33,7 +34,7 @@ look does not engage inside the embedded page, open the app in its own tab.
 | H | help |
 
 **Implementation.** This Space runs no simulation server. `server.mjs` is a dependency-free static server. It serves
-the `Content/` folder of the dataset `mehmetkeremturkcan/boundless-nyc`, mounted read-only at `/data` as a Space
+the `Content/` folder of the dataset `mehmetkeremturkcan/valdrada`, mounted read-only at `/data` as a Space
 volume. All rendering and simulation run in the browser. The simulation server with the Python API (synchronous
 stepping, sensors, ground truth) is distributed as a desktop build; see the repository.
 
@@ -49,6 +50,6 @@ created with Epic Games' MetaHuman, which may not be used to build or enhance a 
 models; `LICENSING.md` in the
 repository explains the notice and the procedural alternative.
 
-**Citation.** BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. Please
-cite it as: M. K. Turkcan. *BoundlessNYC: a real-data, real-time digital twin of New York City.* Software, version
-0.3.0, 2026. <https://github.com/mkturkcan/boundless-nyc>
+**Citation.** Valdrada is developed and maintained by Mehmet Kerem Turkcan. Please
+cite it as: M. K. Turkcan. *Valdrada: a real-data, real-time digital twin of New York City.* Software, version
+0.3.1, 2026. <https://github.com/mkturkcan/valdrada>

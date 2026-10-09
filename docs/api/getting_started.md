@@ -1,20 +1,20 @@
-# Getting started with BoundlessNYC
+# Getting started with Valdrada
 
-BoundlessNYC is the boundless.js digital twin of New York City as a simulation server. Like CARLA, the server renders
+Valdrada is the Valdrada digital twin of New York City as a simulation server. Like CARLA, the server renders
 and simulates, and your code drives it over TCP through a Python API: you spawn and control vehicles and pedestrians,
 attach cameras, step the world, and read back images, segmentation, depth and bounding boxes.
 
-The Windows x64 release, `BoundlessNYC-0.3.0-win64.zip` on the GitHub release page, holds the server, the compiled
+The Windows x64 release, `Valdrada-0.3.1-win64.zip` on the GitHub release page, holds the server, the compiled
 city (`Content/`) and the Python package. Extract it anywhere; the commands below run in the extracted folder.
 
 ## Start the server
 
 On Windows, double-click `StartServer.bat` (a window that shows the simulation) or `StartServer_Headless.bat` (no
-window; the GPU still renders). Both pass their arguments on to `BoundlessNYC.exe`, which can also be started directly:
+window; the GPU still renders). Both pass their arguments on to `Valdrada.exe`, which can also be started directly:
 
 ```
-BoundlessNYC.exe --port 2000 --res 1280x720 --time day
-BoundlessNYC.exe --headless
+Valdrada.exe --port 2000 --res 1280x720 --time day
+Valdrada.exe --headless
 ```
 
 | option | default | |
@@ -35,7 +35,7 @@ The first start compiles shaders and streams the city: allow a minute or two. `s
 ## Install the Python package
 
 ```
-pip install PythonAPI/dist/boundless-0.1.0-py3-none-any.whl
+pip install PythonAPI/dist/valdrada-0.1.0-py3-none-any.whl
 pip install numpy          # optional: arrays, masks and drawing
 ```
 
@@ -45,9 +45,9 @@ it in place; the example scripts also run without it, since they add `PythonAPI/
 ## A first script
 
 ```python
-import boundless
+import valdrada
 
-client = boundless.Client("127.0.0.1", 2000)      # retries until the server accepts the connection
+client = valdrada.Client("127.0.0.1", 2000)      # retries until the server accepts the connection
 world = client.get_world()
 m = world.get_map()
 here = m.geolocation_to_location(40.80955, -73.95905)     # W 120th St & Amsterdam Ave
@@ -64,10 +64,10 @@ The server starts in synchronous mode: the world advances one fixed step per `wo
 When `tick()` returns, every listening sensor that was due on that step has delivered its data.
 
 ```python
-from boundless import Location, Rotation, Transform
+from valdrada import Location, Rotation, Transform
 
 settings = world.get_settings()
-world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
 lib = world.get_blueprint_library()
 car = world.spawn_actor(lib.find("vehicle.taxi2"), m.get_spawn_points(center=here, radius=100)[0])
 car.set_autopilot(True)
@@ -84,7 +84,7 @@ Actors stay in the world until they are destroyed, also after the client disconn
 
 ## Tutorials and examples
 
-The [tutorials](https://mkturkcan.github.io/boundless-nyc/tutorials/) go step by step from a first connection to a
+The [tutorials](https://mkturkcan.github.io/valdrada/tutorials/) go step by step from a first connection to a
 recorded dataset: cameras, segmentation, depth, bounding boxes, dataset recording and actor control, with one script
 each in `PythonAPI/examples/tutorials/`. The other examples:
 

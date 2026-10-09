@@ -11,7 +11,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const OUT = path.join(ROOT, 'boundlessjs/public/textures/cp33/lakeside');
 const HOME = process.env.USERPROFILE || process.env.HOME;
 const TMP = path.join(HOME, '.tools/texcache/cp33lakeside');
-const UA = 'boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)';
+const UA = 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)';
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(TMP, { recursive: true });
 async function dl(url, file) {
   for (let a = 0; a < 3; a++) {

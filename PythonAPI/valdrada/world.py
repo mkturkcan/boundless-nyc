@@ -6,7 +6,7 @@ from typing import Dict, Iterator, List, Optional, Sequence, Tuple
 
 from .actors import Actor, Sensor, Spectator, make_actor
 from .geometry import GeoLocation, Location, Rotation, Transform, Vector3D, _loc
-from .transport import BoundlessError
+from .transport import ValdradaError
 
 
 class WorldSettings:
@@ -282,7 +282,7 @@ class World:
     def try_spawn_actor(self, blueprint: ActorBlueprint, transform: Transform = None, attach_to: Actor = None) -> Optional[Actor]:
         try:
             return self.spawn_actor(blueprint, transform, attach_to)
-        except BoundlessError:
+        except ValdradaError:
             return None
 
     def get_actors(self, filter: Optional[str] = None) -> ActorList:
@@ -291,7 +291,7 @@ class World:
     def get_actor(self, actor_id: int) -> Optional[Actor]:
         try:
             return make_actor(self, self._call("world.get_actor", id=actor_id))
-        except BoundlessError:
+        except ValdradaError:
             return None
 
     # ---- environment

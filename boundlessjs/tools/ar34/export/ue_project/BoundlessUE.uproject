@@ -2,7 +2,7 @@
 	"FileVersion": 3,
 	"EngineAssociation": "",
 	"Category": "",
-	"Description": "BoundlessNYC: the UE5 render target of a take's USD export (boundlessjs/tools/ar34/export/ue_take.py)",
+	"Description": "Valdrada: the UE5 render target of a take's USD export (boundlessjs/tools/ar34/export/ue_take.py)",
 	"Plugins": [
 		{ "Name": "USDImporter", "Enabled": true },
 		{ "Name": "MovieRenderPipeline", "Enabled": true },

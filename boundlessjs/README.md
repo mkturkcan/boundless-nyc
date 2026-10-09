@@ -1,6 +1,6 @@
-# boundless.js
+# Valdrada
 
-boundless.js is the client of BoundlessNYC: a three.js (r185) WebGL2 application that streams the compiled city and
+Valdrada is the client of Valdrada: a three.js (r185) WebGL2 application that streams the compiled city and
 renders and simulates it. The same page runs in three settings:
 
 - interactively in a browser;

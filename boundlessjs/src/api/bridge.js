@@ -1,6 +1,6 @@
-// boundless.js EXTERNAL CONTROL API — the in-page half (loaded by main.js under ?api=1).
+// Valdrada EXTERNAL CONTROL API — the in-page half (loaded by main.js under ?api=1).
 //
-// A client (PythonAPI/boundless, or anything that speaks docs/api/protocol.md) sends requests to the host process
+// A client (PythonAPI/valdrada, or anything that speaks docs/api/protocol.md) sends requests to the host process
 // (server/main.js: TCP -> Electron IPC -> window.boundlessHost). This module executes them against the live simulation
 // and pushes sensor data back as events. Without a host (a harness or the browser console), `window.__API.call(method,
 // params)` runs the same handlers and events queue on `window.__API.events`.
@@ -938,7 +938,7 @@ export function initApi(ctx) {
     'server.info': () => {
       const [W, H0] = drawSize();
       return {
-        api_version: API_VERSION, engine: 'boundless.js', map: 'NYC', frame, timestamp: simTime,
+        api_version: API_VERSION, engine: 'valdrada', map: 'NYC', frame, timestamp: simTime,
         synchronous_mode: settings.synchronous_mode, fixed_delta_seconds: settings.fixed_delta_seconds,
         resolution: [W, H0], gpu: gpu(), fps: +(engine.fps || 0).toFixed(1), geo_origin: { lat: LAT0, lon: LON0 },
         vehicles: vehicleKinds.length, walker_variants: variants.length,
@@ -1194,6 +1194,6 @@ export function initApi(ctx) {
   }
   window.__API = { call: (m, p) => handle(m, p, 0), events, actors, version: API_VERSION };
   updateCamera();
-  console.log(`[api] boundless.js API ${API_VERSION} ready (${host ? 'host connected' : 'no host: window.__API'})`);
+  console.log(`[api] Valdrada API ${API_VERSION} ready (${host ? 'host connected' : 'no host: window.__API'})`);
   return { preStep, postStep };
 }

@@ -3,9 +3,9 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "boundless"
+name = "valdrada"
 version = "0.1.0"
-description = "Python API of the boundless.js NYC simulator: spawn and control vehicles and pedestrians, and record RGB, semantic / instance segmentation, depth and bounding boxes"
+description = "Python API of the Valdrada simulator: spawn and control vehicles and pedestrians, and record RGB, semantic / instance segmentation, depth and bounding boxes"
 readme = "README.md"
 requires-python = ">=3.8"
 license = {text = "MIT"}
@@ -23,4 +23,4 @@ dependencies = []
 numpy = ["numpy>=1.21"]
 
 [tool.setuptools]
-packages = ["boundless"]
+packages = ["valdrada", "boundless"]

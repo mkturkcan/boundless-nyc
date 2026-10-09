@@ -1,20 +1,20 @@
-# `boundless` Python API reference (0.1.0)
+# `valdrada` Python API reference (0.1.0)
 
-`pip install PythonAPI/dist/boundless-0.1.0-py3-none-any.whl`. Pure Python 3.8+; numpy is optional (`to_numpy()`,
+`pip install PythonAPI/dist/valdrada-0.1.0-py3-none-any.whl`. Pure Python 3.8+; numpy is optional (`to_numpy()`,
 `instance_ids()`, `mask()`, depth as `.npy` or `.png`, `util.draw_boxes_rgb`). Modelled on CARLA's `carla` package: the
 same objects and verbs, where the NYC simulator has them. The
-[tutorials](https://mkturkcan.github.io/boundless-nyc/tutorials/) show the API at work.
+[tutorials](https://mkturkcan.github.io/valdrada/tutorials/) show the API at work.
 
 ## Client
 
 ```python
-client = boundless.Client(host="127.0.0.1", port=2000, timeout=120.0)   # retries the connection for up to `timeout` s
+client = valdrada.Client(host="127.0.0.1", port=2000, timeout=120.0)   # retries the connection for up to `timeout` s
 client.set_timeout(seconds)
 client.get_server_info()      # api_version, resolution, gpu, fps, frame, settings, geo origin
 client.get_server_version(); client.get_client_version()
 client.wait_until_ready(timeout=300)   # the first start compiles shaders: 1-2 minutes
 world = client.get_world()             # waits for ready
-client.close()                          # also a context manager: `with boundless.Client() as client:`
+client.close()                          # also a context manager: `with valdrada.Client() as client:`
 ```
 
 ## World
@@ -118,7 +118,7 @@ Every sensor event also carries `frame`, `timestamp`, `transform` (the sensor's 
 `Transform(location, rotation)` (`transform_point`, `inverse_transform_point`, `get_matrix`, `get_inverse_matrix`),
 `BoundingBox(location, extent, rotation)` (`get_local_vertices`, `get_world_vertices(transform)`), `GeoLocation`.
 
-## Utilities (`boundless.util`)
+## Utilities (`valdrada.util`)
 
 - `camera_intrinsics(width, height, fov)`: the 3 x 3 K matrix.
 - `project_point(point, camera_transform, width, height, fov)` and `project_bbox(actor_transform, bbox, camera_transform,
@@ -129,7 +129,7 @@ Every sensor event also carries `frame`, `timestamp`, `transform` (the sensor's 
   `amodal_bbox`, `occlusion` and `actor_id` are extra keys of each annotation.
 - `draw_boxes_rgb(image, labels, color_of=None, thickness=2)`: an RGB array with boxes drawn (needs numpy).
 - `png.write_png(path, width, height, data, channels=4, bitdepth=8)`: a PNG writer with no dependencies (in
-  `boundless.png`).
+  `valdrada.png`).
 
 ## Performance
 

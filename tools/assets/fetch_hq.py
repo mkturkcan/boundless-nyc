@@ -31,7 +31,7 @@ SETS = [
     ('white_stucco', 'polyhaven', 'stucco'),
 ]
 LICENCE = {'polyhaven': 'CC0 1.0 (https://polyhaven.com/license)'}
-UA = {'User-Agent': 'boundless-nyc-hq-fetch/1.0'}
+UA = {'User-Agent': 'valdrada-hq-fetch/1.0'}
 
 
 def get_json(url):

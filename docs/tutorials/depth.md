@@ -58,7 +58,7 @@ R = np.array(depth.transform.rotation.matrix())                             # bo
 ```
 
 The cameras are ideal pinholes: the principal point is the image centre and the focal length follows from the
-horizontal field of view, as `boundless.util.camera_intrinsics(width, height, fov)` returns it. A pixel's depth and its
+horizontal field of view, as `valdrada.util.camera_intrinsics(width, height, fov)` returns it. A pixel's depth and its
 offset from the principal point give the point in the camera frame, and the sensor's world pose, which every event
 carries in `transform`, takes it to the world frame. The script writes every second pixel's point with its RGB colour
 to `points.ply`, a binary PLY file that point-cloud viewers open, and repeats the computation for the centre pixel with

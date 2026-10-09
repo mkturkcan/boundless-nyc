@@ -3,7 +3,7 @@
 // Writes public/fonts/ar33/<file>.ttf and public/fonts/ar33/LICENSE-<dir>.txt, and prints what it fetched.
 import fs from 'node:fs';
 import path from 'node:path';
-const UA = 'boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)';
+const UA = 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)';
 const OUT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1')), '../../../public/fonts/ar33');
 // [licence dir, family dir, file filter (regexp on the file name), note]
 export const FAMILIES = [

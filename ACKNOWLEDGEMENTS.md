@@ -1,6 +1,6 @@
 # Acknowledgements and attributions
 
-BoundlessNYC is compiled almost entirely from public records and openly licensed assets. This file lists every
+Valdrada is compiled almost entirely from public records and openly licensed assets. This file lists every
 external source contained in the repository, the compiled city or the release builds, with the attribution each
 licence requires. [LICENSING.md](LICENSING.md) gives the licence of each part of the project, and
 [boundlessjs/DATA_SOURCES.md](boundlessjs/DATA_SOURCES.md) records, field by field, what each dataset contributes.
@@ -127,12 +127,13 @@ During development, Google Street View panoramas and web photographs of New York
 references for comparison renders. They are not contained in this repository, the compiled city or any release. No
 such image has been used as a texture, as a source of geometry or as training data.
 
-## Earlier work
+## Earlier work and the name
 
-BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. It
-acknowledges the earlier Boundless work:
+This project was published as BoundlessNYC up to version 0.3.0 and was renamed Valdrada in version 0.3.1, to avoid
+confusion with the earlier Boundless project, which is a separate work. Valdrada is developed and maintained by
+Mehmet Kerem Turkcan and acknowledges that earlier work:
 M. K. Turkcan, Y. Li, C. Zang, J. Ghaderi, G. Zussman and Z. Kostic. *Boundless: Generating photorealistic
 synthetic data for object detection in urban streetscapes.* arXiv:2409.03022, 2024.
 <https://arxiv.org/abs/2409.03022>
 
-To cite BoundlessNYC itself, use [CITATION.cff](CITATION.cff).
+To cite Valdrada itself, use [CITATION.cff](CITATION.cff).

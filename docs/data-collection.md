@@ -13,7 +13,7 @@ contain MetaHuman-derived components whose licence does not allow building datas
 them ([licensing](licensing.md)):
 
 ```
-BoundlessNYC.exe --pedestrians procedural
+Valdrada.exe --pedestrians procedural
 ```
 
 On Linux, add `--pedestrians procedural` to the server command of the [installation guide](install.md). Then

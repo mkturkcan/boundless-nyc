@@ -20,7 +20,7 @@ PythonAPI/dist/
 server/.stage/
 
 # ---------------------------------------------------------------- binary banks (BUILDING.md: download, or compile tiles)
-# distributed through the Hugging Face dataset mehmetkeremturkcan/boundless-nyc (Content/)
+# distributed through the Hugging Face dataset mehmetkeremturkcan/valdrada (Content/)
 boundlessjs/public/tiles/
 boundlessjs/public/tiles
 boundlessjs/public/tiles_*/

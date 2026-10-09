@@ -1,6 +1,6 @@
 # Installation
 
-This guide covers what BoundlessNYC needs, how to install it on Windows and on Linux, how to run it on a Linux server
+This guide covers what Valdrada needs, how to install it on Windows and on Linux, how to run it on a Linux server
 without a display, the errors people meet most often, and how to build the release archive. For the shortest path to a
 first frame, see the [quick start](quickstart.md).
 
@@ -13,37 +13,37 @@ first frame, see the [quick start](quickstart.md).
 | Memory | 16 GB of RAM; the page's JavaScript heap may grow to 8 GB |
 | Disk | Release archive 2.0 GB, 4.3 GB extracted. Source checkout with the downloaded tiles, models and textures 3.8 GB more; compiling the tiles needs about 2.4 GB of raw downloads |
 | Node.js | 22.12 or later with npm, for a source checkout and for the Linux server (tested with 24.19) |
-| Python | 3.8 or later for the `boundless` package; `numpy` is optional and used by most examples |
+| Python | 3.8 or later for the `valdrada` package; `numpy` is optional and used by most examples |
 | Downloads | `huggingface_hub` 1.0 or later for the `hf` command: `pip install -U "huggingface_hub>=1.0"` |
 
 The Python package has no required dependencies and runs on any machine that can reach the server over TCP.
 
 ## Windows
 
-**Release.** Download `BoundlessNYC-0.3.0-win64.zip` from the
-[releases page](https://github.com/mkturkcan/boundless-nyc/releases) and extract it anywhere. The folder contains:
+**Release.** Download `Valdrada-0.3.1-win64.zip` from the
+[releases page](https://github.com/mkturkcan/valdrada/releases) and extract it anywhere. The folder contains:
 
 | Path | Contents |
 |---|---|
-| `BoundlessNYC.exe` | the server: a window, or no window with `--headless`; TCP API on port 2000 |
-| `StartServer.bat`, `StartServer_Headless.bat` | launchers that pass their arguments on to `BoundlessNYC.exe` |
+| `Valdrada.exe` | the server: a window, or no window with `--headless`; TCP API on port 2000 |
+| `StartServer.bat`, `StartServer_Headless.bat` | launchers that pass their arguments on to `Valdrada.exe` |
 | `Content/` | the built client and the compiled city |
-| `PythonAPI/` | the `boundless` package (source and wheel) and the examples |
+| `PythonAPI/` | the `valdrada` package (source and wheel) and the examples |
 | `Docs/` | getting started, the Python API reference and the wire protocol |
 
 Start the server by double-clicking `StartServer.bat`, or from a terminal with options:
 
 ```
-BoundlessNYC.exe --port 2000 --res 1280x720 --time day --pedestrians procedural
+Valdrada.exe --port 2000 --res 1280x720 --time day --pedestrians procedural
 ```
 
 Install the Python package from the same folder:
 
 ```
-pip install PythonAPI\dist\boundless-0.1.0-py3-none-any.whl numpy
+pip install PythonAPI\dist\valdrada-0.1.0-py3-none-any.whl numpy
 ```
 
-On laptops with two GPUs the server requests the discrete one. If Windows asks whether `BoundlessNYC.exe` may use the
+On laptops with two GPUs the server requests the discrete one. If Windows asks whether `Valdrada.exe` may use the
 network, local connections work without allowing it; allow it only to accept clients from other machines
 (`--host 0.0.0.0`).
 
@@ -56,12 +56,12 @@ The release archive contains a Windows executable only. On Linux the server runs
 the Electron runtime, which loads either the release's built `Content/` or a development server.
 
 ```bash
-git clone https://github.com/mkturkcan/boundless-nyc.git
-cd boundless-nyc
+git clone https://github.com/mkturkcan/valdrada.git
+cd valdrada
 (cd server && npm install)
 ls server/node_modules/electron/dist/electron        # the runtime; if missing: (cd server && node node_modules/electron/install.js)
 pip install -U "huggingface_hub>=1.0"
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 --include "Content/*" --local-dir .
+hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 --include "Content/*" --local-dir .
 cd server
 env -u ELECTRON_RUN_AS_NODE npx electron . --content ../Content
 ```
@@ -87,7 +87,7 @@ What you should see in `server.log`: `listening on 127.0.0.1:2000` at once, then
 harmless when the check below names your GPU. To confirm that the GPU renders:
 
 ```bash
-python -c "import boundless; print(boundless.Client('127.0.0.1', 2000).get_server_info()['gpu'])"
+python -c "import valdrada; print(valdrada.Client('127.0.0.1', 2000).get_server_info()['gpu'])"
 ```
 
 The answer should name the GPU, for example `ANGLE (NVIDIA, Vulkan 1.4.312 (NVIDIA NVIDIA RTX 6000 Ada Generation ...))`.
@@ -130,7 +130,7 @@ from any address and is only for trusted networks.
 
 | Symptom | Cause and fix |
 |---|---|
-| `ConnectionError: no boundless server on 127.0.0.1:2000` | The server is not running, listens on another port, or a firewall blocks the port. Check the server log for `listening on`. |
+| `ConnectionError: no Valdrada server on 127.0.0.1:2000` | The server is not running, listens on another port, or a firewall blocks the port. Check the server log for `listening on`. |
 | `TimeoutError: the server did not finish loading within 300 s` | The first start compiles shaders; start the client again once the server log shows `world ready`. If it never does, check the GPU (see above) and run with `--verbose`. |
 | Electron prints Node.js output or exits at once | `ELECTRON_RUN_AS_NODE` is set in the environment (some editors set it in their terminals). Start with `env -u ELECTRON_RUN_AS_NODE` (Linux, Git Bash) or `set ELECTRON_RUN_AS_NODE=` first (Windows `cmd`); the release launchers clear it. |
 | `server/node_modules/electron/dist/` is missing after `npm install` | npm skipped Electron's install script: run `node node_modules/electron/install.js` in `server/`. |
@@ -161,7 +161,7 @@ node server/build.mjs --platform win32 --link --zip
 | `--platform win32` or `linux` | the target; `linux` builds a Linux x64 server, which has not been tested for a release |
 | `--link` | hardlink `Content/` instead of copying it (same volume only) |
 | `--skip-content` | keep `Content/` from the previous build |
-| `--zip` | also write `release/BoundlessNYC-<version>-<platform>.zip` |
+| `--zip` | also write `release/Valdrada-<version>-<platform>.zip` |
 | `--out DIR` | the output directory (default `release/`) |
 
 For 0.2.0 the folder held 4,689 files (4.3 GB) and the archive was 2,050,959,101 bytes. GitHub accepts release assets

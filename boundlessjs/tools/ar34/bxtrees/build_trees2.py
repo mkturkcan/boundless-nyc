@@ -132,5 +132,5 @@ json.dump(old, open(sp, 'w'), indent=1)
 # the set's tables (usd_trees.py and blender_trees.py read them)
 setj = {'gen': 2, 'bark_of': BARK_OF, 'bark_tint': {k: list(v) for k, v in BARK_TINT.items()},
         'leaf_cut': {F: LM[F].get('cut', 'opaque') for F in LM}, 'large_scale': 1.2,
-        'licence': 'geometry: procedural (treegen.py / treegen2.py), BoundlessNYC, CC BY 4.0; leaf and bark scans CC0 (NOTICE.md)'}
+        'licence': 'geometry: procedural (treegen.py / treegen2.py), Valdrada, CC BY 4.0; leaf and bark scans CC0 (NOTICE.md)'}
 json.dump(setj, open(f'{OUT}/set.json', 'w'), indent=1)

@@ -4,7 +4,7 @@
 # Sources and licences: docs/notes/ar34-trees.md, SOURCES table. Nothing here is committed; build36.py reads the cache.
 set -euo pipefail
 DST="${1:-/data0/projectnyc_aux/tmp/trees/src}"
-UA="boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)"
+UA="valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)"
 mkdir -p "$DST"
 cd "$DST"
 get() { [ -s "$2" ] || timeout 300 curl -sfL -A "$UA" "$1" -o "$2"; }

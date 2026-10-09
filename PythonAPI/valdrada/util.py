@@ -65,7 +65,7 @@ class CocoWriter:
 
     def save(self, path: str) -> str:
         with open(path, "w", encoding="utf-8") as f:
-            json.dump({"info": {"description": "boundless.js NYC synthetic data"}, "images": self.images,
+            json.dump({"info": {"description": "Valdrada synthetic data"}, "images": self.images,
                        "annotations": self.annotations, "categories": self.categories}, f)
         return path
 

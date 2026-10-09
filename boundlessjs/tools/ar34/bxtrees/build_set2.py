@@ -54,9 +54,9 @@ for i in range(len(chunks)):
     except Exception as e: print('part', i, 'missing', e)
 json.dump(dict(sorted(stats.items())), open(f'{a.out}/trees.json', 'w'), indent=1)
 open(f'{a.out}/NOTICE.md', 'w').write(
-    '# bxtrees2: the second street-tree set of BoundlessNYC\n\n'
-    'Geometry: procedural, grown by tools/ar34/bxtrees/treegen.py and treegen2.py (BoundlessNYC), released under CC BY 4.0.\n'
-    'The ginkgo leaf is drawn by tools/ar34/bxtrees/leaves2.py (BoundlessNYC, CC BY 4.0).\n\n'
+    '# bxtrees2: the second street-tree set of Valdrada\n\n'
+    'Geometry: procedural, grown by tools/ar34/bxtrees/treegen.py and treegen2.py (Valdrada), released under CC BY 4.0.\n'
+    'The ginkgo leaf is drawn by tools/ar34/bxtrees/leaves2.py (Valdrada, CC BY 4.0).\n\n'
     'Leaf scans (CC0, ambientCG): LeafSet010 (plane, maple), LeafSet016 (pin oak), LeafSet014 (zelkova, cherry), LeafSet024 (pear,\n'
     'linden, plum, ornamentals), LeafSet022 (honeylocust and sophora leaflets).\n'
     'Bark scans (CC0): Poly Haven japanese_sycamore (plane), bark_willow_02 (honeylocust), jolcham_oak_bark_01 (pin oak, ornamentals,\n'

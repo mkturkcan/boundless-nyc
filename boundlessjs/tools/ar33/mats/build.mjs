@@ -27,7 +27,7 @@ const SRC = `${HOME}/.tools/texcache/ar33src`;
 const OUT = path.join(ROOT, 'public', 'textures', 'pbr');
 const DB = path.join(here, 'packed.json');
 const GEN = path.join(ROOT, 'src', 'city', 'mat', 'pbrSets.js');
-const UA = 'boundless-nyc-research/0.1 (project contact: github.com/boundless-nyc)';
+const UA = 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)';
 fs.mkdirSync(SRC, { recursive: true });
 fs.mkdirSync(OUT, { recursive: true });
 

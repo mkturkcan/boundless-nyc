@@ -18,7 +18,7 @@ KIND_JSON = 1
 KIND_BLOB = 2
 
 
-class BoundlessError(RuntimeError):
+class ValdradaError(RuntimeError):
     """An error reported by the simulator (``code`` is a short machine-readable tag)."""
 
     def __init__(self, code: str, message: str):
@@ -27,7 +27,7 @@ class BoundlessError(RuntimeError):
         self.message = message
 
 
-class ConnectionClosed(BoundlessError):
+class ConnectionClosed(ValdradaError):
     def __init__(self, message: str = "the connection to the simulator closed"):
         super().__init__("connection_closed", message)
 
@@ -42,7 +42,7 @@ class _Slot:
 
 
 class Transport:
-    """One TCP connection to a boundless server, with a reader thread."""
+    """One TCP connection to a Valdrada server, with a reader thread."""
 
     def __init__(self, host: str, port: int, timeout: float = 60.0):
         self.host, self.port = host, port
@@ -56,7 +56,7 @@ class Transport:
         self._listeners: Dict[int, Callable[[dict, List[memoryview]], None]] = {}
         self._closed = False
         self._close_reason = "the connection to the simulator closed"
-        self._reader = threading.Thread(target=self._run, name="boundless-reader", daemon=True)
+        self._reader = threading.Thread(target=self._run, name="valdrada-reader", daemon=True)
         self._reader.start()
 
     # ------------------------------------------------------------------ sending
@@ -80,7 +80,7 @@ class Transport:
         if slot.error is not None:
             if slot.error.get("code") == "connection_closed":
                 raise ConnectionClosed(slot.error.get("message", ""))
-            raise BoundlessError(slot.error.get("code", "error"), slot.error.get("message", ""))
+            raise ValdradaError(slot.error.get("code", "error"), slot.error.get("message", ""))
         return slot.result
 
     # ------------------------------------------------------------------ listeners

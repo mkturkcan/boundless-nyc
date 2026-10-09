@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // -----------------------------------------------------------------------------
-// server/build.mjs — the BoundlessNYC RELEASE, laid out like a CARLA release:
+// server/build.mjs — the Valdrada RELEASE, laid out like a CARLA release:
 //
-//   BoundlessNYC_<version>_<platform>/
-//     BoundlessNYC(.exe)          the simulation server (Electron: Chromium + the boundless.js page, TCP API on :2000)
+//   Valdrada_<version>_<platform>/
+//     Valdrada(.exe)          the simulation server (Electron: Chromium + the Valdrada page, TCP API on :2000)
 //     Content/                    the built app and the streamed city (tools/package.mjs --content-only; no raw data)
-//     PythonAPI/                  the `boundless` package (source + wheel), examples, README
+//     PythonAPI/                  the `valdrada` package (source + wheel), examples, README
 //     Docs/                       getting started, Python API reference, wire protocol
 //     StartServer.bat / .sh       launchers (window / headless)
 //     README.md LICENSE LICENSING.md ACKNOWLEDGEMENTS.md CITATION.cff
@@ -15,7 +15,7 @@
 //   node server/build.mjs --skip-content           reuse release/<name>/Content from the last build
 //   node server/build.mjs --platform linux         a Linux x64 server (downloads that Electron runtime once)
 //   node server/build.mjs --zip                    ... and zip the release folder, Content/ included, into
-//                                                  BoundlessNYC-<version>-<platform>.zip (the GitHub release asset)
+//                                                  Valdrada-<version>-<platform>.zip (the GitHub release asset)
 //   node server/build.mjs --out D:/releases        output directory
 //
 // Nothing here pushes, uploads or publishes: the release is a folder (and optionally a zip) on disk.
@@ -38,7 +38,7 @@ const VERSION = pkg.version;
 const platform = opt('platform', process.platform === 'win32' ? 'win32' : process.platform);
 const arch = opt('arch', 'x64');
 const tag = platform === 'win32' ? 'win64' : `${platform}-${arch}`;
-const NAME = `BoundlessNYC_${VERSION}_${tag}`;
+const NAME = `Valdrada_${VERSION}_${tag}`;
 const outRoot = path.resolve(root, opt('out', 'release'));
 const rel = path.join(outRoot, NAME);
 const log = (...a) => console.log(...a);
@@ -67,12 +67,12 @@ const run = (cmd, args, o = {}) => {
   if (r.error || r.status !== 0) throw new Error(`${path.basename(cmd)} ${args.join(' ')} failed (${r.error?.code || 'exit ' + r.status})`);
 };
 
-log(`BoundlessNYC release builder\n  version  ${VERSION}\n  target   ${platform}-${arch}\n  output   ${rel}\n`);
+log(`Valdrada release builder\n  version  ${VERSION}\n  target   ${platform}-${arch}\n  output   ${rel}\n`);
 await fs.mkdir(outRoot, { recursive: true });
 
 // ---------------------------------------------------------------- 1. the server executable
 // @electron/packager: server/ (main.js, preload.js, package.json) into resources/app.asar next to the Electron runtime,
-// renamed BoundlessNYC. The runtime zip comes from Electron's own download cache (npm install put the host platform's
+// renamed Valdrada. The runtime zip comes from Electron's own download cache (npm install put the host platform's
 // there); another platform is fetched once by @electron/get.
 {
   const { packager } = await import('@electron/packager').catch(() => ({ packager: null }))
@@ -82,12 +82,12 @@ await fs.mkdir(outRoot, { recursive: true });
   await fs.rm(stage, { recursive: true, force: true });
   log('· packaging the Electron server');
   const outs = await packager({
-    dir: here, name: 'BoundlessNYC', executableName: 'BoundlessNYC', platform, arch,
+    dir: here, name: 'Valdrada', executableName: 'Valdrada', platform, arch,
     electronVersion: require('electron/package.json').version,
     out: stage, overwrite: true, asar: true, prune: true, quiet: true,
     ignore: [/^\/build\.mjs$/, /^\/node_modules($|\/)/, /^\/\.stage($|\/)/],
     appVersion: VERSION, appCopyright: 'Copyright (c) 2026 Mehmet Kerem Turkcan (MIT)',
-    win32metadata: { CompanyName: 'boundless.js', FileDescription: 'BoundlessNYC simulation server', ProductName: 'BoundlessNYC', InternalName: 'BoundlessNYC' },
+    win32metadata: { CompanyName: 'Valdrada', FileDescription: 'Valdrada simulation server', ProductName: 'Valdrada', InternalName: 'Valdrada' },
   });
   const built = outs[0];
   // keep Content/ across rebuilds (it is the slow part); replace everything else
@@ -97,7 +97,7 @@ await fs.mkdir(outRoot, { recursive: true });
   await fs.rename(built, rel);
   if (keepContent) await fs.rename(path.join(outRoot, '.content-keep'), path.join(rel, 'Content'));
   await fs.rm(stage, { recursive: true, force: true });
-  log(`  ${path.relative(root, rel)}  (${platform === 'win32' ? 'BoundlessNYC.exe' : 'BoundlessNYC'})`);
+  log(`  ${path.relative(root, rel)}  (${platform === 'win32' ? 'Valdrada.exe' : 'Valdrada'})`);
 }
 
 // ---------------------------------------------------------------- 2. Content/
@@ -125,7 +125,7 @@ if (!flag('skip-content') || !existsSync(path.join(rel, 'Content', 'index.html')
   if (!wheelOk && existsSync(path.join(src, 'dist'))) {
     for (const f of await fs.readdir(path.join(src, 'dist'))) if (f.endsWith('.whl')) { await fs.copyFile(path.join(src, 'dist', f), path.join(dst, 'dist', f)); wheelOk = true; }
   }
-  for (const d of ['build', 'boundless.egg-info']) await fs.rm(path.join(src, d), { recursive: true, force: true });
+  for (const d of ['build', 'valdrada.egg-info']) await fs.rm(path.join(src, d), { recursive: true, force: true });
   log(wheelOk ? '  wheel in PythonAPI/dist' : '  ! no wheel (install uv, or `pip install -e PythonAPI` works from the source)');
 }
 
@@ -152,11 +152,11 @@ if (!flag('skip-content') || !existsSync(path.join(rel, 'Content', 'index.html')
   // the launchers clear ELECTRON_RUN_AS_NODE: inherited from an Electron-based parent (an editor's tool host), it makes
   // the runtime start as plain Node, which rejects the server's options and exits
   if (platform === 'win32') {
-    const bat = (extra) => `@echo off\r\nrem BoundlessNYC simulation server. Options: --port 2000 --res 1280x720 --quality high^|medium --time day --headless\r\ncd /d "%~dp0"\r\nset ELECTRON_RUN_AS_NODE=\r\nstart "" "%~dp0BoundlessNYC.exe" ${extra}%*\r\n`;
+    const bat = (extra) => `@echo off\r\nrem Valdrada simulation server. Options: --port 2000 --res 1280x720 --quality high^|medium --time day --headless\r\ncd /d "%~dp0"\r\nset ELECTRON_RUN_AS_NODE=\r\nstart "" "%~dp0Valdrada.exe" ${extra}%*\r\n`;
     await fs.writeFile(path.join(rel, 'StartServer.bat'), bat(''));
     await fs.writeFile(path.join(rel, 'StartServer_Headless.bat'), bat('--headless '));
   } else {
-    const sh = (extra) => `#!/bin/sh\n# BoundlessNYC simulation server. Options: --port 2000 --res 1280x720 --quality high|medium --time day --headless\ncd "$(dirname "$0")"\nunset ELECTRON_RUN_AS_NODE\nexec ./BoundlessNYC ${extra}"$@"\n`;
+    const sh = (extra) => `#!/bin/sh\n# Valdrada simulation server. Options: --port 2000 --res 1280x720 --quality high|medium --time day --headless\ncd "$(dirname "$0")"\nunset ELECTRON_RUN_AS_NODE\nexec ./Valdrada ${extra}"$@"\n`;
     await fs.writeFile(path.join(rel, 'StartServer.sh'), sh(''), { mode: 0o755 });
     await fs.writeFile(path.join(rel, 'StartServer_Headless.sh'), sh('--headless '), { mode: 0o755 });
   }
@@ -177,7 +177,7 @@ if (!flag('skip-content') || !existsSync(path.join(rel, 'Content', 'index.html')
 // the GitHub release asset: the whole folder, Content/ included. GitHub caps one release asset at 2 GiB; deflate
 // shrinks the tiles to about a quarter, so the Windows archive stays well under the cap.
 if (flag('zip')) {
-  const zip = path.join(outRoot, `BoundlessNYC-${VERSION}-${tag}.zip`);
+  const zip = path.join(outRoot, `Valdrada-${VERSION}-${tag}.zip`);
   await fs.rm(zip, { force: true });
   log(`· zipping ${path.basename(zip)} (GB-scale: a few minutes)`);
   const tar = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : 'zip';

@@ -1,4 +1,4 @@
-// Z-FIGHT HUNTER — boundless.js NYC digital twin.
+// Z-FIGHT HUNTER — Valdrada digital twin.
 //
 // Two instruments in one harness, because an image diff alone cannot name the
 // two surfaces that are fighting and a geometry census alone cannot prove that

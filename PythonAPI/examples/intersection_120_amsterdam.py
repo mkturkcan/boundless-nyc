@@ -13,7 +13,7 @@ What it does
 
     python intersection_120_amsterdam.py [--frames 240] [--every 4] [--out _out/amsterdam120] [--time day|golden|dusk|night]
 
-Needs a running server (BoundlessNYC.exe). numpy is optional (it adds box overlays).
+Needs a running server (Valdrada.exe). numpy is optional (it adds box overlays).
 """
 import argparse
 import json
@@ -24,8 +24,8 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform, VehicleControl, WalkerControl, Vector3D  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform, VehicleControl, WalkerControl, Vector3D  # noqa: E402
 
 try:
     import numpy as np
@@ -98,12 +98,12 @@ def main():
     ap.add_argument("--ambient-walkers", type=int, default=120)
     a = ap.parse_args()
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(180.0)
     world = client.get_world()
     original = world.get_settings()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
-    world.set_weather(boundless.WeatherParameters(a.time))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.set_weather(valdrada.WeatherParameters(a.time))
     world.set_ambient_traffic(vehicles=a.ambient_vehicles, walkers=a.ambient_walkers)
 
     m = world.get_map()
@@ -201,10 +201,10 @@ def main():
     out = a.out
     for sub in ("rgb", "semantic", "instance", "dashcam", "overlay"):
         os.makedirs(os.path.join(out, sub), exist_ok=True)
-    coco = boundless.util.CocoWriter(world.get_semantic_classes())
+    coco = valdrada.util.CocoWriter(world.get_semantic_classes())
     stats = {}
     ids = {"hero": hero.id, "walkers": [w.id for w, _ in walkers], "stroller": stroller.id,
-           "autopilot": [v.id for v in actors if isinstance(v, boundless.Vehicle) and v.id != hero.id]}
+           "autopilot": [v.id for v in actors if isinstance(v, valdrada.Vehicle) and v.id != hero.id]}
 
     # ---------------------------------------------------------------- run
     t_start = time.time()
@@ -232,9 +232,9 @@ def main():
             for l in labels:
                 stats[l.class_name] = stats.get(l.class_name, 0) + 1
             if np is not None:
-                from boundless.png import write_png
+                from valdrada.png import write_png
                 ours = [l for l in labels if l.actor_id]
-                img = boundless.util.draw_boxes_rgb(rgb, [l for l in labels if l.class_id in (19, 20, 21, 23)],
+                img = valdrada.util.draw_boxes_rgb(rgb, [l for l in labels if l.class_id in (19, 20, 21, 23)],
                                                     color_of=lambda l: (255, 200, 0) if l.actor_id else (60, 200, 255))
                 write_png(os.path.join(out, "overlay", name + ".png"), rgb.width, rgb.height, img.tobytes(), 3)
             seen = sorted({l.actor_id for l in labels if l.actor_id})

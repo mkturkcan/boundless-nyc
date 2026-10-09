@@ -1,4 +1,4 @@
-// rig.js — procedural skinned humanoid for boundless.js (hero + crowd pedestrians).
+// rig.js — procedural skinned humanoid for Valdrada (hero + crowd pedestrians).
 // Single-file, three.js only. Feet at y=0, faces +Z, ~1.78m tall.
 import * as THREE from 'three';
 import { applySnowCap } from '../world/materials.js';

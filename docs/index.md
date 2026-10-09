@@ -1,24 +1,25 @@
 ---
-title: BoundlessNYC
+title: Valdrada
 hide:
   - navigation
   - toc
 ---
 
-# BoundlessNYC { .visually-hidden }
+# Valdrada { .visually-hidden }
 
 ![A simulator frame at W 125th St and Lenox Ave in Harlem, with its semantic segmentation and depth](assets/figures/hero.jpg){ .hero }
 
-<p class="lead">BoundlessNYC is a city-scale digital twin of New York City compiled from public municipal records. It
+<p class="lead">Valdrada is a city-scale digital twin of New York City
+compiled from public municipal records. It
 renders Manhattan, the Bronx, Brooklyn and Queens in real time, simulates traffic and pedestrians on the city's own
 street network, and returns pixel-exact ground truth through a Python API modelled on CARLA.</p>
 
 [Quick start](quickstart.md){ .md-button .md-button--primary }
 [Tutorials](tutorials/index.md){ .md-button }
 [Python API](api/python_api.md){ .md-button }
-[Download for Windows](https://github.com/mkturkcan/boundless-nyc/releases){ .md-button }
-[Demo in the browser](https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc){ .md-button }
-[Compiled city](https://huggingface.co/datasets/mehmetkeremturkcan/boundless-nyc){ .md-button }
+[Download for Windows](https://github.com/mkturkcan/valdrada/releases){ .md-button }
+[Demo in the browser](https://huggingface.co/spaces/mehmetkeremturkcan/valdrada){ .md-button }
+[Compiled city](https://huggingface.co/datasets/mehmetkeremturkcan/valdrada){ .md-button }
 
 ## How it works
 
@@ -100,15 +101,15 @@ Electron application, it advances one fixed step per request and sends sensor da
 
 ## Citation
 
-BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. If you use
-BoundlessNYC, the compiled city or imagery rendered with it, please cite BoundlessNYC itself:
+Valdrada is developed and maintained by Mehmet Kerem Turkcan. If you use
+Valdrada, the compiled city or imagery rendered with it, please cite Valdrada itself:
 
 ```bibtex
-@software{turkcan2026boundlessnyc,
+@software{turkcan2026valdrada,
   author  = {Turkcan, Mehmet Kerem},
-  title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
+  title   = {{Valdrada}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.3.0},
-  url     = {https://github.com/mkturkcan/boundless-nyc}
+  version = {0.3.1},
+  url     = {https://github.com/mkturkcan/valdrada}
 }
 ```

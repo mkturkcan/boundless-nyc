@@ -1,4 +1,4 @@
-// boundless.js NYC server — the page's side of the host bridge. boundlessjs/src/api/bridge.js finds
+// Valdrada server — the page's side of the host bridge. boundlessjs/src/api/bridge.js finds
 // window.boundlessHost and routes every API request and sensor event through it.
 'use strict';
 const { contextBridge, ipcRenderer } = require('electron');

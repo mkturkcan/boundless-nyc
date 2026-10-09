@@ -175,7 +175,7 @@ class FlyCam {
   }
 }
 
-// boundless.js default controller: a flying DRONE (WASD + mouse look, Shift
+// Valdrada default controller: a flying DRONE (WASD + mouse look, Shift
 // rises, Ctrl descends, momentum-smoothed). Tab drops into a first-person
 // ground view and back. The graphics editor lives on G.
 class Explorer {
@@ -589,7 +589,7 @@ async function boot() {
       controller = new Player(engine, streamer, sky, hud, new THREE.Vector3(px, py, pz));
     } catch (e) { console.warn('player unavailable, using fly cam', e); controller = new FlyCam(); }
   } else {
-    controller = new Explorer(); // boundless.js default: drone (Tab = first person)
+    controller = new Explorer(); // Valdrada default: drone (Tab = first person)
   }
 
   addEventListener('keydown', (e) => {

@@ -1,6 +1,6 @@
 # Licensing
 
-BoundlessNYC combines original code, original documentation, data compiled from public records and third-party
+Valdrada combines original code, original documentation, data compiled from public records and third-party
 assets. Each part carries its own licence. In short: code is MIT, documentation and original media are CC BY 4.0, the
 compiled city is ODbL 1.0 because it contains OpenStreetMap data, and third-party assets keep their licences. The
 photoreal pedestrians additionally fall under Epic Games' MetaHuman terms (see the notice below).

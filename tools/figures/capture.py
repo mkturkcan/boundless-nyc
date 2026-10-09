@@ -1,6 +1,6 @@
 """Render the stills behind the README figures and the documentation site, through the Python API.
 
-    BoundlessNYC.exe --headless --res 2880x1620          (release build; or `npm run dev` in server/)
+    Valdrada.exe --headless --res 2880x1620          (release build; or `npm run dev` in server/)
     python tools/figures/capture.py --out docs/assets/figures/raw [--only hero_harlem,sensors]
 
 Per shot: weather, spectator placement (the city streams around it), wait for the tiles, sensors at the pose, then
@@ -19,8 +19,8 @@ import random
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "PythonAPI"))
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform, WeatherParameters  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform, WeatherParameters  # noqa: E402
 
 STREET = 3.4          # street datum of the flat compile (roadbed 3.385 m, walk 3.52 m)
 
@@ -100,7 +100,7 @@ def populate(world, m, center, n_veh, n_walk, rng):
         ai.set_max_speed(rng.uniform(1.1, 1.5))
         try:
             ai.go_to_location(rng.choice(corners))
-        except boundless.BoundlessError:
+        except valdrada.ValdradaError:
             pass
         actors += [ai, w]
     return actors
@@ -119,10 +119,10 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     rng = random.Random(a.seed)
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(300.0)
     world = client.get_world()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
     m = world.get_map()
     lib = world.get_blueprint_library()
     names = a.only.split(",") if a.only else list(SHOTS)
@@ -164,10 +164,10 @@ def main():
             x = np.log1p(np.clip(d, 0.5, 400.0)) / np.log1p(400.0)                 # log scale, 0.5 .. 400 m
             rgb = turbo(1.0 - x)
             rgb[d >= dep.depth_max * 0.99] = (18, 22, 30)                         # sky
-            boundless.png.write_png(base + "_depth.png", dep.width, dep.height, rgb.tobytes(), 3)
+            valdrada.png.write_png(base + "_depth.png", dep.width, dep.height, rgb.tobytes(), 3)
             if not classes_saved:
                 with open(os.path.join(a.out, "classes.json"), "w", encoding="utf-8") as f:
-                    json.dump(sem.classes or boundless.SemanticSegmentationImage.classes, f, indent=1)
+                    json.dump(sem.classes or valdrada.SemanticSegmentationImage.classes, f, indent=1)
                 classes_saved = True
         print(f"{name}: {latest['rgb'].width}x{latest['rgb'].height}"
               + (f", {len(latest['instance_segmentation'].labels)} labelled objects" if s.get("labels") else ""), flush=True)

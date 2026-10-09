@@ -1,4 +1,4 @@
-// boundless.js GPU screenshot + perf harness (Playwright Chromium on the real
+// Valdrada GPU screenshot + perf harness (Playwright Chromium on the real
 // GPU via ANGLE/D3D11 — the boundlessjs/tools/shot.mjs harness uses SwiftShader,
 // which is fine for pixels but useless for frame times).
 //

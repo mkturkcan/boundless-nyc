@@ -1,6 +1,6 @@
 # One city, three renderers
 
-BoundlessNYC renders the same city in three engines. The city is authored and simulated in the three.js client, the
+Valdrada renders the same city in three engines. The city is authored and simulated in the three.js client, the
 one place that decides what exists, where it is, its size and its class. A recorded take of a camera path is exported
 to OpenUSD, and Blender Cycles and Unreal Engine 5 render that export. Nothing flows back from an offline renderer to
 the client, and neither offline renderer adds, removes, moves, resizes or reclassifies anything: they differ in how the

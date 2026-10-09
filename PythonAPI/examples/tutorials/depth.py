@@ -12,9 +12,9 @@ import sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform  # noqa: E402
-from boundless.png import write_png  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform  # noqa: E402
+from valdrada.png import write_png  # noqa: E402
 
 COLLEGE_WALK = (40.80712, -73.96232)       # Columbia University, south of Low Library
 
@@ -62,11 +62,11 @@ def main():
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(120.0)
     world = client.get_world()
     original = world.get_settings()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
     m = world.get_map()
     here = m.geolocation_to_location(*COLLEGE_WALK)
     world.get_spectator().set_transform(Transform(here + Location(0, 0, 20)))
@@ -108,9 +108,9 @@ def main():
 
         # the same for one pixel with the API's geometry: the image centre, from the camera frame to the world frame
         v, u = depth.height // 2, depth.width // 2
-        K = boundless.util.camera_intrinsics(depth.width, depth.height, depth.fov)
+        K = valdrada.util.camera_intrinsics(depth.width, depth.height, depth.fov)
         dc = float(d[v, u])
-        p_cam = boundless.Vector3D(dc, -(u + 0.5 - K[0][2]) * dc / K[0][0], -(v + 0.5 - K[1][2]) * dc / K[1][1])
+        p_cam = valdrada.Vector3D(dc, -(u + 0.5 - K[0][2]) * dc / K[0][0], -(v + 0.5 - K[1][2]) * dc / K[1][1])
         print(f"image centre: {dc:.2f} m along the view axis, world {depth.transform.transform_point(p_cam)}")
     finally:
         for cam in cameras:

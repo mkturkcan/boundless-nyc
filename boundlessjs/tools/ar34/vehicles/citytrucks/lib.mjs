@@ -312,7 +312,7 @@ export async function writeGLB({ kind, lods, size, hubs, livery, out, extras = {
   rootNode.setExtras({
     kind, size: size.map((v) => +v.toFixed(3)), hubs, lights: [],
     wheelbase: hubs.length >= 4 ? +Math.abs(hubs[0].p[2] - hubs[2].p[2]).toFixed(3) : null,
-    source: 'BoundlessNYC CITYTRUCKS procedural build (boundlessjs/tools/ar34/vehicles/citytrucks)', built: new Date().toISOString(),
+    source: 'Valdrada CITYTRUCKS procedural build (boundlessjs/tools/ar34/vehicles/citytrucks)', built: new Date().toISOString(),
     ...Object.fromEntries(Object.entries(extras).filter(([k]) => k !== 'layout')),
   });
   await doc.transform(weld({ tolerance: 0.0001 }));

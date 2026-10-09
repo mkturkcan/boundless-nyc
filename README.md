@@ -1,8 +1,9 @@
 <p align="center"><img src="docs/assets/figures/hero.jpg" alt="A simulator frame at W 125th St and Lenox Ave in Harlem, with its semantic segmentation and depth" width="100%"></p>
 
-# BoundlessNYC
+# Valdrada
 
-BoundlessNYC is a city-scale digital twin of New York City compiled from public municipal records. It combines a
+Valdrada is a city-scale digital twin of New York City compiled from
+public municipal records. It combines a
 real-time WebGL2 renderer, lane-level traffic and pedestrian simulation, pixel-exact perception ground truth and a
 client–server API modelled on CARLA. It is intended for synthetic data generation, closed-loop scenario simulation and
 streetscape studies in which every modelled element can be traced to a public record.
@@ -21,10 +22,10 @@ streetscape studies in which every modelled element can be traced to a public re
 
 Links:
 
-- Documentation: <https://mkturkcan.github.io/boundless-nyc/>
-- Demo in the browser (WebGL2): <https://huggingface.co/spaces/mehmetkeremturkcan/boundless-nyc>
-- Compiled city, models and textures: <https://huggingface.co/datasets/mehmetkeremturkcan/boundless-nyc>
-- Simulation server for Windows x64, compiled city included: <https://github.com/mkturkcan/boundless-nyc/releases>
+- Documentation: <https://mkturkcan.github.io/valdrada/>
+- Demo in the browser (WebGL2): <https://huggingface.co/spaces/mehmetkeremturkcan/valdrada>
+- Compiled city, models and textures: <https://huggingface.co/datasets/mehmetkeremturkcan/valdrada>
+- Simulation server for Windows x64, compiled city included: <https://github.com/mkturkcan/valdrada/releases>
 
 ## How it works
 
@@ -38,18 +39,18 @@ vehicles and pedestrians, and renders every frame together with its labels.
 The same city renders in three engines. The three.js client is where the city is authored and simulated; a recorded
 take of a camera path is exported to OpenUSD, and Blender Cycles and Unreal Engine 5 render that export with the same
 geometry, traffic, trees and light, each with its own materials for the families it supports. The documentation
-describes the design ([One city, three renderers](https://mkturkcan.github.io/boundless-nyc/architecture/)) and takes
-one shot through each offline renderer ([Blender Cycles](https://mkturkcan.github.io/boundless-nyc/blender-cycles/),
-[Unreal Engine 5](https://mkturkcan.github.io/boundless-nyc/unreal/)).
+describes the design ([One city, three renderers](https://mkturkcan.github.io/valdrada/architecture/)) and takes
+one shot through each offline renderer ([Blender Cycles](https://mkturkcan.github.io/valdrada/blender-cycles/),
+[Unreal Engine 5](https://mkturkcan.github.io/valdrada/unreal/)).
 
 ## Quick start
 
-**Binary release (Windows x64).** Download `BoundlessNYC-<version>-win64.zip` from Releases (the server with the
+**Binary release (Windows x64).** Download `Valdrada-<version>-win64.zip` from Releases (the server with the
 compiled city), extract it, start the server and run an example:
 
 ```
 StartServer.bat
-pip install PythonAPI/dist/boundless-0.1.0-py3-none-any.whl
+pip install PythonAPI/dist/valdrada-0.1.0-py3-none-any.whl
 python PythonAPI/examples/intersection_120_amsterdam.py
 ```
 
@@ -58,7 +59,7 @@ python PythonAPI/examples/intersection_120_amsterdam.py
 ```
 npm install && (cd boundlessjs && npm install)
 # binary banks (tiles, models, textures): download, or compile the tiles (BUILDING.md)
-hf download mehmetkeremturkcan/boundless-nyc --repo-type dataset --revision v0.3.0 \
+hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
 mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
 cd boundlessjs && npm run dev        # http://127.0.0.1:5219
@@ -67,12 +68,12 @@ cd boundlessjs && npm run dev        # http://127.0.0.1:5219
 ## Python API
 
 ```python
-import boundless
-from boundless import Location, Rotation, Transform
+import valdrada
+from valdrada import Location, Rotation, Transform
 
-client = boundless.Client("127.0.0.1", 2000)
+client = valdrada.Client("127.0.0.1", 2000)
 world = client.get_world()
-world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
 
 # tiles stream around the spectator: place it, then wait for the area to load
 m = world.get_map()
@@ -96,7 +97,7 @@ for _ in range(100):
 ```
 
 Frames are ENU metres (x east, y north, z up); attachment offsets are x forward, y left, z up. The
-[tutorials](https://mkturkcan.github.io/boundless-nyc/tutorials/) go from a first connection to a recorded dataset, with
+[tutorials](https://mkturkcan.github.io/valdrada/tutorials/) go from a first connection to a recorded dataset, with
 one script per step in [PythonAPI/examples/tutorials/](PythonAPI/examples/tutorials/). The full reference is in
 [docs/api/python_api.md](docs/api/python_api.md); the language-independent wire protocol is in
 [docs/api/protocol.md](docs/api/protocol.md).
@@ -120,7 +121,7 @@ boundlessjs/            renderer, simulation and perception client (three.js, Vi
   public/               LUTs, fonts, data; tiles, models and textures are downloaded (BUILDING.md)
 src/                    building-generator library shared with the client (@nyc alias); index.html is its demo
 server/                 simulation server (Electron): TCP API, content serving, release builder
-PythonAPI/              `boundless` Python client, examples
+PythonAPI/              `valdrada` Python client, examples
 space/                  the Hugging Face Space: static server for the dataset's Content/
 tools/                  figures, web packaging, headless rendering, film recorder and render QA, perception export, asset build scripts
 docs/                   documentation site, API reference, wire protocol, rendering techniques, building typologies
@@ -155,22 +156,15 @@ evaluation, start the server with `--pedestrians procedural`, which uses the bui
 
 ## Citation
 
-BoundlessNYC is a separate follow-up project, developed and maintained by Mehmet Kerem Turkcan. If you use
-BoundlessNYC, the compiled city or imagery rendered with it, please cite BoundlessNYC itself:
+Valdrada is developed and maintained by Mehmet Kerem Turkcan. If you use Valdrada, the compiled city or imagery
+rendered with it, please cite Valdrada itself:
 
 ```bibtex
-@software{turkcan2026boundlessnyc,
+@software{turkcan2026valdrada,
   author  = {Turkcan, Mehmet Kerem},
-  title   = {{BoundlessNYC}: a real-data, real-time digital twin of New York City},
+  title   = {{Valdrada}: a real-data, real-time digital twin of New York City},
   year    = {2026},
-  version = {0.3.0},
-  url     = {https://github.com/mkturkcan/boundless-nyc}
+  version = {0.3.1},
+  url     = {https://github.com/mkturkcan/valdrada}
 }
 ```
-
-## Acknowledgement
-
-BoundlessNYC follows up on earlier work, which it acknowledges here:
-M. K. Turkcan, Y. Li, C. Zang, J. Ghaderi, G. Zussman and Z. Kostic. *Boundless: Generating photorealistic
-synthetic data for object detection in urban streetscapes.* arXiv:2409.03022, 2024.
-<https://arxiv.org/abs/2409.03022>. To cite BoundlessNYC, use the citation above.

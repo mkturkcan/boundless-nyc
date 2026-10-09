@@ -12,8 +12,8 @@ import random
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))   # run from a source checkout
-import boundless  # noqa: E402
-from boundless import Location, Rotation, Transform, Vector3D, VehicleControl, WalkerControl  # noqa: E402
+import valdrada  # noqa: E402
+from valdrada import Location, Rotation, Transform, Vector3D, VehicleControl, WalkerControl  # noqa: E402
 
 AMSTERDAM_120 = (40.80955, -73.95905)   # W 120th St and Amsterdam Ave
 UPTOWN = 61.0                           # the avenues' heading (yaw, degrees)
@@ -28,11 +28,11 @@ def main():
     a = ap.parse_args()
     random.seed(2)
 
-    client = boundless.Client(a.host, a.port)
+    client = valdrada.Client(a.host, a.port)
     client.set_timeout(120.0)
     world = client.get_world()
     original, ambient = world.get_settings(), world.get_ambient_traffic()
-    world.apply_settings(boundless.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
+    world.apply_settings(valdrada.WorldSettings(synchronous_mode=True, fixed_delta_seconds=0.05))
     if a.empty:
         world.set_ambient_traffic(vehicles=0, walkers=0)
 

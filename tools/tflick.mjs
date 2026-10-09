@@ -1,4 +1,4 @@
-// TEMPORAL FLICKER HUNTER — boundless.js NYC digital twin.  (glitch-r7)
+// TEMPORAL FLICKER HUNTER — Valdrada digital twin.  (glitch-r7)
 //
 // tools/zfight.mjs answers "do two surfaces trade the depth test in a STILL
 // frame". The owner's complaint is about the FILM: "there is still a lot of z

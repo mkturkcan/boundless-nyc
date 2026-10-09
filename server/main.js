@@ -1,8 +1,8 @@
-// boundless.js NYC — SIMULATION SERVER (Electron host).
+// Valdrada — SIMULATION SERVER (Electron host).
 //
-// The CARLA-style server half: it runs the digital twin (the built boundless.js app, served from a content folder
+// The CARLA-style server half: it runs the digital twin (the built Valdrada app, served from a content folder
 // through the privileged boundless:// scheme) in a GPU-accelerated Chromium window and exposes its API on a TCP port.
-// Clients (PythonAPI/boundless) speak the framed JSON protocol in docs/api/protocol.md:
+// Clients (PythonAPI/valdrada) speak the framed JSON protocol in docs/api/protocol.md:
 //
 //   [u32 big-endian length N][u8 kind][N-1 payload bytes]      kind 1 = JSON (UTF-8), kind 2 = binary blob
 //
@@ -10,7 +10,7 @@
 // {event: "sensor", ..., blobs: k} followed by k binary frames. This process only frames bytes and routes them:
 // every method runs in the page (boundlessjs/src/api/bridge.js).
 //
-//   BoundlessNYC.exe [--port 2000] [--host 127.0.0.1] [--res 1280x720] [--headless] [--content <dir>]
+//   Valdrada.exe [--port 2000] [--host 127.0.0.1] [--res 1280x720] [--headless] [--content <dir>]
 //                    [--dev-url=http://127.0.0.1:5219] [--start-lat 40.80955 --start-lon -73.95905] [--time day]
 //                    [--quality high|medium] [--pedestrians photoreal|procedural] [--verbose]
 'use strict';
@@ -31,10 +31,10 @@ const opt = (name, def = null) => {
   if (eq) return eq.slice(name.length + 3);
   const i = argv.indexOf('--' + name);
   if (i >= 0 && argv[i + 1] !== undefined && !argv[i + 1].startsWith('--')) return argv[i + 1];
-  const env = process.env['BOUNDLESS_' + name.toUpperCase().replace(/-/g, '_')];
+  const env = (process.env['VALDRADA_' + name.toUpperCase().replace(/-/g, '_')] ?? process.env['BOUNDLESS_' + name.toUpperCase().replace(/-/g, '_')]);
   return env !== undefined ? env : def;
 };
-const flag = (name) => argv.includes('--' + name) || process.env['BOUNDLESS_' + name.toUpperCase().replace(/-/g, '_')] === '1';
+const flag = (name) => argv.includes('--' + name) || (process.env['VALDRADA_' + name.toUpperCase().replace(/-/g, '_')] ?? process.env['BOUNDLESS_' + name.toUpperCase().replace(/-/g, '_')]) === '1';
 const PORT = Number(opt('port', '2000'));
 const HOST = opt('host', '127.0.0.1');
 const [RES_W, RES_H] = String(opt('res', '1280x720')).split('x').map(Number);
@@ -50,7 +50,7 @@ const PEDESTRIANS = opt('pedestrians', 'photoreal');
 // --log <file>: a GUI app on Windows has no console to print to, so the log can also go to a file
 const LOG_FILE = opt('log');
 const log = (...a) => {
-  const line = '[boundless] ' + a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
+  const line = '[valdrada] ' + a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
   console.log(line);
   if (LOG_FILE) { try { fs.appendFileSync(LOG_FILE, new Date().toISOString() + ' ' + line + '\n'); } catch { /* */ } }
 };
@@ -207,7 +207,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   win = new BrowserWindow({
     width: RES_W, height: RES_H, useContentSize: true, resizable: false, show: !HEADLESS,
-    autoHideMenuBar: true, backgroundColor: '#000000', title: `boundless.js NYC — server on ${HOST}:${PORT}`,
+    autoHideMenuBar: true, backgroundColor: '#000000', title: `Valdrada — server on ${HOST}:${PORT}`,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true, nodeIntegration: false, sandbox: false,

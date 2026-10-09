@@ -3,7 +3,7 @@
 # PythonAPI/examples/tutorials/ against a simulation server, then copying the outputs to docs/assets/tutorials/
 # (JPEG for camera images, PNG for masks, .txt for what each script printed).
 #
-#   bash tools/figures/tutorial_images.sh [--server <path to BoundlessNYC.exe>] [--host 127.0.0.1] [--port 2000]
+#   bash tools/figures/tutorial_images.sh [--server <path to Valdrada.exe>] [--host 127.0.0.1] [--port 2000]
 #                                         [--python python] [--work .cache/tutorials] [--only first_steps,depth]
 #
 # Without --server a server must already be listening (a release build, or `npm run dev` in server/). With --server the

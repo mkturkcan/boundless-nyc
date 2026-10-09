@@ -13,7 +13,7 @@ if (process.env.NYC_NOHMR === '1') {
   t.unref?.();
 }
 
-// boundless.js is the main project. The procedural NYC building generator that
+// Valdrada is the main project. The procedural NYC building generator that
 // lives one directory up (../src: materials, batcher, kit, building modules) is
 // a SUBPROJECT consumed through the `@nyc` alias — see src/world/nycDress.js.
 export default defineConfig({

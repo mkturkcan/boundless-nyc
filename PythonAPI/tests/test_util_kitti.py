@@ -1,4 +1,4 @@
-"""Offline tests of the 3D box and KITTI helpers in boundless.util (no server needed).
+"""Offline tests of the 3D box and KITTI helpers in valdrada.util (no server needed).
 
     python -m unittest discover -s PythonAPI/tests
 """
@@ -8,9 +8,9 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from boundless import Location, Rotation, Transform  # noqa: E402
-from boundless.sensor_data import ObjectLabel  # noqa: E402
-from boundless import util  # noqa: E402
+from valdrada import Location, Rotation, Transform  # noqa: E402
+from valdrada.sensor_data import ObjectLabel  # noqa: E402
+from valdrada import util  # noqa: E402
 
 
 def label(cls="car", loc=(20.0, 0.0, 0.0), yaw=0.0, extent=(2.4, 1.1, 0.8), occlusion=None, bbox=(600, 330, 80, 60)):

@@ -13,7 +13,7 @@ import { MeshoptDecoder } from 'meshoptimizer';
 import { RB_AVATARS, RB_ROOT } from './lib/rocketbox.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../..');
-const PEDS = path.join(ROOT, 'boundlessjs/public/models/peds24');
+const PEDS = path.join(ROOT, 'client/public/models/peds24');
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
 const base = JSON.parse(fs.readFileSync(path.join(PEDS, 'manifest.json'), 'utf8'));

@@ -2,12 +2,12 @@
 // -----------------------------------------------------------------------------
 // tools/package.mjs — assemble the Valdrada SHIP PACKAGE
 //
-// Runs the Vite production build of boundlessjs/ and assembles `dist-package/`
+// Runs the Vite production build of client/ and assembles `dist-package/`
 // with ONLY what the shipped app touches at runtime: the built JS/CSS/HTML plus
 // the public/ asset trees the code actually fetches, a self-contained static
 // server (`serve.mjs` + `start.cmd` / `start.sh`) and README-RUN.md.
 //
-// Deliberately NOT packaged: boundlessjs/data/ (raw NYC Open Data downloads and
+// Deliberately NOT packaged: client/data/ (raw NYC Open Data downloads and
 // the tiles_* staging sets), refs/ (Street View reference panoramas — Google
 // imagery, reference use only, never redistributed), docs/, shots/,
 // screenshots/, review/, admusic/, node_modules/, tools/pipeline/, *.log.
@@ -15,7 +15,7 @@
 //   node tools/package.mjs                     build + assemble dist-package/
 //   node tools/package.mjs --zip               ... and zip it (bsdtar/PowerShell)
 //   node tools/package.mjs --verify            ... then serve it and shoot 1 frame
-//   node tools/package.mjs --skip-build        reuse an existing boundlessjs/dist
+//   node tools/package.mjs --skip-build        reuse an existing client/dist
 //   node tools/package.mjs --link              hardlink assets instead of copying
 //                                              (instant, same volume only — the
 //                                              package then shares bytes with
@@ -35,7 +35,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 
 const argv = process.argv.slice(2);
 const flag = (n) => argv.includes('--' + n);
@@ -330,7 +330,7 @@ the research notes are not part of the runtime and live in the source repository
 Code: MIT, Copyright (c) 2026 Mehmet Kerem Turkcan (\`LICENSE\`). Data: under the terms of the
 sources it derives from (NYC Open Data terms / public domain, OpenStreetMap
 ODbL, Poly Haven and ambientCG CC0, CARLA assets CC-BY 4.0, ez-tree MIT). See
-the repository's \`README.md\` and \`boundlessjs/DATA_SOURCES.md\`.
+the repository's \`README.md\` and \`client/DATA_SOURCES.md\`.
 
 Valdrada is developed and maintained by
 Mehmet Kerem Turkcan. If you use it, the compiled city or imagery rendered
@@ -365,7 +365,7 @@ async function verify(pkgDir) {
   log(`· verify: serving the package on :${port} and shooting one frame with tools/bshot.mjs`);
   const server = spawn(process.execPath, [path.join(pkgDir, 'serve.mjs'), String(port)], { stdio: 'ignore', detached: false });
   await new Promise((r) => setTimeout(r, 1200));
-  const shotDir = path.join(root, 'boundlessjs', 'shots', 'package');
+  const shotDir = path.join(root, 'client', 'shots', 'package');
   const r = spawnSync(process.execPath, [
     path.join(root, 'tools', 'bshot.mjs'),
     '--views', 'columbia', '--time', 'day', '--port', String(port),

@@ -1,5 +1,5 @@
 // Pedestrian PROPS (bags, backpacks) from Objaverse / Sketchfab photogrammetry scans (CC-BY; credits in PROPS and
-// boundlessjs/DATA_SOURCES.md) -> canonical prop GLBs for build_peds.mjs, which fits them onto every body.
+// client/DATA_SOURCES.md) -> canonical prop GLBs for build_peds.mjs, which fits them onto every body.
 //   node tools/assets/build_props.mjs [name ...]
 // CANONICAL FRAME: metres, +Y up, +Z = the face turned AWAY from the wearer (a backpack's outer face, a hand bag's outer
 // side), origin = the ATTACH POINT (backpack: the middle of the panel against the back; shoulder bag: the top of the

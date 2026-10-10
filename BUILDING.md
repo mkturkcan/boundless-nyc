@@ -19,8 +19,8 @@ platform-independent. Commands are written for a POSIX shell; on Windows, use Gi
 ```
 git clone https://github.com/mkturkcan/valdrada.git
 cd valdrada
-npm install                        # three.js, postprocessing, n8ao (shared by boundlessjs/ and src/)
-(cd boundlessjs && npm install)    # Vite, earcut, ez-tree
+npm install                        # three.js, postprocessing, n8ao (shared by client/ and src/)
+(cd client && npm install)    # Vite, earcut, ez-tree
 (cd server && npm install)         # Electron runtime and packager; simulation server only
 ```
 
@@ -30,7 +30,7 @@ the packager fetches the runtime itself.
 
 ## Binary banks: tiles, models and textures
 
-Three binary banks under `boundlessjs/public/` are not under version control. The Hugging Face dataset
+Three binary banks under `client/public/` are not under version control. The Hugging Face dataset
 `mehmetkeremturkcan/valdrada` distributes them (folder `Content/`):
 
 | Folder | Contents |
@@ -46,7 +46,7 @@ The smaller banks (`basis/`, `data/`, `fonts/`, `luts/`, `settings/`) are commit
 ```
 hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
-mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
+mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures client/public/
 ```
 
 This fetches 3,738 files (3.1 GB). While the dataset is private, run `hf auth login` first with an account that has
@@ -58,16 +58,16 @@ The models and textures come from the download in any case (omit `Content/tiles/
 tiles and the occlusion bake can be rebuilt from the public sources:
 
 ```
-cd boundlessjs
+cd client
 npm run fetch -- --boro 1,2,3,4      # NYC Open Data and NY State open data -> data/raw/ (cached; about 2.4 GB)
 npm run compile -- --boro 1,2,3,4    # -> public/tiles/, public/textures/cityao.*
 ```
 
 Boroughs are 1 Manhattan, 2 the Bronx, 3 Brooklyn and 4 Queens. `fetch` pages through the Socrata endpoints listed in
-[boundlessjs/DATA_SOURCES.md](boundlessjs/DATA_SOURCES.md) and skips cached files. `compile` writes 2,884 near tiles
+[client/DATA_SOURCES.md](client/DATA_SOURCES.md) and skips cached files. `compile` writes 2,884 near tiles
 (512 m), 210 far-field tiles (2,048 m), the bridge alignments and the occlusion bake.
 
-The inputs below are optional. The compiler uses each one when it is present in `boundlessjs/data/raw/`. The
+The inputs below are optional. The compiler uses each one when it is present in `client/data/raw/`. The
 published tiles were compiled with all of them.
 
 | Input | How to obtain | Effect |
@@ -78,7 +78,7 @@ published tiles were compiled with all of them.
 | `watertanks_bins.json`, `greenroofs_tnc.csv`, `solar_nyserda.json`, `roofpedia_NY_{green,solar}.geojson` | DOB water-tank inspections, TNC green-roof inventory, NYSERDA distributed solar, Roofpedia; formats in `tools/pipeline/rooftops.mjs` | rooftop water tanks, green roofs, solar arrays |
 | `park_elev_<boro>.json` | `node tools/pipeline/fetch_elev.mjs --boro <n>` (USGS 3DEP) | park relief; used only with `TERRAIN=real` (the default compile is flat) |
 
-The derived files in `boundlessjs/public/data/` are committed: the campus features, the elevated-rail structures and
+The derived files in `client/public/data/` are committed: the campus features, the elevated-rail structures and
 the CityGML landmark meshes. Regenerating them is optional; see the headers of `tools/pipeline/columbia.mjs`,
 `elevated.mjs` and `extract3d.mjs`.
 
@@ -89,11 +89,11 @@ that is not part of this repository.
 ## Interactive client
 
 ```
-cd boundlessjs
+cd client
 npm run dev                          # http://127.0.0.1:5219
 ```
 
-Controls and URL parameters are listed in [boundlessjs/README.md](boundlessjs/README.md).
+Controls and URL parameters are listed in [client/README.md](client/README.md).
 
 ## Simulation server from source
 
@@ -101,7 +101,7 @@ The server is an Electron host. It loads the client with `?api=1`, steps it on r
 (default port 2000).
 
 ```
-(cd boundlessjs && npm run dev)      # terminal 1: client at :5219
+(cd client && npm run dev)      # terminal 1: client at :5219
 (cd server && npm run dev)           # terminal 2: server on 127.0.0.1:2000, page from the dev server
 pip install -e PythonAPI             # terminal 3
 python PythonAPI/examples/quickstart.py
@@ -157,7 +157,7 @@ at a root path, not a sub-path.
 ## Tests
 
 ```
-(cd boundlessjs && npm test)         # geometry and tiling invariants (tools/tests/geometry.mjs, 81 checks)
+(cd client && npm test)         # geometry and tiling invariants (tools/tests/geometry.mjs, 81 checks)
 ```
 
 ## Documentation site and figures
@@ -200,7 +200,7 @@ bash tools/figures/tutorial_images.sh --server release/Valdrada_0.3.1_win64/Vald
 
 The export reads a take of the film recorder (`tools/ad/shots.mjs`) from the running client and writes OpenUSD that
 Blender 4.5 (Cycles), Unreal Engine 5.8 or another USD renderer reads. The tools are in
-`boundlessjs/tools/ar34/export/`; the Python steps need `usd-core`, `numpy` and `pillow`. The film-detail street trees
+`client/tools/ar34/export/`; the Python steps need `usd-core`, `numpy` and `pillow`. The film-detail street trees
 and the window interiors are in the dataset's `Blender/` folder; point `BXTREES_ASSETS` at the downloaded
 `Blender/bxtrees2` and pass `--winrooms` the downloaded `Blender/bxwin/rooms_atlas.png`. The guides
 `docs/blender-cycles.md` and `docs/unreal.md` give the full steps for each renderer.
@@ -209,19 +209,19 @@ and the window interiors are in the dataset's `Blender/` folder; point `BXTREES_
 hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Blender/bxtrees2/*" --include "Blender/bxwin/*" --local-dir .cache/hf
 export BXTREES_ASSETS=$PWD/.cache/hf/Blender/bxtrees2 BXTREES2_TEX=$PWD/.cache/hf/Blender/bxtrees2/tex
-node boundlessjs/tools/ar34/export/harvest.mjs --shots <shot> --frames 0,54,107 --out <harvest dir>   # 1. harvest
+node client/tools/ar34/export/harvest.mjs --shots <shot> --frames 0,54,107 --out <harvest dir>   # 1. harvest
 uv run --no-project --with usd-core --with numpy --with pillow \
-    python boundlessjs/tools/ar34/export/usd_write.py --in <harvest dir> --out <usd dir>          # 2. USD layers
-blender -b --factory-startup --python boundlessjs/tools/ar34/export/blender_take.py -- \
+    python client/tools/ar34/export/usd_write.py --in <harvest dir> --out <usd dir>          # 2. USD layers
+blender -b --factory-startup --python client/tools/ar34/export/blender_take.py -- \
     --usd <usd dir>/<shot>.usda --frames 0-107 --outdir <frames dir> \
     --winrooms .cache/hf/Blender/bxwin/rooms_atlas.png                                            # 3. Cycles frames
-UE_ROOT=<engine> python3 boundlessjs/tools/ar34/export/ue_take.py --usd <usd dir>/<shot>.usda \
+UE_ROOT=<engine> python3 client/tools/ar34/export/ue_take.py --usd <usd dir>/<shot>.usda \
     --outdir <frames dir> --work <work dir> --cine                                                # or Unreal frames
 ```
 
 ## Coordinate frames
 
 - **Client and tiles.** Metres, with x east and z south; +y is up. Tiles are 512 m squares on the projected plane
-  (`boundlessjs/src/shared/geo.js`).
+  (`client/src/shared/geo.js`).
 - **Python API.** ENU metres (x east, y north, z up) from 40.7831 N, 73.9712 W. Rotations are pitch, yaw and roll in
   degrees, with yaw counter-clockwise from east. Attachment offsets are x forward, y left, z up.

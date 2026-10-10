@@ -1,0 +1,50 @@
+Fonts for the AR33 storefront and landmark signs (client/src/city/fk/signKit.js, signPaint.js).
+
+Every TTF is a raw file from github.com/google/fonts (ofl/<family>/ or apache/<family>/), fetched 2026-09-30 by
+client/tools/ar33/signs/fetch_fonts.mjs. Variable files are saved under safe names: 'Inter[opsz,wght].ttf' is
+Inter-opsz-wght.ttf here (the file itself is unchanged). Each family's licence is LICENSE-<dir>.txt beside it (SIL Open
+Font License 1.1, or Apache License 2.0 for Roboto Slab and Yellowtail), copied from the same directory of the repo.
+
+o/*.json are three.js typeface outlines converted from these files by tools/ar33/signs/mk_outlines.mjs (fontkit):
+a format conversion, so a Modified Version under the OFL. They stay under the font's own licence (named in each file's
+original_font_information), and a family whose licence reserves its name is presented as 'AR33 outline <n>'.
+
+key | outline weights | file | licence | copyright
+Inter | 400, 500, 600, 700, 800, 900 | Inter-opsz-wght.ttf | OFL-1.1 (LICENSE-inter.txt) | Copyright 2020 The Inter Project Authors (https://github.com/rsms/inter)
+Arimo | 400, 700 | Arimo-wght.ttf | OFL-1.1 (LICENSE-arimo.txt) | Copyright 2026 The Arimo Project Authors (https://github.com/googlefonts/arimo)
+Oswald | 400, 500, 600, 700 | Oswald-wght.ttf | OFL-1.1 (LICENSE-oswald.txt) | Copyright 2016 The Oswald Project Authors (https://github.com/googlefonts/OswaldFont) 
+Anton | 400 | Anton-Regular.ttf | OFL-1.1 (LICENSE-anton.txt) | Copyright 2020 The Anton Project Authors (https://github.com/googlefonts/AntonFont.git) 
+BebasNeue | 400 | BebasNeue-Regular.ttf | OFL-1.1 (LICENSE-bebasneue.txt) | Copyright © 2010 by Dharma Type.
+Barlow | 400, 500, 600, 700, 800, 900, 700i, 900i | Barlow-Regular.ttf, Barlow-Medium.ttf, Barlow-SemiBold.ttf, Barlow-Bold.ttf, Barlow-ExtraBold.ttf, Barlow-Black.ttf, Barlow-BoldItalic.ttf, Barlow-BlackItalic.ttf | OFL-1.1 (LICENSE-barlow.txt) | Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+BarlowCondensed | 500, 600, 700, 800, 900, 700i, 800i, 900i | BarlowCondensed-Medium.ttf, BarlowCondensed-SemiBold.ttf, BarlowCondensed-Bold.ttf, BarlowCondensed-ExtraBold.ttf, BarlowCondensed-Black.ttf, BarlowCondensed-BoldItalic.ttf, BarlowCondensed-ExtraBoldItalic.ttf, BarlowCondensed-BlackItalic.ttf | OFL-1.1 (LICENSE-barlowcondensed.txt) | Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
+Montserrat | 400, 500, 600, 700, 800, 900 | Montserrat-wght.ttf | OFL-1.1 (LICENSE-montserrat.txt) | Copyright 2024 The Montserrat.Git Project Authors (https://github.com/JulietaUla/Montserra
+Poppins | 400, 500, 600, 700, 800, 900, 700i | Poppins-Regular.ttf, Poppins-Medium.ttf, Poppins-SemiBold.ttf, Poppins-Bold.ttf, Poppins-ExtraBold.ttf, Poppins-Black.ttf, Poppins-BoldItalic.ttf | OFL-1.1 (LICENSE-poppins.txt) | Copyright 2020 The Poppins Project Authors (https://github.com/itfoundry/Poppins)
+LibreFranklin | 400, 500, 600, 700, 800, 900 | LibreFranklin-wght.ttf | OFL-1.1 (LICENSE-librefranklin.txt) | Copyright 2020 The Libre Franklin Project Authors (https://github.com/googlefonts/Libre-Fr
+Archivo | 400, 600, 700, 800, 900 | Archivo-wdth-wght.ttf | OFL-1.1 (LICENSE-archivo.txt) | Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo)
+ArchivoNarrow | 500, 600, 700, 800, 900 | Archivo-wdth-wght.ttf | OFL-1.1 (LICENSE-archivo.txt) | Copyright 2020 The Archivo Project Authors (https://github.com/Omnibus-Type/Archivo)
+ArchivoBlack | 400 | ArchivoBlack-Regular.ttf | OFL-1.1 (LICENSE-archivoblack.txt) | Copyright 2017 The Archivo Black Project Authors (https://github.com/Omnibus-Type/ArchivoB
+Jost | 400, 500, 600, 700, 800, 900 | Jost-wght.ttf | OFL-1.1 (LICENSE-jost.txt) | Copyright 2020 The Jost Project Authors (https://github.com/indestructible-type)
+WorkSans | 400, 500, 600, 700, 800, 900 | WorkSans-wght.ttf | OFL-1.1 (LICENSE-worksans.txt) | Copyright 2019 The Work Sans Project Authors (https://github.com/weiweihuanghuang/Work-San
+Lato | 400, 700, 900, 700i | Lato-Regular.ttf, Lato-Bold.ttf, Lato-Black.ttf, Lato-BoldItalic.ttf | OFL-1.1 (LICENSE-lato.txt) | Copyright (c) 2010-2014 by tyPoland Lukasz Dziedzic (team@latofonts.com) with Reserved Fon
+PlayfairDisplay | 400, 600, 700, 900 | PlayfairDisplay-wght.ttf | OFL-1.1 (LICENSE-playfairdisplay.txt) | Copyright 2017 The Playfair Display Project Authors (https://github.com/clauseggers/Playfa
+LibreBaskerville | 400, 700, 400i, 700i | LibreBaskerville-wght.ttf, LibreBaskerville-Italic-wght.ttf | OFL-1.1 (LICENSE-librebaskerville.txt) | Copyright 2012 The Libre Baskerville Project Authors (https://github.com/impallari/Libre-B
+Cinzel | 400, 600, 700, 900 | Cinzel-wght.ttf | OFL-1.1 (LICENSE-cinzel.txt) | Copyright 2020 The Cinzel Project Authors (https://github.com/NDISCOVER/Cinzel)
+DMSerifDisplay | 400 | DMSerifDisplay-Regular.ttf | OFL-1.1 (LICENSE-dmserifdisplay.txt) | Copyright 2014-2018 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'. All R
+AlfaSlabOne | 400 | AlfaSlabOne-Regular.ttf | OFL-1.1 (LICENSE-alfaslabone.txt) | Copyright 2016 The Alfa Slab One Project Authors (http://www.jmsole.cl / info@jmsole.cl), 
+RobotoSlab | 400, 500, 700, 800, 900 | RobotoSlab-wght.ttf | Apache-2.0 (LICENSE-robotoslab.txt) | Copyright License. Subject to the terms and conditions of
+Rye | 400 | Rye-Regular.ttf | OFL-1.1 (LICENSE-rye.txt) | Copyright (c) 2011 by Sorkin Type Co (www.sorkintype.com),
+Pacifico | 400 | Pacifico-Regular.ttf | OFL-1.1 (LICENSE-pacifico.txt) | Copyright 2018 The Pacifico Project Authors (https://github.com/googlefonts/Pacifico)
+Lobster | 400 | Lobster-Regular.ttf | OFL-1.1 (LICENSE-lobster.txt) | Copyright 2010 The Lobster Project Authors (https://github.com/impallari/The-Lobster-Font)
+KaushanScript | 400 | KaushanScript-Regular.ttf | OFL-1.1 (LICENSE-kaushanscript.txt) | Copyright (c) 2011, Pablo Impallari (www.impallari.com/impallari@gmail.com),
+GreatVibes | 400 | GreatVibes-Regular.ttf | OFL-1.1 (LICENSE-greatvibes.txt) | Copyright 2015 The Great Vibes Pro Project Authors (https://github.com/googlefonts/great-v
+DancingScript | 400, 700 | DancingScript-wght.ttf | OFL-1.1 (LICENSE-dancingscript.txt) | Copyright 2016 The Dancing Script Project Authors (https://github.com/googlefonts/DancingS
+Sacramento | 400 | Sacramento-Regular.ttf | OFL-1.1 (LICENSE-sacramento.txt) | Copyright (c) 2012, Brian J. Bonislawsky DBA Astigmatic (AOETI) (astigma@astigmatic.com), 
+Yellowtail | 400 | Yellowtail-Regular.ttf | Apache-2.0 (LICENSE-yellowtail.txt) | Copyright License. Subject to the terms and conditions of
+TiltNeon | 400 | TiltNeon-XROT-YROT.ttf | OFL-1.1 (LICENSE-tiltneon.txt) | Copyright 2019 The Tilt Project Authors (https://github.com/googlefonts/Tilt-Fonts)
+Monoton | 400 | Monoton-Regular.ttf | OFL-1.1 (LICENSE-monoton.txt) | Copyright (c) 2011 by vernon adams (vern@newtypography.co.uk),
+Bungee | 400 | Bungee-Regular.ttf | OFL-1.1 (LICENSE-bungee.txt) | Copyright 2023 The Bungee Project Authors (https://github.com/djrrb/Bungee) 
+Righteous | 400 | Righteous-Regular.ttf | OFL-1.1 (LICENSE-righteous.txt) | Copyright (c) 2011 by Brian J. Bonislawsky DBA Astigmatic (AOETI)
+FjallaOne | 400 | FjallaOne-Regular.ttf | OFL-1.1 (LICENSE-fjallaone.txt) | Copyright 2012 The Fjalla One Project Authors (https://github.com/SorkinType/FjallaOne)
+LeagueSpartan | 400, 500, 600, 700, 800, 900 | LeagueSpartan-wght.ttf | OFL-1.1 (LICENSE-leaguespartan.txt) | Copyright 2020 The League Spartan Project Authors (https://github.com/theleagueof/league-s
+Baloo2 | 600, 700, 800 | Baloo2-wght.ttf | OFL-1.1 (LICENSE-baloo2.txt) | Copyright 2019 The Baloo 2 Project Authors (https://github.com/EkType/Baloo2) (fetched 2026-10-02)
+Nunito | 700, 800, 900 | Nunito-wght.ttf | OFL-1.1 (LICENSE-nunito.txt) | Copyright 2014 The Nunito Project Authors (https://github.com/googlefonts/nunito) (fetched 2026-10-02)

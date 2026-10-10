@@ -3,10 +3,10 @@
 // Two stages, on purpose:
 //
 //  1. every segment is built on its own (overlay wipe + caption + the one lower
-//     third) into boundlessjs/shots/ad/seg/NN_<name>.mp4 at CRF 12, so a
+//     third) into client/shots/ad/seg/NN_<name>.mp4 at CRF 12, so a
 //     segment can be inspected, re-run or replaced without rebuilding the film;
 //  2. the segments are concatenated with the music, the black head/tail and the
-//     body fades in ONE pass at CRF 19 -> boundlessjs/shots/ad/nyc_twin_ad.mp4.
+//     body fades in ONE pass at CRF 19 -> client/shots/ad/nyc_twin_ad.mp4.
 //
 // Style follows the owner's DART media pipeline: each demo clip opens with an
 // overlay wipe carrying a bright hairline, every clip has one caption that
@@ -41,11 +41,11 @@ const NOTEXT = has('notext');
 const bin = (await import('ffmpeg-static')).default;
 
 const FPS = 30, W = 1920, H = 1080;
-const adRoot = path.resolve(root, 'boundlessjs/shots/ad');
+const adRoot = path.resolve(root, 'client/shots/ad');
 const clipRoot = path.join(adRoot, 'clips');
 const segRoot = path.join(adRoot, NOTEXT ? 'seg_notext' : 'seg');   // the two cuts keep separate segment sets
 const txtRoot = path.join(segRoot, '_txt');
-const OUT = path.resolve(root, opt('out', NOTEXT ? 'boundlessjs/shots/ad/nyc_twin_ad_notext.mp4' : 'boundlessjs/shots/ad/nyc_twin_ad.mp4'));
+const OUT = path.resolve(root, opt('out', NOTEXT ? 'client/shots/ad/nyc_twin_ad_notext.mp4' : 'client/shots/ad/nyc_twin_ad.mp4'));
 const MUSIC = path.resolve(root, opt('music', 'admusic/music/lofi.mp3'));
 const LOWER1 = opt('name', '[ name ]');
 const LOWER2 = opt('affil', '[ affiliation ]');
@@ -97,8 +97,8 @@ const SEQ = [
     caption: 'The same view, rendered: the public record compiled into 512 m tiles and streamed to a browser tab',
     // the caption belongs on the RENDER half, after the dissolve has completed
     capAt: 13.6,
-    src: { kind: 'xfade', a: 'boundlessjs/shots/ad/data', aext: 'jpg',
-      b: 'boundlessjs/shots/ad/clips/fStreetGeom', bext: 'jpg', d: 1.2 } },
+    src: { kind: 'xfade', a: 'client/shots/ad/data', aext: 'jpg',
+      b: 'client/shots/ad/clips/fStreetGeom', bext: 'jpg', d: 1.2 } },
   { name: 'mLowAerial', accent: 'BLUE', caption: null },
   // The perception panel carries its own header, class legend and a live
   // labels.json table across the bottom third, so the caption sits HIGH (the
@@ -106,9 +106,9 @@ const SEQ = [
   { name: 'fPerception', accent: 'ORANGE', wipe: 0.5, capTop: true, capWrap: 62,
     caption: 'Every frame emits its own ground truth: 2D boxes, semantic and instance masks, depth — and amodal masks for what is occluded. For free.',
     // 2026-09-16 owner: the camera now follows the CENTRE of 125th St (tools/trailer/paths.json harlem125Center,
-    // exported by tools/perception/export.mjs --path harlem125Center --clip boundlessjs/shots/perception/clip_center)
+    // exported by tools/perception/export.mjs --path harlem125Center --clip client/shots/perception/clip_center)
     // film 8 (owner review 2026-09-24): the panel's glass-card redesign and plain headings; film 7's is clip_center/
-    src: { kind: 'frames', dir: 'boundlessjs/shots/perception/clip_center_v15', ext: 'png' }, dur: 12.0 },   // film 11: re-exported (Rocketbox walkers in the crowd, the fixed walk styles)
+    src: { kind: 'frames', dir: 'client/shots/perception/clip_center_v15', ext: 'png' }, dur: 12.0 },   // film 11: re-exported (Rocketbox walkers in the crowd, the fixed walk styles)
   // ACT 1b — the rest of the montage
   { name: 'mLenoxTop', accent: 'YELLOW', caption: '125th & Lenox — every lane, crossing and signal from public data' },
   // film 13: a box truck ahead in the inner lane is overtaken at the lens from frame 144 (LENS-INSIDE): the take ends at 4.5 s
@@ -133,7 +133,7 @@ const SEQ = [
   { name: 'fSkyline', accent: 'TEAL', caption: '2,882 street tiles near the camera, 209 far-LoD macros carrying the skyline behind them' },
   // ACT 4 — the closing presentation (already carries its own DART fades)
   { name: 'slides', accent: null, caption: null, wipe: 0.6, nocap: true,
-    src: { kind: 'frames', dir: 'boundlessjs/shots/ad/slides', ext: 'jpg' } },
+    src: { kind: 'frames', dir: 'client/shots/ad/slides', ext: 'jpg' } },
 ];
 
 // ---- helpers ---------------------------------------------------------------

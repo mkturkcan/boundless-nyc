@@ -1,6 +1,6 @@
 // AD VIDEO — contact sheet of the final cut: one labelled frame per scene.
 //
-// Reads boundlessjs/shots/ad/timeline.json (written by tools/ad/cut.mjs), pulls
+// Reads client/shots/ad/timeline.json (written by tools/ad/cut.mjs), pulls
 // one frame from the middle of every scene out of the finished mp4, burns the
 // scene name and its in-point on it, and tiles the lot into one PNG. That is
 // the artefact to look at when deciding whether the cut holds up, because a
@@ -9,7 +9,7 @@
 //   node tools/ad/sheet.mjs
 //   node tools/ad/sheet.mjs --cols 4 --cell 620 --at 0.3
 //
-// Output: boundlessjs/shots/ad/nyc_twin_ad_sheet.png
+// Output: client/shots/ad/nyc_twin_ad_sheet.png
 import { spawnSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { promises as fs } from 'node:fs';
@@ -22,10 +22,10 @@ const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 && args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : d; };
 const bin = (await import('ffmpeg-static')).default;
 
-const adRoot = path.resolve(root, 'boundlessjs/shots/ad');
-const mp4 = path.resolve(root, opt('in', 'boundlessjs/shots/ad/nyc_twin_ad.mp4'));
+const adRoot = path.resolve(root, 'client/shots/ad');
+const mp4 = path.resolve(root, opt('in', 'client/shots/ad/nyc_twin_ad.mp4'));
 const tl = path.join(adRoot, 'timeline.json');
-const out = path.resolve(root, opt('out', 'boundlessjs/shots/ad/nyc_twin_ad_sheet.png'));
+const out = path.resolve(root, opt('out', 'client/shots/ad/nyc_twin_ad_sheet.png'));
 const cellW = Number(opt('cell', '620'));
 const at = Number(opt('at', '0.45'));      // fraction into each scene
 const tmp = path.join(adRoot, '_sheet');

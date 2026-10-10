@@ -1,4 +1,4 @@
-// Smoke test of the in-page API bridge (boundlessjs/src/api/bridge.js) WITHOUT the Electron host: opens the app with
+// Smoke test of the in-page API bridge (client/src/api/bridge.js) WITHOUT the Electron host: opens the app with
 // ?api=1 in Playwright on the RTX and drives window.__API.call directly. Prints each step's result; writes a few
 // sensor frames to --out.
 //   node tools/api/smoke_bridge.mjs [--port 5690] [--out <dir>] [--size 1280x720]
@@ -9,11 +9,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
 const port = opt('port', String(5600 + Math.floor(Math.random() * 300)));
-const out = path.resolve(opt('out', path.join(root, 'boundlessjs/shots/api_smoke')));
+const out = path.resolve(opt('out', path.join(root, 'client/shots/api_smoke')));
 const [W, H] = opt('size', '1280x720').split('x').map(Number);
 await fs.mkdir(out, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

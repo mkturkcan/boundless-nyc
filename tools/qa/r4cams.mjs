@@ -1,11 +1,11 @@
-// QA round 4 (2026-10-02): the 125th Street sweep cameras -> boundlessjs/shots/ar34/qa/r4/cams_r4.json and a station list
+// QA round 4 (2026-10-02): the 125th Street sweep cameras -> client/shots/ar34/qa/r4/cams_r4.json and a station list
 // for the support audit (r4/stations.json). Helpers (the compiled sidewalk band under a station) from the round-1
-// generator boundlessjs/shots/ar34/qa/tools/gencams.mjs.
+// generator client/shots/ar34/qa/tools/gencams.mjs.
 //   node tools/qa/r4cams.mjs
 import fs from 'node:fs';
 const ROOT = '/data0/projectnyc';
 const C = JSON.parse(fs.readFileSync(ROOT + '/docs/notes/ar33-corridor.json', 'utf8'));
-const tdir = ROOT + '/boundlessjs/public/tiles';
+const tdir = ROOT + '/client/public/tiles';
 const man = JSON.parse(fs.readFileSync(tdir + '/manifest.json', 'utf8'));
 const TILE = man.tile || 512;
 const load = (tx, tz) => {
@@ -91,7 +91,7 @@ for (let k = 0, s0 = 150; s0 <= 3000; k++, s0 += 200) {
   const c = pt(w.s, w.off), t = pt(w.s, -sg * 30);
   add(`x${String(Math.round(w.s)).padStart(4, '0')}${sg > 0 ? 'N' : 'S'}`, c, t, 1.8, 0.22, 80, `station ${w.s} from the ${sg > 0 ? 'north' : 'south'} sidewalk across`, 'across');
 }
-const OUT = ROOT + '/boundlessjs/shots/ar34/qa/r4';
+const OUT = ROOT + '/client/shots/ar34/qa/r4';
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(OUT + '/cams_r4.json', JSON.stringify({ _: 'QA round 4 sweep (tools/qa/r4cams.mjs): L() arrays [cx, cz, alt, tx, tz, pitch, hfov]', ...cams }, null, 0).replace(/\],"/g, '],\n"'));
 fs.writeFileSync(OUT + '/cams_r4_meta.json', JSON.stringify({ meta, order: ORD, stations }, null, 1));

@@ -1,4 +1,4 @@
-// CARLA 0.10 vehicle blueprint -> web-ready multi-LOD GLB for the NYC twin's fleet (boundlessjs/public/models/fleet24).
+// CARLA 0.10 vehicle blueprint -> web-ready multi-LOD GLB for the NYC twin's fleet (client/public/models/fleet24).
 //   node tools/assets/build_vehicle.mjs <kind|all> [--notex] [--out <dir>]
 //
 // Assembly follows the blueprint exactly: the skeletal body, door meshes on their Door_* sockets, door glass parented to
@@ -6,7 +6,7 @@
 // atlases, glass, lens, lamp, lampInner, siren); wheels are tagged per vertex (_WHEEL 1..4 = FL FR RL RR) from the
 // skin joints (LOD0) or the hub cylinders (LOD1/2); lamp vertices carry a role (_LAMP, see ROLE). Output frame: +Z
 // forward, +Y up, origin at the ground centre, right side at -X — the traffic sim's convention (sim/vehicles.js).
-// Sources: CARLA 0.10.0 content, CC-BY 4.0 (boundlessjs/DATA_SOURCES.md).
+// Sources: CARLA 0.10.0 content, CC-BY 4.0 (client/DATA_SOURCES.md).
 import fs from 'node:fs';
 import path from 'node:path';
 import { Document, NodeIO } from '@gltf-transform/core';
@@ -24,7 +24,7 @@ import { FLEET27_TEX } from './livery_fleet27.mjs';
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../..');
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : true) : d; };
-const OUT = opt('out', path.join(ROOT, 'boundlessjs/public/models/fleet24'));
+const OUT = opt('out', path.join(ROOT, 'client/public/models/fleet24'));
 const NOTEX = !!opt('notex', false);
 
 const S = 'CarlaUnreal/Content/Carla/Static/';

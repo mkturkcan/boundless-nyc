@@ -57,12 +57,12 @@ python PythonAPI/examples/intersection_120_amsterdam.py
 **From source.** See [BUILDING.md](BUILDING.md). In short:
 
 ```
-npm install && (cd boundlessjs && npm install)
+npm install && (cd client && npm install)
 # binary banks (tiles, models, textures): download, or compile the tiles (BUILDING.md)
 hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
-mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
-cd boundlessjs && npm run dev        # http://127.0.0.1:5219
+mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures client/public/
+cd client && npm run dev        # http://127.0.0.1:5219
 ```
 
 ## Python API
@@ -113,7 +113,7 @@ one script per step in [PythonAPI/examples/tutorials/](PythonAPI/examples/tutori
 ![Public records are compiled into binary tiles; the client streams, simulates and renders them inside the simulation server, which the Python API drives over TCP](docs/assets/figures/architecture.png)
 
 ```
-boundlessjs/            renderer, simulation and perception client (three.js, Vite)
+client/            renderer, simulation and perception client (three.js, Vite)
   src/                  engine, streaming, materials, traffic, pedestrians, perception, API bridge
   tools/pipeline/       city compiler: NYC Open Data -> binary tiles
   tools/ar34/export/    take export to OpenUSD; the Blender Cycles and Unreal Engine 5 renderers
@@ -152,7 +152,7 @@ evaluation, start the server with `--pedestrians procedural`, which uses the bui
 
 [LICENSING.md](LICENSING.md) gives the licence of every component, including the MetaHuman notice.
 [ACKNOWLEDGEMENTS.md](ACKNOWLEDGEMENTS.md) lists the required attributions, and
-[boundlessjs/DATA_SOURCES.md](boundlessjs/DATA_SOURCES.md) documents every source dataset.
+[client/DATA_SOURCES.md](client/DATA_SOURCES.md) documents every source dataset.
 
 ## Citation
 

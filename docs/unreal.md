@@ -53,7 +53,7 @@ problems.
 
 ## The project
 
-`boundlessjs/tools/ar34/export/ue_project/` is the Unreal project the takes use:
+`client/tools/ar34/export/ue_project/` is the Unreal project the takes use:
 
 | File | Contents |
 |---|---|
@@ -89,7 +89,7 @@ uv run --no-project --with pillow --with numpy python tools/assets/fetch_hq.py -
 ```
 
 Then point the takes at the sets with `export BXUE_HQ=~/bx/hq/hq.json` (otherwise `"manifest"` under `"hq"` in
-`boundlessjs/tools/ar34/export/ue_families.json` is used, which names the folder of the development machine). That
+`client/tools/ar34/export/ue_families.json` is used, which names the folder of the development machine). That
 table maps each pbrLib set, ground kind, viaduct
 layer and facade wall class to its set. A take rendered without the sets, or with `BXUE_NOHQ=1`, uses the export's own
 textures.
@@ -104,7 +104,7 @@ new export.
 ## Render the take
 
 ```bash
-python3 boundlessjs/tools/ar34/export/ue_take.py --usd ~/bx/u/t7ArchSoffit.usda \
+python3 client/tools/ar34/export/ue_take.py --usd ~/bx/u/t7ArchSoffit.usda \
     --outdir ~/bx/ue/t7ArchSoffit --work ~/bx/ue_work/t7ArchSoffit --res 2560x1440 --gpu 0
 ```
 
@@ -130,7 +130,7 @@ with depth of field on the subject at f/2.8 (`--fstop`), the client's bloom, fil
 light volumetric fog by day (`--fog`) and the analytic haze at night:
 
 ```bash
-python3 boundlessjs/tools/ar34/export/ue_take.py --usd ~/bx/u/t7ArchSoffit.usda \
+python3 client/tools/ar34/export/ue_take.py --usd ~/bx/u/t7ArchSoffit.usda \
     --outdir ~/bx/ue/t7ArchSoffit --work ~/bx/ue_work/t7ArchSoffit --res 2560x1440 --gpu 0 --cine
 ffmpeg -framerate 30 -i ~/bx/ue/t7ArchSoffit/frame_%05d.jpg -c:v libx264 -crf 16 -pix_fmt yuv420p ~/bx/t7ArchSoffit_ue.mp4
 ```
@@ -141,7 +141,7 @@ ffmpeg -framerate 30 -i ~/bx/ue/t7ArchSoffit/frame_%05d.jpg -c:v libx264 -crf 16
 the harvest and the USD when a shot has none, or reuses a Cycles batch's with `--usdfrom <work dir>`:
 
 ```bash
-node boundlessjs/tools/ar34/export/bx_render_all.mjs --target ue --shots t7ArchSoffit --gpus 0 \
+node client/tools/ar34/export/bx_render_all.mjs --target ue --shots t7ArchSoffit --gpus 0 \
     --work ~/bx/ue_batch --clips ~/bx/ue_takes --nopreview --nocut --uetake " --cine"
 ```
 

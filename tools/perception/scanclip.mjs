@@ -4,7 +4,7 @@
 // trigger-happy on purpose (a dense tree canopy sets it).
 //
 //   node tools/perception/scanclip.mjs
-//   node tools/perception/scanclip.mjs boundlessjs/shots/perception/clip
+//   node tools/perception/scanclip.mjs client/shots/perception/clip
 //   node tools/perception/scanclip.mjs <dir> --w 1280 --h 720 --frames 300
 //
 // How it decides. When the composer runs over a region the scene never wrote,
@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const args = process.argv.slice(2);
 const opt = (n, d) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-const dir = path.resolve(root, args.find((a) => !a.startsWith('--')) || 'boundlessjs/shots/perception/clip');
+const dir = path.resolve(root, args.find((a) => !a.startsWith('--')) || 'client/shots/perception/clip');
 const W = Number(opt('w', 1280)), H = Number(opt('h', 720));   // the RGB quadrant, top-left of the panel
 const THRESH = Number(opt('thresh', 0.25));
 const bin = (await import('ffmpeg-static')).default;

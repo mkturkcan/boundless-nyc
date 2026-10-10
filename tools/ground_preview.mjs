@@ -13,7 +13,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const { chromium } = createRequire(path.join(root, 'package.json'))('playwright');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const [,, outPrefix, flags = '', viewsArg = 'markings,walk,oblique,plaza', Ws = '1280', Hs = '720'] = process.argv;
 if (!outPrefix) { console.error('usage: node tools/ground_preview.mjs <outPrefix> [flags] [views] [W] [H]'); process.exit(2); }
 const port = String(7100 + Math.floor(Math.random() * 800));

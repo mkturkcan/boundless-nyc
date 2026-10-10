@@ -2,7 +2,7 @@
 // a rounded, half-transparent black box with a glass blur, in a professional face,
 // and no text may leave its box).
 //
-// Renders two PNGs sized to the measured text, in Inter (boundlessjs/public/fonts, SIL OFL):
+// Renders two PNGs sized to the measured text, in Inter (client/public/fonts, SIL OFL):
 //   <out>_pill.png  the translucent dark fill, hairline edge and text (straight alpha)
 //   <out>_mask.png  the rounded-rect mask (white inside), for ffmpeg's alphamerge
 // and prints {"w":..,"h":..}. cut.mjs blurs the video under the pill through the
@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const [text, out, px = '17'] = process.argv.slice(2);
 if (!text || !out) { console.log('usage: glasspill.mjs <text> <out-prefix> [fontPx]'); process.exit(1); }
-const b64 = (await fs.readFile(path.join(here, '..', '..', 'boundlessjs', 'public', 'fonts', 'Inter-500.ttf'))).toString('base64');
+const b64 = (await fs.readFile(path.join(here, '..', '..', 'client', 'public', 'fonts', 'Inter-500.ttf'))).toString('base64');
 const html = `<!doctype html><html><head><style>
 @font-face{font-family:'InterPill';font-weight:500;src:url(data:font/ttf;base64,${b64}) format('truetype')}
 html,body{margin:0;background:transparent}</style></head><body><canvas id="c"></canvas></body></html>`;

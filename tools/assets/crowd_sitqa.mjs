@@ -1,4 +1,4 @@
-// SIT31 CPU QA (no GPU): the seated clips of boundlessjs/src/sim/crowdSit.js on every GEN2 body, with the pose pass's rules
+// SIT31 CPU QA (no GPU): the seated clips of client/src/sim/crowdSit.js on every GEN2 body, with the pose pass's rules
 // re-implemented here (clip rotations, each body's own bone offsets, the clip's per-body hips scale, the per-walker arm
 // overrides), linear-blend skinning of each body's LOD0 mesh, and per body the worst of:
 //   torso   how far arm vertices (upper arm + forearm dominated, beyond 10 cm from the shoulder joint) are inside the torso:
@@ -19,7 +19,7 @@
 // poses into the existing bake.
 // --consistent also waives a vertex whose nearest torso vertex lies well off that vertex's normal (the solver's own test).
 //   node tools/assets/crowd_sitqa.mjs [--v1 crowdSit_v1.mjs] [--poses 1,3] [--bodies a,b] [--sheet out.png] [--json out.json] [--scale 1.08] [--fresh] [--consistent]
-//   node tools/assets/crowd_sitqa.mjs --write     (only solve and write boundlessjs/public/models/peds24/sit31_arms.json)
+//   node tools/assets/crowd_sitqa.mjs --write     (only solve and write client/public/models/peds24/sit31_arms.json)
 // sit31_arms.json holds each GEN2 body's arm rotations per seated pose (the override slots of crowdSit.js ARM_SLOTS, w = 2
 // = keep the clip's): at a table, per pose and scale sample, the body's own solve or the clip's reference arms, whichever
 // this check scores better (scoreOf); away from a table the same choice per ARM, then that arm's elbow swung 10 / 20 deg
@@ -36,11 +36,11 @@ import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const BASE = path.join(ROOT, 'boundlessjs/public/models/peds24') + '/';
+const BASE = path.join(ROOT, 'client/public/models/peds24') + '/';
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-// --sit <file>: another copy of crowdSit.js (a trial of the solver) in place of boundlessjs/src/sim/crowdSit.js
-const SIT = await import(pathToFileURL(opt('sit') ? path.resolve(opt('sit')) : path.join(ROOT, 'boundlessjs/src/sim/crowdSit.js')).href);
+// --sit <file>: another copy of crowdSit.js (a trial of the solver) in place of client/src/sim/crowdSit.js
+const SIT = await import(pathToFileURL(opt('sit') ? path.resolve(opt('sit')) : path.join(ROOT, 'client/src/sim/crowdSit.js')).href);
 const m = JSON.parse(fs.readFileSync(BASE + 'manifest.json', 'utf8'));
 const rb = fs.existsSync(BASE + 'rb27/manifest.json') ? JSON.parse(fs.readFileSync(BASE + 'rb27/manifest.json', 'utf8')) : { bodies: {}, variants: [] };
 const ci = JSON.parse(fs.readFileSync(BASE + 'clips.json', 'utf8'));

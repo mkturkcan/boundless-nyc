@@ -10,7 +10,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
 const [take, list] = process.argv.slice(2);
 if (!take || !list) { console.log('usage: node tools/ad/patchholds.mjs <take> <frame,frame,...>'); process.exit(1); }
-const dir = path.join(root, 'boundlessjs/shots/ad/clips', take);
+const dir = path.join(root, 'client/shots/ad/clips', take);
 const bad = new Set(list.split(',').map(Number));
 const n = (await fs.readdir(dir)).filter((f) => /^frame_\d{5}\.jpg$/.test(f)).length;
 const name = (i) => path.join(dir, `frame_${String(i).padStart(5, '0')}.jpg`);

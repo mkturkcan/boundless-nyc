@@ -1,4 +1,4 @@
-// ad-hoc GPU shot: node tools/lshot.mjs --lon -73.9585 --lat 40.8075 --y 30 --yaw 1.2 --pitch -0.4 --time day --label morningside --out boundlessjs/shots/lead [--flags k=v&k2=v2] [--node "dx,dz,dy,pitch"]
+// ad-hoc GPU shot: node tools/lshot.mjs --lon -73.9585 --lat 40.8075 --y 30 --yaw 1.2 --pitch -0.4 --time day --label morningside --out client/shots/lead [--flags k=v&k2=v2] [--node "dx,dz,dy,pitch"]
 import { chromium } from 'playwright';
 import { acquireGpu } from './gpulock.mjs';
 import { spawn } from 'node:child_process';
@@ -6,14 +6,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : '1') : d; };
 const LAT0 = 40.7831, LON0 = -73.9712, M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const x = (Number(opt('lon')) - LON0) * M_LON, z = -(Number(opt('lat')) - LAT0) * M_LAT;
 const y = Number(opt('y', '20')), yaw = Number(opt('yaw', '0')), pitch = Number(opt('pitch', '-0.3'));
 const time = opt('time', 'day'), label = opt('label', 'shot'), extra = opt('flags', ''), nodeSnap = opt('node');
-const outDir = path.resolve(root, opt('out', 'boundlessjs/shots/lead'));
+const outDir = path.resolve(root, opt('out', 'client/shots/lead'));
 // take the GPU lock BEFORE spawning Vite: a queued shot used to hold a dev server
 // (and soon a Chromium) while waiting, and four jobs waiting at once paged the
 // machine

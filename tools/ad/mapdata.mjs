@@ -1,14 +1,14 @@
-// DATA SCENE — step 1: cut the SOURCE data out of boundlessjs/data/raw for the
+// DATA SCENE — step 1: cut the SOURCE data out of client/data/raw for the
 // `fStreetGeom` nadir framing (125th & Lenox, 120 m).
 //
 // The scene that opens the film claims the city is built from public records
 // and is accurate to the lot line. The only honest way to show that is to draw
 // the records themselves, in the same projection as the render, and dissolve
 // one into the other — so this pulls the ACTUAL rows out of the ACTUAL cached
-// downloads (`boundlessjs/data/raw/*`, the files `tools/pipeline/compile.mjs`
+// downloads (`client/data/raw/*`, the files `tools/pipeline/compile.mjs`
 // reads), not a redrawing of them.
 //
-//   node tools/ad/mapdata.mjs                 # -> boundlessjs/shots/ad/mapdata.json
+//   node tools/ad/mapdata.mjs                 # -> client/shots/ad/mapdata.json
 //   node tools/ad/mapdata.mjs --half 320      # a wider window
 //
 // The raw geojson dumps are 50-530 MB each and the four "boro" files are not in
@@ -22,11 +22,11 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const RAW = path.join(root, 'boundlessjs', 'data', 'raw');
+const RAW = path.join(root, 'client', 'data', 'raw');
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
 
-// ---- projection: the mirror of boundlessjs/src/shared/geo.js
+// ---- projection: the mirror of client/src/shared/geo.js
 const LAT0 = 40.7831, LON0 = -73.9712;
 const M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const project = (lon, lat) => [(lon - LON0) * M_LON, -(lat - LAT0) * M_LAT];
@@ -266,7 +266,7 @@ out.meta = {
     signals: out.nodes.filter((n) => n.signal).length,
   },
 };
-const dst = path.join(root, 'boundlessjs', 'shots', 'ad', 'mapdata.json');
+const dst = path.join(root, 'client', 'shots', 'ad', 'mapdata.json');
 fs.mkdirSync(path.dirname(dst), { recursive: true });
 fs.writeFileSync(dst, JSON.stringify(out));
 console.log('\n' + JSON.stringify(out.meta.counts));

@@ -9,7 +9,7 @@
 //
 // Path contract is the same as tools/trailer/paths.json: keys of
 // { p:[lon,lat,altAboveTerrain], look:[lon,lat,alt] }, Catmull-Rom interpolated
-// by the PathCam installed by ?record=1 (boundlessjs/src/main.js).
+// by the PathCam installed by ?record=1 (client/src/main.js).
 //
 // ---- what round 1 of the framing probe taught (all applied below) ---------
 //  * `golden` (elev 7 / azim 252) is DUSK at street level in a Harlem canyon:
@@ -29,7 +29,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
-// ---- metric helpers (mirror boundlessjs/src/shared/geo.js scale) -----------
+// ---- metric helpers (mirror client/src/shared/geo.js scale) -----------
 const LAT0 = 40.7831;
 const M_LAT = 111132.0;                                    // metres per degree lat
 const M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);  // 84,391 m per degree lon

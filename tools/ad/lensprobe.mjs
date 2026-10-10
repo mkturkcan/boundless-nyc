@@ -2,7 +2,7 @@
 //  (a) walkers near the lens and what the crowd draws, (b) for every low take's keys: nearest traffic edge,
 //  the lens's signed lateral offset from its centreline, lane centres, nearest walk edge offsets. + a capture.
 //   node tools/ad/lensprobe.mjs <shot> [--port 5577] [--warm 300] [--size 1600x900] [--trace N] [--walk N] [--igpu] [--out file.png]
-//   (needs a running Vite: NYC_NOHMR=1 node boundlessjs/node_modules/vite/bin/vite.js --port 5577)
+//   (needs a running Vite: NYC_NOHMR=1 node client/node_modules/vite/bin/vite.js --port 5577)
 import { chromium } from 'playwright';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -179,7 +179,7 @@ const rep = await page.evaluate((LOW) => {
 }, LOW);
 console.log(JSON.stringify({ ...rep, lens: undefined }, null, 0));
 for (const [k, v] of Object.entries(rep.lens)) console.log(k.padEnd(14), JSON.stringify(v));
-const out = path.resolve(root, opt('out', `boundlessjs/shots/ad/probe/lens_${name}.png`));
+const out = path.resolve(root, opt('out', `client/shots/ad/probe/lens_${name}.png`));
 const dataUrl = await page.evaluate(() => window.__capture('image/png', 1));
 await fs.writeFile(out, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
 console.log('wrote', out);

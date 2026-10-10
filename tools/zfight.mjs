@@ -42,7 +42,7 @@
 //   node tools/zfight.mjs --views fMarkings --census --sw     # no GPU lock
 //   node tools/zfight.mjs --views cxRamp --census --diff --dy 0.05 --R 60
 //
-// Out: boundlessjs/shots/zfight/<view>_{a,b,c,a2,diff,jig,control,mask,jigmask}.png + <view>.json
+// Out: client/shots/zfight/<view>_{a,b,c,a2,diff,jig,control,mask,jigmask}.png + <view>.json
 //      a = the framing.  b = 1.5 cm dolly.  c = near-plane jig.  a2 = control.
 //      *_jigmask.png is the one to look at: z-fighting, nothing else.
 import { chromium } from 'playwright';
@@ -53,14 +53,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const FFMPEG = path.join(root, 'node_modules', 'ffmpeg-static', (process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'));
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : '1') : d; };
 const has = (n) => args.includes('--' + n);
 
 // ---------------------------------------------------------------- framings
-// mirror of boundlessjs/src/shared/geo.js project()
+// mirror of client/src/shared/geo.js project()
 const LAT0 = 40.7831, LON0 = -73.9712;
 const M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const project = (lon, lat) => [(lon - LON0) * M_LON, -(lat - LAT0) * M_LAT];
@@ -122,7 +122,7 @@ const names = (opt('views', 'ad')).split(',').flatMap((n) => GROUPS[n] || [n]).f
 });
 if (!names.length) { console.log('nothing to do'); process.exit(0); }
 
-const outDir = path.resolve(root, opt('out', 'boundlessjs/shots/zfight'));
+const outDir = path.resolve(root, opt('out', 'client/shots/zfight'));
 const [VW, VH] = (opt('size', has('sw') ? '960x540' : '1920x1080')).split('x').map(Number);
 const DOLLY = Number(opt('dolly', '0.015'));      // metres along the view axis
 const THRESH = Number(opt('thresh', '26'));       // 0..255 per-channel diff that counts as a flip
@@ -522,10 +522,10 @@ const makeDiffs = async (tag, W, H) => {
 // in-page --census also covers runtime kit and instanced furniture), which is
 // exactly what the lead's datum list needs.
 //
-//   node tools/zfight.mjs --offline --tilesdir boundlessjs/public/tiles      --keys 4_-6,3_-6,1_-6
-//   node tools/zfight.mjs --offline --tilesdir boundlessjs/public/tiles_dev11 --keys 4_-6,3_-6,1_-6
+//   node tools/zfight.mjs --offline --tilesdir client/public/tiles      --keys 4_-6,3_-6,1_-6
+//   node tools/zfight.mjs --offline --tilesdir client/public/tiles_dev11 --keys 4_-6,3_-6,1_-6
 if (has('offline')) {
-  const tdir = path.resolve(root, opt('tilesdir', 'boundlessjs/public/tiles'));
+  const tdir = path.resolve(root, opt('tilesdir', 'client/public/tiles'));
   const keys = (opt('keys', '4_-6')).split(',');
   const CTOR = { Float32Array, Uint8Array, Uint32Array, Int16Array, Uint16Array };
   const SECT = [['asphalt', 0], ['sidewalk', 1], ['curb', 2], ['paintW', 3], ['paintY', 4], ['grass', 5], ['path', 6], ['paintG', 9], ['brick', 10], ['gutter', 11], ['busred', 12], ['warn', 13], ['warnIron', 14]];
@@ -652,7 +652,7 @@ if (!port) {
   port = String(5400 + Math.floor(Math.random() * 3000));
   const viteBin = path.join(bdir, 'node_modules', 'vite', 'bin', 'vite.js');
   // NYC_NOHMR=1 as tools/bshot.mjs and tools/ad/record.mjs pass it (vite.config.js: no HMR, no WebSocket, NO FILE WATCHER).
-  // Without it this Vite crawled the whole boundlessjs/ tree with its watcher, the data/ tile sets and public/tiles_dev*
+  // Without it this Vite crawled the whole client/ tree with its watcher, the data/ tile sets and public/tiles_dev*
   // junctions included, and answered a module request in 6-8 s at best: both fTraffic runs of 2026-09-29 (12:48 and
   // 13:23) timed out booting ("page never reached record mode") while a bshot Vite beside them answered at once.
   server = spawn(process.execPath, [viteBin, '--port', port, '--strictPort', '--host', '127.0.0.1'], { cwd: bdir, stdio: 'ignore', env: { ...process.env, NYC_NOHMR: '1' } });

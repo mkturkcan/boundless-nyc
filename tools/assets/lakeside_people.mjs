@@ -1,7 +1,7 @@
 // CP33 lakeside: seated photoreal people for the Lake's rowboats, baked from the crowd's own assets (peds24: CARLA 0.10
 // bodies, CC BY 4.0). For each person type (a body, an outfit variant, a seated pose) the body's three LOD meshes are
 // skinned once into the seated pose with the crowd's own pose pass (crowdSit.js synthSitClips and the walker's solved arms,
-// sit31_arms.json) and written as static geometry: boundlessjs/public/models/cp33/lakeside/people/<type>.bin. The texture
+// sit31_arms.json) and written as static geometry: client/public/models/cp33/lakeside/people/<type>.bin. The texture
 // layer of every vertex is resolved from the variant (slot -> layer), a per-vertex weight says how much of it belongs to
 // the upper body (spine up, arms, head: the page leans that part about the hip joint for the rowing stroke), and the file
 // carries the hip pivot, the two hands, the seat point and the bounding box.
@@ -17,11 +17,11 @@ import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const BASE = path.join(ROOT, 'boundlessjs/public/models/peds24') + '/';
-const OUT = (process.argv.includes('--out') ? path.resolve(process.argv[process.argv.indexOf('--out') + 1]) : path.join(ROOT, 'boundlessjs/public/models/cp33/lakeside/people')) + '/';
+const BASE = path.join(ROOT, 'client/public/models/peds24') + '/';
+const OUT = (process.argv.includes('--out') ? path.resolve(process.argv[process.argv.indexOf('--out') + 1]) : path.join(ROOT, 'client/public/models/cp33/lakeside/people')) + '/';
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
-const SIT = await import(pathToFileURL(path.join(ROOT, 'boundlessjs/src/sim/crowdSit.js')).href);
+const SIT = await import(pathToFileURL(path.join(ROOT, 'client/src/sim/crowdSit.js')).href);
 const m = JSON.parse(fs.readFileSync(BASE + 'manifest.json', 'utf8'));
 const ci = JSON.parse(fs.readFileSync(BASE + 'clips.json', 'utf8'));
 const bake = JSON.parse(fs.readFileSync(BASE + 'sit31_arms.json', 'utf8'));

@@ -5,7 +5,7 @@
 
 Per shot: weather, spectator placement (the city streams around it), wait for the tiles, sensors at the pose, then
 `--ticks` synchronous steps so TAA converges and the facade dresser settles; the last frame of each sensor is kept.
-Poses use the client's world frame (x east, z south, metres; boundlessjs/src/shared/geo.js), as camera point,
+Poses use the client's world frame (x east, z south, metres; client/src/shared/geo.js), as camera point,
 look-at point and pitch in radians, the convention of the tools/bshot.mjs presets. Heights are above the street.
 
 Outputs per shot: <name>_rgb.png; with labels: <name>_semantic.png (class palette), <name>_instance.png +

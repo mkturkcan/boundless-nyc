@@ -1,4 +1,4 @@
-// Crowd skinning QA (no GPU): every body, every LOD, every primitive of boundlessjs/public/models/peds24 (CARLA + RB27),
+// Crowd skinning QA (no GPU): every body, every LOD, every primitive of client/public/models/peds24 (CARLA + RB27),
 // skinned on the CPU the way the pose pass does it. POSE_FS of sim/crowd.js is re-implemented line for line: each clip
 // sampled between its two frames (nlerp), clip rotations where the clip marks the bone valid and the body's rest rotation
 // elsewhere, the body's own bone offsets, the hips' translation from the clip times the clip's hips scale (a seated clip's
@@ -24,8 +24,8 @@ import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { MeshoptDecoder } from 'meshoptimizer';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const BASE = path.join(ROOT, 'boundlessjs/public/models/peds24') + '/';
-const SIT = await import(pathToFileURL(path.join(ROOT, 'boundlessjs/src/sim/crowdSit.js')).href);
+const BASE = path.join(ROOT, 'client/public/models/peds24') + '/';
+const SIT = await import(pathToFileURL(path.join(ROOT, 'client/src/sim/crowdSit.js')).href);
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? args[i + 1] : d; };
 const FAR = Number(opt('far', '0.3')), ALL = args.includes('--all');

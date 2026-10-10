@@ -1,0 +1,15 @@
+{
+	"FileVersion": 3,
+	"EngineAssociation": "",
+	"Category": "",
+	"Description": "Valdrada: the UE5 render target of a take's USD export (client/tools/ar34/export/ue_take.py)",
+	"Plugins": [
+		{ "Name": "USDImporter", "Enabled": true },
+		{ "Name": "MovieRenderPipeline", "Enabled": true },
+		{ "Name": "PythonScriptPlugin", "Enabled": true },
+		{ "Name": "EditorScriptingUtilities", "Enabled": true },
+		{ "Name": "SequencerScripting", "Enabled": true },
+		{ "Name": "AndroidFileServer", "Enabled": false }
+	],
+	"TargetPlatforms": [ "Linux" ]
+}

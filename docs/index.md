@@ -73,7 +73,7 @@ published composition.
 ## Offline rendering
 
 A recorded take can be exported to OpenUSD and rendered in Blender Cycles or Unreal Engine 5.
-`boundlessjs/tools/ar34/export/harvest.mjs` boots the page as the film recorder does and writes every visible mesh,
+`client/tools/ar34/export/harvest.mjs` boots the page as the film recorder does and writes every visible mesh,
 instance set and camera sample of the take; `usd_write.py` turns this into USD layers. `blender_take.py` renders the
 frames in Cycles with the web client's materials rebuilt as node groups, baked facade windows with interiors,
 film-detail street trees and physical light; `ue_take.py` renders the same USD with Unreal's Lumen and Movie Render

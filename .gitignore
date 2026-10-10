@@ -21,16 +21,16 @@ server/.stage/
 
 # ---------------------------------------------------------------- binary banks (BUILDING.md: download, or compile tiles)
 # distributed through the Hugging Face dataset mehmetkeremturkcan/valdrada (Content/)
-boundlessjs/public/tiles/
-boundlessjs/public/tiles
-boundlessjs/public/tiles_*/
-boundlessjs/public/tiles_*
-boundlessjs/public/models/
-boundlessjs/public/textures/
+client/public/tiles/
+client/public/tiles
+client/public/tiles_*/
+client/public/tiles_*
+client/public/models/
+client/public/textures/
 
 # ---------------------------------------------------------------- raw source data (npm run fetch)
-boundlessjs/data/
-boundlessjs/raw_data/
+client/data/
+client/raw_data/
 
 # ---------------------------------------------------------------- reference imagery (not redistributable)
 refs/
@@ -39,7 +39,7 @@ ref_*.png
 # ---------------------------------------------------------------- renders, logs, local state
 shots/
 screenshots/
-boundlessjs/shots/
+client/shots/
 _out/
 *.log
 *.mp4

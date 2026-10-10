@@ -1,7 +1,7 @@
 // Encode the campus stone detail sets (Poly Haven CC0, 2K JPG: *_col / *_nrm (OpenGL) / *_rgh) into the runtime KTX2 bank
 // and print each colour map's linear mean, which the triplanar stone shader divides by so a material keeps its calibrated
 // colour on average and takes only the texture's variation.
-//   node tools/assets/encode_stone.mjs <srcDir> [outDir=boundlessjs/public/textures]
+//   node tools/assets/encode_stone.mjs <srcDir> [outDir=client/public/textures]
 import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
@@ -15,7 +15,7 @@ sharp.cache(false);
 const here = path.dirname(fileURLToPath(import.meta.url));
 const [,, src, outArg] = process.argv;
 if (!src) { console.error('usage: node tools/assets/encode_stone.mjs <srcDir> [outDir]'); process.exit(2); }
-const out = path.resolve(outArg || path.join(here, '..', '..', 'boundlessjs', 'public', 'textures'));
+const out = path.resolve(outArg || path.join(here, '..', '..', 'client', 'public', 'textures'));
 const SIZE = 2048;
 const sets = [...new Set(fs.readdirSync(src).filter((f) => /_(col|nrm|rgh)\.jpg$/.test(f)).map((f) => f.replace(/_(col|nrm|rgh)\.jpg$/, '')))];
 const means = {};

@@ -34,7 +34,7 @@
 //   node tools/ad/clearance.mjs --shot t7ArchGlide,t5DinoGlide   # some shots
 //   node tools/ad/clearance.mjs --spec my.json --shot zBad       # shots from another file (same format as shots.json)
 //   node tools/ad/clearance.mjs --survey --shot t5DinoGlide      # what is drawn round key 0 (types, names, custom instancing)
-//   options: --out <dir> (boundlessjs/shots/ar34/film/clearance/<label>), --label, --step 0.08, --radius 1.5, --min 0.6,
+//   options: --out <dir> (client/shots/ar34/film/clearance/<label>), --label, --step 0.08, --radius 1.5, --min 0.6,
 //            --stills 8 (per shot), --size WxH (the take's), --nolock, --novehicles, --frames a-b (a part of the timeline),
 //            --sheet (a clean still at each take's first, middle and last frame in <out>/sheet/, for a contact sheet)
 // Output: <out>/report.json, <out>/report.txt, <out>/stills/<shot>_f<frame>_<what>.jpg; exit 3 when a shot fails.
@@ -49,7 +49,7 @@ import { createRequire } from 'node:module';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const sharp = createRequire(path.resolve(here, '..', 'assets', 'package.json'))('sharp');
 sharp.cache(false);
 const args = process.argv.slice(2);
@@ -77,11 +77,11 @@ const VEH = !has('novehicles');
 const SHEET = has('sheet');   // also a clean still at the take's first, middle and last frame (<out>/sheet/), for the contact sheet
 const FR = opt('frames') ? opt('frames').split('-').map(Number) : null;
 const label = opt('label', (opt('act') || names.slice(0, 2).join('_')) + '_' + new Date().toISOString().slice(5, 16).replace(/[-:T]/g, ''));
-const outDir = path.resolve(root, opt('out', path.join('boundlessjs/shots/ar34/film/clearance', label)));
+const outDir = path.resolve(root, opt('out', path.join('client/shots/ar34/film/clearance', label)));
 await fs.mkdir(path.join(outDir, 'stills'), { recursive: true });
 const bootMs = 200000;
 
-// mirror of boundlessjs/src/shared/geo.js project()
+// mirror of client/src/shared/geo.js project()
 const LAT0 = 40.7831, LON0 = -73.9712, M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const project = (lon, lat) => [(lon - LON0) * M_LON, -(lat - LAT0) * M_LAT];
 const unproject = (x, z) => [x / M_LON + LON0, -z / M_LAT + LAT0];

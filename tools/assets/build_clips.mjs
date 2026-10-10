@@ -1,7 +1,7 @@
 // Crowd animation library: CARLA 0.10 AnimSequences (ueextract `anim` .anim.json) -> per-skeleton clip textures.
 //   node tools/assets/build_clips.mjs          (after build_peds.mjs: needs peds24/manifest.json for the hierarchy)
 //
-// Output boundlessjs/public/models/peds24/clips_<skeleton>.bin: Float32, per clip, per frame, per CANONICAL bone two
+// Output client/public/models/peds24/clips_<skeleton>.bin: Float32, per clip, per frame, per CANONICAL bone two
 // RGBA texels: (quat x, y, z, w) and (translation x, y, z, valid). A bone the clip has no track for is written with
 // valid = 0 and the runtime keeps the body's reference pose for it. clips.json indexes them: frames, fps, row offset,
 // loop, and for locomotion the clip's natural GROUND SPEED (m/s, measured on a reference body from the stance foot) so the
@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../..');
-const OUT = path.join(ROOT, 'boundlessjs/public/models/peds24');
+const OUT = path.join(ROOT, 'client/public/models/peds24');
 const ANIM = (process.env.ASSET_TOOLS || `${process.env.USERPROFILE || process.env.HOME}/.tools`) + '/carla_anim';
 const manifest = JSON.parse(fs.readFileSync(path.join(OUT, 'manifest.json'), 'utf8'));
 

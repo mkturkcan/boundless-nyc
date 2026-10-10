@@ -140,7 +140,7 @@ from any address and is only for trusted networks.
 | `TimeoutError: world.tick: no answer from the simulator within 60 s` | Many or large label cameras make a step slow. Raise the limit with `client.set_timeout(120.0)`. |
 | `TypeError: float() argument must be a string or a real number, not 'NoneType'` right after `set_autopilot(True)` | A defect of the 0.2.0 server, fixed in 0.2.1: a vehicle spawned through the API lost its position when switched to autopilot. Use the 0.2.1 release or the current source; with 0.2.0, drive API vehicles with `apply_control`. |
 | `hf: command not found` | `pip install -U "huggingface_hub>=1.0"`; older versions call the command `huggingface-cli`. |
-| The client shows an empty city, the browser console lists 404s for `/tiles/` | The tiles, models and textures are not in `boundlessjs/public/`: repeat the download and the `mv` of option B. |
+| The client shows an empty city, the browser console lists 404s for `/tiles/` | The tiles, models and textures are not in `client/public/`: repeat the download and the `mv` of option B. |
 | `JavaScript heap out of memory` while compiling the tiles | Give Node more memory: `NODE_OPTIONS=--max-old-space-size=6144 npm run compile -- --boro 1,2,3,4`. |
 | `Address already in use` | Another server holds the port: pick another with `--port`. |
 
@@ -148,8 +148,8 @@ from any address and is only for trusted networks.
 
 `server/build.mjs` assembles the release folder: it packages the Electron server, runs the production build of the
 client into `Content/` with every runtime asset, copies `PythonAPI/` and builds its wheel when `uv` is installed, and
-writes the launchers, `Docs/` and the legal files. It needs the compiled tiles in `boundlessjs/public/tiles/`,
-`npm install` in the top folder, `boundlessjs/` and `server/`, and access to github.com, from which the packager
+writes the launchers, `Docs/` and the legal files. It needs the compiled tiles in `client/public/tiles/`,
+`npm install` in the top folder, `client/` and `server/`, and access to github.com, from which the packager
 downloads the Electron runtime of the target platform.
 
 ```bash

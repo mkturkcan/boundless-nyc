@@ -1,5 +1,5 @@
 // GP31 ground PBR bank: scanned CC0 sets (ambientCG, Poly Haven) -> two KTX2 2D-array textures for the ground shader.
-//   node tools/assets/encode_ground_pbr.mjs <srcDir> [outDir=boundlessjs/public/textures]
+//   node tools/assets/encode_ground_pbr.mjs <srcDir> [outDir=client/public/textures]
 //
 // gp31_alb.ktx2  sRGB  RGB = albedo with its lowest frequencies flattened, A = height (displacement, 1-99 % stretched)
 // gp31_nrm.ktx2  linear RG = tangent normal XY (OpenGL, +Y up the texture), B = roughness, A = ambient occlusion
@@ -24,8 +24,8 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const [,, srcArg, outArg] = process.argv;
 if (!srcArg) { console.error('usage: node tools/assets/encode_ground_pbr.mjs <srcDir> [outDir]'); process.exit(2); }
 const src = path.resolve(srcArg);
-const out = path.resolve(outArg || path.join(here, '..', '..', 'boundlessjs', 'public', 'textures'));
-const tex = path.join(here, '..', '..', 'boundlessjs', 'public', 'textures');
+const out = path.resolve(outArg || path.join(here, '..', '..', 'client', 'public', 'textures'));
+const tex = path.join(here, '..', '..', 'client', 'public', 'textures');
 const N = 2048;
 
 // layer order is the shader's (GP31_SETS in world/materials.js). flat = share of the tile-scale tone drift removed (a

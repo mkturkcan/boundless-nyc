@@ -1,4 +1,4 @@
-// CPU profile of API ticks (boundlessjs/src/api/bridge.js) in a Playwright page on the RTX, hostless (window.__API):
+// CPU profile of API ticks (client/src/api/bridge.js) in a Playwright page on the RTX, hostless (window.__API):
 // sets up the W 120th St & Amsterdam pole camera set, then profiles N ticks over CDP and prints the functions with the
 // most self time, plus the wall time per tick.
 //   node tools/api/prof_ticks.mjs [--port 5219 (a running Vite)] [--ticks 20] [--sensors rgb,semantic,instance] [--amodal 0]

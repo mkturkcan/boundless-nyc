@@ -98,7 +98,7 @@ within 350 m of the camera path, with a coarse version of the city out to 4 km. 
 
 ```bash
 mkdir -p ~/bx
-node boundlessjs/tools/ar34/export/harvest.mjs --shots t7ArchSoffit --frames 54 --out ~/bx/h
+node client/tools/ar34/export/harvest.mjs --shots t7ArchSoffit --frames 54 --out ~/bx/h
 ```
 
 `--frames` names the key frames that also get a complete snapshot of the moving vehicles; the camera and the moving
@@ -113,7 +113,7 @@ ends with `done in 1032.5s; 3645 blobs`. The run took 17 minutes and left 2.5 GB
 
 ```bash
 uv run --no-project --with usd-core --with numpy --with pillow --with scipy \
-    python boundlessjs/tools/ar34/export/usd_write.py --in ~/bx/h --out ~/bx/u --coplanar warn
+    python client/tools/ar34/export/usd_write.py --in ~/bx/h --out ~/bx/u --coplanar warn
 ```
 
 The writer converts materials to `UsdPreviewSurface`, stores every mesh once and instances it, and writes the take's
@@ -137,7 +137,7 @@ coplanar pass (`--coplanar off`, for a quick look only) and wrote 2.5 GB; the pa
 ## Render one frame
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 "$BLENDER" -b --factory-startup --python boundlessjs/tools/ar34/export/blender_take.py -- \
+CUDA_VISIBLE_DEVICES=0 "$BLENDER" -b --factory-startup --python client/tools/ar34/export/blender_take.py -- \
     --usd ~/bx/u/t7ArchSoffit.usda --harvest ~/bx/h --outdir ~/bx/frames --frames 54 \
     --res 1280x720 --samples 24 --leaves 0.45 --leafgain 1.8 --winrooms "$WINROOMS"
 ```
@@ -151,7 +151,7 @@ The script imports the USD, builds the moving vehicles as animated objects, adds
 tree crowns and the film look (haze, bloom, grading), and renders with the OptiX denoiser. The light is physical by
 default (`--light phys`): the sun and the street and vehicle lamps at the client's own levels, the visible sky dome as
 the only sky light, no fill lights, untrimmed albedos and a fixed exposure per time of day from
-`boundlessjs/tools/ar34/export/phys_light.json`, the table the Unreal renderer reads too, so the two renderers light a
+`client/tools/ar34/export/phys_light.json`, the table the Unreal renderer reads too, so the two renderers light a
 take alike. `--light web` selects the earlier rig, calibrated against the web takes. It writes `~/bx/frames/frame_00054.jpg`, the run's settings and times in `take_54-54.json`, and the frame's
 depth in `_depth/`. On an RTX 6000 Ada shared with another render, the setup took 127 s (import 23 s) and the frame
 28 s; the whole command 158 s.
@@ -161,7 +161,7 @@ depth in `_depth/`. On an RTX 6000 Ada shared with another render, the setup too
 ## Render the full take
 
 ```bash
-CUDA_VISIBLE_DEVICES=0 "$BLENDER" -b --factory-startup --python boundlessjs/tools/ar34/export/blender_take.py -- \
+CUDA_VISIBLE_DEVICES=0 "$BLENDER" -b --factory-startup --python client/tools/ar34/export/blender_take.py -- \
     --usd ~/bx/u/t7ArchSoffit.usda --harvest ~/bx/h --outdir ~/bx/frames \
     --res 2560x1440 --samples 24 --leaves 0.45 --leafgain 1.8 --winrooms "$WINROOMS"
 ffmpeg -framerate 30 -i ~/bx/frames/frame_%05d.jpg -c:v libx264 -crf 16 -pix_fmt yuv420p ~/bx/t7ArchSoffit.mp4
@@ -173,12 +173,12 @@ only what moves, so after the first frame each frame costs the scene update plus
 
 ## Render many shots with checks
 
-`boundlessjs/tools/ar34/export/bx_render_all.mjs` runs harvest, USD and take for a list of shots, spreads the takes
+`client/tools/ar34/export/bx_render_all.mjs` runs harvest, USD and take for a list of shots, spreads the takes
 over the GPUs, resumes after an interruption, and checks every take. Paths to Blender and to the work folders are
 options or environment variables:
 
 ```bash
-BLENDER="$BLENDER" node boundlessjs/tools/ar34/export/bx_render_all.mjs --shots t7ArchSoffit --gpus 0 \
+BLENDER="$BLENDER" node client/tools/ar34/export/bx_render_all.mjs --shots t7ArchSoffit --gpus 0 \
     --frames 0-23 --res 1280x720 --samples 16 --work ~/bx/batch --clips ~/bx/takes --nocut --uflags "--coplanar warn"
 ```
 
@@ -204,7 +204,7 @@ The take of a shot fails when one of these checks fails:
 | Coplanar audit (`bx_fix.json`) | surface pairs in one plane that remain in view | more than 100 pairs |
 | Crown check (`bx_leafcheck.py`) | flicker in tree crowns, using the take's own depth | 8 or more 32 px cells in 6 or more frames |
 
-The colour check needs a web take of the same shot in `boundlessjs/shots/ad/clips/<shot>/` (recorded with
+The colour check needs a web take of the same shot in `client/shots/ad/clips/<shot>/` (recorded with
 `tools/ad/record.mjs`); without one it is skipped. After each take, `bx_temporal.py` averages each frame with its
 neighbours by depth reprojection to remove residual noise and keeps the raw frames in `_raw/`; it is a filter, not a
 check.

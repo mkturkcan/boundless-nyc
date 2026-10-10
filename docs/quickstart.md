@@ -64,18 +64,18 @@ in Git Bash.
 git clone https://github.com/mkturkcan/valdrada.git
 cd valdrada
 npm install
-(cd boundlessjs && npm install)
+(cd client && npm install)
 (cd server && npm install)
 pip install -U "huggingface_hub>=1.0"
 hf download mehmetkeremturkcan/valdrada --repo-type dataset --revision v0.3.1 \
     --include "Content/tiles/*" --include "Content/models/*" --include "Content/textures/*" --local-dir .cache/hf
-mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures boundlessjs/public/
+mv .cache/hf/Content/tiles .cache/hf/Content/models .cache/hf/Content/textures client/public/
 ```
 
 Start the client and the server, each in its own terminal:
 
 ```bash
-cd boundlessjs && npm run dev        # the client on http://127.0.0.1:5219; open it in a browser to look around
+cd client && npm run dev        # the client on http://127.0.0.1:5219; open it in a browser to look around
 cd server && npm run dev             # the simulation server on port 2000, showing that client
 ```
 

@@ -1,6 +1,6 @@
 // Offline scan of recorded takes (film 7, 2026-09-23): the recorder's black-half rule (record.mjs blackHalf) plus a
 // size-vs-median check over every frame, so a take that shipped a kept-after-4-attempts frame is found before the cut.
-//   node tools/ad/scanclips.mjs [take ...]        (default: every take folder under boundlessjs/shots/ad/clips)
+//   node tools/ad/scanclips.mjs [take ...]        (default: every take folder under client/shots/ad/clips)
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -10,7 +10,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
 const sharp = createRequire(path.resolve(here, '..', 'assets', 'package.json'))('sharp');
 sharp.cache(false);
-const clipRoot = path.join(root, 'boundlessjs/shots/ad/clips');
+const clipRoot = path.join(root, 'client/shots/ad/clips');
 const args = process.argv.slice(2);
 const takes = args.length ? args : (await fs.readdir(clipRoot, { withFileTypes: true })).filter((d) => d.isDirectory() && !/^twin_/.test(d.name)).map((d) => d.name);
 

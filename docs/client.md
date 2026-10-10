@@ -1,1 +1,1 @@
---8<-- "boundlessjs/README.md"
+--8<-- "client/README.md"

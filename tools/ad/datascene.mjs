@@ -34,9 +34,9 @@ const has = (n) => args.includes('--' + n);
 const FPS = Number(opt('fps', '30'));
 const W = 1920, H = 1080;
 const DUR = Number(opt('dur', '12'));
-const outDir = path.resolve(root, opt('out', 'boundlessjs/shots/ad/data'));
+const outDir = path.resolve(root, opt('out', 'client/shots/ad/data'));
 
-const MAP = JSON.parse(await fs.readFile(path.join(root, 'boundlessjs/shots/ad/mapdata.json'), 'utf8'));
+const MAP = JSON.parse(await fs.readFile(path.join(root, 'client/shots/ad/mapdata.json'), 'utf8'));
 const N = MAP.meta.counts;
 
 // ---- DART palette (docs/notes/ad-video.md), same as the closing deck --------
@@ -45,9 +45,9 @@ const C = {
   RED: '252,98,85', TEAL: '94,210,188', ORANGE: '245,160,80', GREY: '150,150,150',
 };
 
-// Inter (SIL OFL, boundlessjs/public/fonts, shared with the perception panel): owner review 2026-09-24 asked
+// Inter (SIL OFL, client/public/fonts, shared with the perception panel): owner review 2026-09-24 asked
 // for a professional face on glass boxes in place of the Lato captions
-const FONTS = [400, 500, 600, 700].map((wt) => [wt, path.join(root, 'boundlessjs', 'public', 'fonts', `Inter-${wt}.ttf`)]);
+const FONTS = [400, 500, 600, 700].map((wt) => [wt, path.join(root, 'client', 'public', 'fonts', `Inter-${wt}.ttf`)]);
 let faces = '';
 for (const [wt, f] of FONTS) {
   try {

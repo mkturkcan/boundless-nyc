@@ -43,7 +43,7 @@
 //   node tools/tflick.mjs --views fMarkings --sw --size 960x540      # no GPU lock
 //   node tools/tflick.mjs --views ad --label after                   # A/B a fix
 //
-// Out: boundlessjs/shots/glitch-r7/<view>[_label]_{ref,<mode>_flick,<mode>_crops}.png
+// Out: client/shots/glitch-r7/<view>[_label]_{ref,<mode>_flick,<mode>_crops}.png
 //      + <view>[_label].json   (per-mode stats, hot tiles, raycast probes)
 import { chromium } from 'playwright';
 import { acquireGpu } from './gpulock.mjs';
@@ -53,13 +53,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const args = process.argv.slice(2);
 const opt = (n, d = null) => { const i = args.indexOf('--' + n); return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : '1') : d; };
 const has = (n) => args.includes('--' + n);
 
 // ---------------------------------------------------------------- framings
-// mirror of boundlessjs/src/shared/geo.js project()
+// mirror of client/src/shared/geo.js project()
 const LAT0 = 40.7831, LON0 = -73.9712;
 const M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const project = (lon, lat) => [(lon - LON0) * M_LON, -(lat - LAT0) * M_LAT];
@@ -100,7 +100,7 @@ const names = (opt('views', 'ad')).split(',').flatMap((n) => GROUPS[n] || [n]).f
 });
 if (!names.length) { console.log('nothing to do'); process.exit(0); }
 
-const outDir = path.resolve(root, opt('out', 'boundlessjs/shots/glitch-r7'));
+const outDir = path.resolve(root, opt('out', 'client/shots/glitch-r7'));
 const SW = has('sw');
 const [VW, VH] = (opt('size', SW ? '960x540' : '1920x1080')).split('x').map(Number);
 const NF = Number(opt('n', '6'));            // frames per sequence

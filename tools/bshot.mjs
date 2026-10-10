@@ -1,12 +1,12 @@
 // Valdrada GPU screenshot + perf harness (Playwright Chromium on the real
-// GPU via ANGLE/D3D11 — the boundlessjs/tools/shot.mjs harness uses SwiftShader,
+// GPU via ANGLE/D3D11 — the client/tools/shot.mjs harness uses SwiftShader,
 // which is fine for pixels but useless for frame times).
 //
-//   node tools/bshot.mjs --views harlem125,columbia --time day --out boundlessjs/shots/nyc
+//   node tools/bshot.mjs --views harlem125,columbia --time day --out client/shots/nyc
 //   node tools/bshot.mjs --views harlem125 --bench            (prints fps/calls/tris JSON)
 //   node tools/bshot.mjs ... --nodress                        (A/B without the NYC dresser)
 //
-// Starts `vite` in boundlessjs/ on a random port unless --port is given (then
+// Starts `vite` in client/ on a random port unless --port is given (then
 // it expects a running dev server there).
 import { chromium } from 'playwright';
 import { acquireGpu } from './gpulock.mjs';
@@ -17,14 +17,14 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const args = process.argv.slice(2);
 const opt = (name, def = null) => {
   const i = args.indexOf('--' + name);
   return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : '1') : def;
 };
 
-// mirror of boundlessjs/src/shared/geo.js project()
+// mirror of client/src/shared/geo.js project()
 const LAT0 = 40.7831, LON0 = -73.9712;
 const M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const project = (lon, lat) => [(lon - LON0) * M_LON, -(lat - LAT0) * M_LAT];
@@ -149,7 +149,7 @@ const PRESETS = {
   // ---- COURTYARDS (docs/notes/courtyards-r12.md, brief B). Enclosed light courts are
   // only visible from above, so these are the framings that can tell a courted pre-war
   // block from the solid slab it used to extrude as. Court centres come from
-  // `node boundlessjs/tools/probe_courts.mjs <tilesDir> <x> <z> <radius>`.
+  // `node client/tools/probe_courts.mjs <tilesDir> <x> <z> <radius>`.
   courtBlock:    L(2140, -5940, 130, 2205, -6015, -0.95),        // Harlem's densest courtyard cluster (24 courts inside 160 m, ~25 m parapets) from the SW
   courtTop:      L(2199, -6009, 230, 2199, -6010, -1.54),        // the same block in plan: the unambiguous before/after
   amst120Court:  L(1060, -2800, 110, 1120, -2865, -0.90),        // the courted block SE of 120th & Amsterdam (refs/earth/amst120_top.png): 6 courts on 5 buildings
@@ -223,7 +223,7 @@ const onepage = opt('onepage') === '1';
 let sharedPage = null;
 const cur = { logs: [], errors: [] };
 const time = opt('time', 'day');
-const outDir = path.resolve(root, opt('out', 'boundlessjs/shots/nyc'));
+const outDir = path.resolve(root, opt('out', 'client/shots/nyc'));
 const bench = opt('bench') === '1';
 const nodress = opt('nodress') === '1';
 const extraQ = opt('flags', '');            // extra query flags, e.g. "ao=0&gi=0"
@@ -462,7 +462,7 @@ try {
       // outermost 160 px columns on EITHER side is under 40, the capture is truncated and gets the suffix.
       if (!file.endsWith('_INVALID.png')) {
         try {
-          const { PNG } = await import(pathToFileURL(path.join(bdir, 'node_modules', 'pngjs', 'lib', 'png.js')).href);   // pngjs lives in boundlessjs/
+          const { PNG } = await import(pathToFileURL(path.join(bdir, 'node_modules', 'pngjs', 'lib', 'png.js')).href);   // pngjs lives in client/
           const png = PNG.sync.read(await fs.readFile(file));
           const span = (x0, x1) => { let lo = 255, hi = 0; for (let y = 0; y < png.height; y += 2) for (let x = x0; x < x1; x += 2) { const o = (y * png.width + x) * 4; const L = 0.2126 * png.data[o] + 0.7152 * png.data[o + 1] + 0.0722 * png.data[o + 2]; if (L < lo) lo = L; if (L > hi) hi = L; } return hi - lo; };
           const cols = Math.min(160, png.width >> 2);

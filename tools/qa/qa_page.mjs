@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const args = process.argv.slice(2);
 const opt = (name, def = null) => { const i = args.indexOf('--' + name); return i >= 0 ? (args[i + 1] && !args[i + 1].startsWith('--') ? args[i + 1] : '1') : def; };
 const LAT0 = 40.7831, LON0 = -73.9712, M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);

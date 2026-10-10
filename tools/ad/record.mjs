@@ -1,7 +1,7 @@
 // AD VIDEO — recording orchestrator.
 //
 // Reads tools/ad/shots.json and drives Valdrada in ?record=1 mode (the
-// fixed-timestep capture in boundlessjs/src/main.js). Two differences from
+// fixed-timestep capture in client/src/main.js). Two differences from
 // tools/trailer/record.mjs, both about cost:
 //
 //  1. Shots are GROUPED by (time, flags) and every shot in a group is captured
@@ -21,8 +21,8 @@
 //   node tools/ad/record.mjs --shot fSkyline --start 92 --end 210  # re-shoot a range
 //   node tools/ad/record.mjs --group features --settle 900
 //
-// Output: boundlessjs/shots/ad/clips/<tag>/frame_%05d.jpg + <tag>.mp4
-//         boundlessjs/shots/ad/probe/<name>_<time>.png
+// Output: client/shots/ad/clips/<tag>/frame_%05d.jpg + <tag>.mp4
+//         client/shots/ad/probe/<name>_<time>.png
 import { chromium } from 'playwright';
 import { acquireGpu } from '../gpulock.mjs';
 import { installGuard, watchPage } from '../harness_guard.mjs';
@@ -62,7 +62,7 @@ async function blackHalf(img) {
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..', '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const args = process.argv.slice(2);
 const opt = (n, d = null) => {
   const i = args.indexOf('--' + n);
@@ -95,7 +95,7 @@ if (has('list')) {
 const FPS = Number(opt('fps', String(SPEC._meta?.fps || 30)));
 const [W, H] = (opt('size', SPEC._meta?.size || '1920x1080')).split('x').map(Number);
 const BASE_FLAGS = opt('flags', SPEC._meta?.flags || 'hud=0&lmwait=150&life=0&clean=1');   // 2026-09-23: walkers are IN the film (owner: "recreate the ad with the latest pedestrian models"; nopeds=1 was the rule before); lmwait: landmarks before the first frame; life=0: no steam/plume sprites; clean=1: no post stylisation (2026-09-17)
-const outRoot = path.resolve(root, opt('out', 'boundlessjs/shots/ad'));
+const outRoot = path.resolve(root, opt('out', 'client/shots/ad'));
 const clipRoot = path.join(outRoot, 'clips');
 const probeRoot = path.join(outRoot, 'probe');
 const settleMs = Number(opt('settle', '1200'));
@@ -173,7 +173,7 @@ console.log(`${totalFrames} frames to capture\n`);
 
 await fs.mkdir(isProbe ? probeRoot : clipRoot, { recursive: true });
 
-// mirror of boundlessjs/src/shared/geo.js project()
+// mirror of client/src/shared/geo.js project()
 const LAT0 = 40.7831, LON0 = -73.9712;
 const M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const project = (lon, lat) => [(lon - LON0) * M_LON, -(lat - LAT0) * M_LAT];

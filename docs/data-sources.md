@@ -1,1 +1,1 @@
---8<-- "boundlessjs/DATA_SOURCES.md"
+--8<-- "client/DATA_SOURCES.md"

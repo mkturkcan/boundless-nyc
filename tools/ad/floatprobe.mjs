@@ -2,7 +2,7 @@
 // at key 0 on a RUNNING dev server, settles, resets the crowd, warms 90 frames, reports bad edges and floating walkers,
 // then flies the real path for 75 frames and reports any walker > 2.5 m off the ground or within 60 m of the lens.
 // Made for the walker that floated near the lens in the grouped golden run's mLowAerial (frames kept in
-// boundlessjs/shots/ad/clips/_mLowAerial_floater/). A fresh page did not reproduce it: suspect state carried over
+// client/shots/ad/clips/_mLowAerial_floater/). A fresh page did not reproduce it: suspect state carried over
 // from the takes recorded before it in the same page.
 //   node tools/ad/floatprobe.mjs <shot> --port <vite port>
 import { chromium } from 'playwright';

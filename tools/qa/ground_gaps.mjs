@@ -28,7 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const B = path.join(root, 'boundlessjs');
+const B = path.join(root, 'client');
 const { parseTile, buildingsOf } = await import(path.join(B, 'src/world/tiledata.js'));
 const ST = await import(path.join(B, 'src/city/stations/subEnt38.js'));
 const SIMPLE = process.argv.includes('--simple') || process.argv.includes('--nost38');

@@ -1,4 +1,4 @@
-// Microsoft Rocketbox avatars -> extra crowd identities for the NYC twin (boundlessjs/public/models/peds24/rb27/).
+// Microsoft Rocketbox avatars -> extra crowd identities for the NYC twin (client/public/models/peds24/rb27/).
 //   node tools/assets/rocketbox_fetch.mjs                  (sources + FBX2glTF conversion into ~/.tools/rocketbox)
 //   node tools/assets/build_rocketbox.mjs [--only Name,...] [--notex] [--noprops]
 //
@@ -40,7 +40,7 @@ import { invert } from './lib/mat4.mjs';
 import { RB_AVATARS, RB_ROOT, RB_TO_GEN2 } from './lib/rocketbox.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../..');
-const PEDS = path.join(ROOT, 'boundlessjs/public/models/peds24');
+const PEDS = path.join(ROOT, 'client/public/models/peds24');
 const SET = 'rb27';
 const OUT = path.join(PEDS, SET);
 const TMP = path.join(RB_ROOT, 'tmp');

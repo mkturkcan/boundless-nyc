@@ -23,7 +23,7 @@ simulation and draws the frame in WebGL2. A shot is a camera path in `tools/ad/s
 (`tools/ad/record.mjs`) plays it and writes the web take. Every change to the city, from a new building rule to a new
 material, is made here first.
 
-**Export (OpenUSD).** `boundlessjs/tools/ar34/export/harvest.mjs` opens the client in a headless browser, plays the shot
+**Export (OpenUSD).** `client/tools/ar34/export/harvest.mjs` opens the client in a headless browser, plays the shot
 the way the recorder does and saves the harvest: the geometry within 350 m of the camera path with a coarse city to
 4 km, the materials with their shader uniforms and textures, the lights, the camera of every frame, and every vehicle,
 train, signal lens and walker per frame. `usd_write.py` turns the harvest into the take's USD layers: the camera, the
@@ -91,7 +91,7 @@ draws it with its own builder or master, with a high-quality set in Unreal, or o
 prints its summary line for every shot of a batch:
 
 ```bash
-uv run --no-project --with usd-core python boundlessjs/tools/ar34/export/frontend_coverage.py ~/bx/u/t7ArchTrack.usda
+uv run --no-project --with usd-core python client/tools/ar34/export/frontend_coverage.py ~/bx/u/t7ArchTrack.usda
 ```
 
 For the golden hour shot `t7ArchTrack` the take has 1,654 materials: Blender draws 1,571 (95 %) with a builder and
@@ -121,8 +121,8 @@ sides, so both offline renderers draw the same deck; the client still draws thes
 
 | Check | Tool | Fails a take when |
 |---|---|---|
-| Colour against the web take | `boundlessjs/tools/ar34/export/cyc_vs_web.py` | off-colour 16 px cells cover more than 0.4 % of the frame, or off-lightness cells more than 2 %, after matching exposure (Cycles and Unreal takes) |
-| Regions against both references | `boundlessjs/tools/ar34/export/ue_check.py` | a region (sky, buildings, ground, vegetation, structure) of an Unreal frame leaves the CIELAB band of the web and Cycles takes, or of the Cycles take alone under physical light (`--noweb`), in more than a third of the frames |
+| Colour against the web take | `client/tools/ar34/export/cyc_vs_web.py` | off-colour 16 px cells cover more than 0.4 % of the frame, or off-lightness cells more than 2 %, after matching exposure (Cycles and Unreal takes) |
+| Regions against both references | `client/tools/ar34/export/ue_check.py` | a region (sky, buildings, ground, vegetation, structure) of an Unreal frame leaves the CIELAB band of the web and Cycles takes, or of the Cycles take alone under physical light (`--noweb`), in more than a third of the frames |
 | Temporal scan | `tools/ad/temporal_scan.py` | flicker, z-fighting or shimmer between neighbouring frames over its limits |
 | Coplanar audit | `usd_coplanar.py`, `bx_fix.json` | more than 100 coplanar surface pairs remain in view |
 | Camera clearance | `tools/ad/clearance.mjs` | the lens path crosses a drawn surface, or a vehicle is off the road in view |
@@ -134,7 +134,7 @@ flicker test (`bx_leafcheck.py`), which reprojects frames by the depth that both
 
 ## Adding a material family to all three renderers
 
-1. Write the shader in the client (`boundlessjs/src/`). The harvest saves its uniforms and textures with no change.
+1. Write the shader in the client (`client/src/`). The harvest saves its uniforms and textures with no change.
 2. In `usd_mat.py`, recognise the shader's uniforms and tag its materials with a new `kind` and the parameters the
    renderers need.
 3. In `blender_nodes.py`, add a `build_<kind>(mat, P)` node-group builder and its entry in the builder table.
@@ -164,7 +164,7 @@ checks. An improvement that would need a different object, position, size or cou
 | Path | Role |
 |---|---|
 | `tools/ad/shots.json`, `tools/ad/record.mjs` | shots and the web take recorder |
-| `boundlessjs/tools/ar34/export/harvest.mjs` | the harvest of a shot from the running client |
+| `client/tools/ar34/export/harvest.mjs` | the harvest of a shot from the running client |
 | `usd_write.py`, `usd_mat.py`, `usd_trees.py`, `usd_windows.py`, `usd_peds.py`, `usd_ramps.py`, `usd_coplanar.py` | the take's USD and its hooks |
 | `phys_light.json` | the physical light table shared by both renderers |
 | `blender_take.py`, `blender_render.py` and `blender_*.py` | the Blender take and its hooks |
@@ -176,5 +176,5 @@ checks. An improvement that would need a different object, position, size or cou
 | `cyc_vs_web.py`, `ue_check.py`, `bx_leafcheck.py`, `bx_temporal.py` | the take checks and the Cycles temporal filter |
 | `tools/assets/fetch_hq.py` | the CC0 material sets for Unreal |
 
-The paths without a folder are in `boundlessjs/tools/ar34/export/`. The guides [Rendering in Blender Cycles](blender-cycles.md)
+The paths without a folder are in `client/tools/ar34/export/`. The guides [Rendering in Blender Cycles](blender-cycles.md)
 and [Rendering in Unreal Engine 5](unreal.md) take one shot through each renderer.

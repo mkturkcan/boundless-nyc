@@ -21,7 +21,7 @@ const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? Number
 const OUTDIR = (process.env.ASSET_TOOLS || `${process.env.USERPROFILE || process.env.HOME}/.tools`) + '/carla_anim';
 const HEADUP = opt('headup', 0);
 const WRIST_RELAX = opt('wristrelax', 0.75);   // share of CARLA's relaxed wrist in the retargeted hands (0 = raw mocap)
-const MAN = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../../boundlessjs/public/models/peds24/manifest.json');
+const MAN = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../../client/public/models/peds24/manifest.json');
 
 // ---------------- quaternion math ([x, y, z, w]) ----------------
 const qmul = (a, b) => [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]];

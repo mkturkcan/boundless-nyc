@@ -25,7 +25,7 @@ checking out older code. Node tools that import a module have no `location`, so 
 ## Tests
 
 ```bash
-(cd boundlessjs && npm test)                          # geometry and tiling invariants, 81 checks
+(cd client && npm test)                          # geometry and tiling invariants, 81 checks
 python -m unittest discover -s PythonAPI/tests        # the Python package; offline
 VALDRADA_TEST_PORT=2000 python -m unittest discover -s PythonAPI/tests   # adds the tests that need a running server
 ```
@@ -39,7 +39,7 @@ with clearance under them. It exits 1 on any failure.
 Rendering defects (z-fighting, shimmering, pop-in, black blocks from non-finite pixels, vehicles off the road, a camera
 passing through geometry) are hard to see in single frames, so the film tools check every recorded take. A take is
 the sequence of frames of one camera path (a shot in `tools/ad/shots.json`), recorded by `tools/ad/record.mjs` into
-`boundlessjs/shots/ad/clips/<shot>/`. Each harness renders on a GPU lane (`GPU_LANE=n` uses GPU (n − 1) mod the
+`client/shots/ad/clips/<shot>/`. Each harness renders on a GPU lane (`GPU_LANE=n` uses GPU (n − 1) mod the
 number of GPUs; jobs on one lane queue on a lock, see `tools/gpulock.mjs`) and stops at a deadline
 (`tools/harness_guard.mjs`, exit 124).
 
@@ -55,7 +55,7 @@ the artifact scan and prints `*** QA FAILED` and exits 3 when it fails.
 by the post-processing chain, and runs the temporal checks:
 
 ```bash
-python3 tools/ad/qa_scan.py boundlessjs/shots/ad/clips t7ArchSoffit [--out <dir>] [--json <file>]
+python3 tools/ad/qa_scan.py client/shots/ad/clips t7ArchSoffit [--out <dir>] [--json <file>]
 ```
 
 It exits 2 for a black block, 3 for a temporal failure and 0 otherwise. Isolated pops are written as review strips
@@ -68,13 +68,13 @@ shadow, probe or capture event, and on a reflection dropout. `--fine` adds the 4
 (6 or more cells over 6 levels in 8 or more frames).
 
 ```bash
-python3 tools/ad/temporal_scan.py boundlessjs/shots/ad/clips t7ArchSoffit --fine
+python3 tools/ad/temporal_scan.py client/shots/ad/clips t7ArchSoffit --fine
 ```
 
 **Clearance audit.** `tools/ad/clearance.mjs` replays a take and walks the lens path in steps of at most 8 cm. A shot
 fails (exit 3) when the path crosses drawn geometry, passes closer than 0.6 m to it, when two vehicle bodies overlap by
 0.15 m or more in view, or when a moving vehicle leaves the carriageway in view. The report and stills go to
-`boundlessjs/shots/ar34/film/clearance/<label>/`.
+`client/shots/ar34/film/clearance/<label>/`.
 
 ```bash
 node tools/ad/clearance.mjs --shot t7ArchSoffit
@@ -83,7 +83,7 @@ node tools/ad/clearance.mjs --shot t7ArchSoffit
 **Ground gaps.** `tools/qa/ground_gaps.mjs` rebuilds the drawn ground of a set of tiles and exits 1 when bare terrain
 shows between walks, roadways and plazas (a cluster of 0.25 m² or more, or ground more than 0.5 m below the road).
 
-**Offline renders.** The Blender batch (`boundlessjs/tools/ar34/export/bx_render_all.mjs`, see
+**Offline renders.** The Blender batch (`client/tools/ar34/export/bx_render_all.mjs`, see
 [Rendering in Blender Cycles](blender-cycles.md)) gates each Cycles shot. The USD writer exits 4 when coplanar surface
 pairs that would z-fight remain in view, unless it runs with `--coplanar warn`, as the batch runs it. The batch stops a
 shot right after the USD when more than 100 coplanar pairs remain in view (stage `usd-check`), and after three preview

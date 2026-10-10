@@ -1,4 +1,4 @@
-"""MkDocs hook. Some site pages include files from outside docs/ (BUILDING.md, ACKNOWLEDGEMENTS.md, boundlessjs/*.md),
+"""MkDocs hook. Some site pages include files from outside docs/ (BUILDING.md, ACKNOWLEDGEMENTS.md, client/*.md),
 whose relative links are written against the repository. On those pages, links to files that are also site pages are
 pointed at the pages, and links to any other repository file are pointed at GitHub."""
 import os
@@ -11,14 +11,14 @@ SITE = {  # repository path -> site page (directory URL)
     "BUILDING.md": "building/",
     "ACKNOWLEDGEMENTS.md": "acknowledgements/",
     "LICENSING.md": "licensing/",
-    "boundlessjs/DATA_SOURCES.md": "data-sources/",
-    "boundlessjs/README.md": "client/",
+    "client/DATA_SOURCES.md": "data-sources/",
+    "client/README.md": "client/",
     "docs/api/getting_started.md": "api/getting_started/",
     "docs/api/python_api.md": "api/python_api/",
     "docs/api/protocol.md": "api/protocol/",
 }
 INCLUDED = {  # site page -> repository directory of the file it includes
-    "building.md": "", "acknowledgements.md": "", "licensing.md": "", "data-sources.md": "boundlessjs", "client.md": "boundlessjs",
+    "building.md": "", "acknowledgements.md": "", "licensing.md": "", "data-sources.md": "client", "client.md": "client",
 }
 HREF = re.compile(r'href="([^"#]*)(#[^"]*)?"')
 

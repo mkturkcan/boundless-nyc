@@ -1,10 +1,10 @@
 // Plan-view maps for the README figures and the documentation site (SVG).
 //
-//   node tools/figures/maps.mjs [--raw boundlessjs/data/raw] [--tiles boundlessjs/public/tiles] [--out <dir>]
+//   node tools/figures/maps.mjs [--raw client/data/raw] [--tiles client/public/tiles] [--out <dir>]
 //
 //   records.svg   the public records around W 125th St & Lenox Ave as the compiler receives them: DoITT footprints
 //                 coloured by PLUTO land use, CSCL street centrelines, 2015 street-tree census, hydrants, subway
-//                 entrances (needs the raw downloads: `npm run fetch` in boundlessjs/)
+//                 entrances (needs the raw downloads: `npm run fetch` in client/)
 //   compiled.svg  the same area from the compiled tiles: carriageway, kerbs, sidewalks, lane paint, lawns, and every
 //                 building coloured by its facade typology
 //   coverage.svg  every near tile of the manifest, shaded by building count, with the far-field tiles behind
@@ -15,15 +15,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { project, STYLE } from '../../boundlessjs/src/shared/geo.js';
-import { parseTile, buildingsOf } from '../../boundlessjs/src/world/tiledata.js';
+import { project, STYLE } from '../../client/src/shared/geo.js';
+import { parseTile, buildingsOf } from '../../client/src/world/tiledata.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : d; };
-const RAW = path.resolve(opt('raw', path.join(repo, 'boundlessjs', 'data', 'raw')));
-const TILES = path.resolve(opt('tiles', path.join(repo, 'boundlessjs', 'public', 'tiles')));
+const RAW = path.resolve(opt('raw', path.join(repo, 'client', 'data', 'raw')));
+const TILES = path.resolve(opt('tiles', path.join(repo, 'client', 'public', 'tiles')));
 const OUT = path.resolve(opt('out', path.join(repo, 'docs', 'assets', 'figures', 'maps')));
 fs.mkdirSync(OUT, { recursive: true });
 

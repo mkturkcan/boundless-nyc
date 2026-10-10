@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium } from 'playwright';
-import { project } from '../../boundlessjs/src/shared/geo.js';
+import { project } from '../../client/src/shared/geo.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
@@ -23,7 +23,7 @@ const ONLY = opt('only', null)?.split(',');
 fs.mkdirSync(OUT, { recursive: true });
 const f = (dir, name) => pathToFileURL(path.join(dir, name)).href;
 const json = (dir, name) => JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
-const FONTS = pathToFileURL(path.join(repo, 'boundlessjs', 'public', 'fonts')).href;
+const FONTS = pathToFileURL(path.join(repo, 'client', 'public', 'fonts')).href;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
 const CSS = `

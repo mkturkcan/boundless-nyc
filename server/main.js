@@ -8,7 +8,7 @@
 //
 // Requests are {id, method, params}; the page answers {id, result} or {id, error}. Sensor data arrives as
 // {event: "sensor", ..., blobs: k} followed by k binary frames. This process only frames bytes and routes them:
-// every method runs in the page (boundlessjs/src/api/bridge.js).
+// every method runs in the page (client/src/api/bridge.js).
 //
 //   Valdrada.exe [--port 2000] [--host 127.0.0.1] [--res 1280x720] [--headless] [--content <dir>]
 //                    [--dev-url=http://127.0.0.1:5219] [--start-lat 40.80955 --start-lon -73.95905] [--time day]

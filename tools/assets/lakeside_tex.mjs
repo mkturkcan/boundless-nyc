@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 sharp.cache(false);
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const OUT = path.join(ROOT, 'boundlessjs/public/textures/cp33/lakeside');
+const OUT = path.join(ROOT, 'client/public/textures/cp33/lakeside');
 const HOME = process.env.USERPROFILE || process.env.HOME;
 const TMP = path.join(HOME, '.tools/texcache/cp33lakeside');
 const UA = 'valdrada-research/0.1 (project contact: github.com/mkturkcan/valdrada)';

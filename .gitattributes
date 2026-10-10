@@ -45,8 +45,8 @@
 *.dbf            binary
 
 # derived / archive-only, keep out of language statistics and diffs
-boundlessjs/public/textures/**   linguist-vendored
-boundlessjs/public/models/**     linguist-vendored
-boundlessjs/public/luts/**       linguist-vendored
-boundlessjs/public/basis/**      linguist-vendored
+client/public/textures/**   linguist-vendored
+client/public/models/**     linguist-vendored
+client/public/luts/**       linguist-vendored
+client/public/basis/**      linguist-vendored
 docs/techniques.md               linguist-documentation

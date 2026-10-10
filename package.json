@@ -2,7 +2,7 @@
   "name": "valdrada",
   "version": "0.3.1",
   "private": true,
-  "description": "Valdrada: shared dependencies of the client (boundlessjs/), the building generator (src/) and the render tools (tools/)",
+  "description": "Valdrada: shared dependencies of the client (client/), the building generator (src/) and the render tools (tools/)",
   "license": "MIT",
   "type": "module",
   "dependencies": {

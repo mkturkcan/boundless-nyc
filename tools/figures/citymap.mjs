@@ -1,6 +1,6 @@
 // The whole compiled city in plan view, raster: every building footprint shaded by height, streets by class, lawns.
 //
-//   node tools/figures/citymap.mjs [--tiles boundlessjs/public/tiles] [--out <dir>] [--mpp 10] [--bbox x0,z0,x1,z1 --name <file>]
+//   node tools/figures/citymap.mjs [--tiles client/public/tiles] [--out <dir>] [--mpp 10] [--bbox x0,z0,x1,z1 --name <file>]
 //
 // Writes citymap.png (north up, --mpp metres per pixel) and citymap.json (extent in world metres, counts) for the
 // coverage figure, which overlays the tile grid and the streaming radii in SVG.
@@ -8,15 +8,15 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { parseTile, buildingsOf, roadsOf } from '../../boundlessjs/src/world/tiledata.js';
+import { parseTile, buildingsOf, roadsOf } from '../../client/src/world/tiledata.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, '..', '..');
-const require = createRequire(path.join(repo, 'boundlessjs', 'package.json'));
+const require = createRequire(path.join(repo, 'client', 'package.json'));
 const { PNG } = require('pngjs');
 const argv = process.argv.slice(2);
 const opt = (n, d) => { const i = argv.indexOf('--' + n); return i >= 0 ? argv[i + 1] : d; };
-const TILES = path.resolve(opt('tiles', path.join(repo, 'boundlessjs', 'public', 'tiles')));
+const TILES = path.resolve(opt('tiles', path.join(repo, 'client', 'public', 'tiles')));
 const OUT = path.resolve(opt('out', path.join(repo, 'docs', 'assets', 'figures', 'maps')));
 const MPP = +opt('mpp', 10);
 const BBOX = opt('bbox', null)?.split(',').map(Number);   // x0,z0,x1,z1 world metres: a local map

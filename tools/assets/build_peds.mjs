@@ -1,4 +1,4 @@
-// CARLA 0.10 walkers -> the NYC twin's crowd assets (boundlessjs/public/models/peds24/).
+// CARLA 0.10 walkers -> the NYC twin's crowd assets (client/public/models/peds24/).
 //   node tools/assets/build_peds.mjs [--notex] [--only SK_name,...]
 //
 // BODIES (25 skeletal meshes): one GLB each with LOD0/LOD1/LOD2 nodes, and per LOD TWO primitives — `opaque` (skin,
@@ -11,7 +11,7 @@
 // colour baked from the root/tip/diffuse parameters, alpha = strand mask). A UDIM skin (two 4K tiles) takes two consecutive
 // layers. A VARIANT (walker blueprint) is then just a slot -> layer table, so all 37 outfits of 25 bodies draw in two
 // calls per body per LOD.
-// Sources: CARLA 0.10.0 content, CC-BY 4.0 (boundlessjs/DATA_SOURCES.md; provenance note in docs/notes/peds-veh-v2.md).
+// Sources: CARLA 0.10.0 content, CC-BY 4.0 (client/DATA_SOURCES.md; provenance note in docs/notes/peds-veh-v2.md).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,7 +26,7 @@ import { BASISU } from './lib/tex.mjs';
 import { FITS, loadProps, fitProps, propGeometry } from './lib/propfit.mjs';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '../..');
-const OUT = path.join(ROOT, 'boundlessjs/public/models/peds24');
+const OUT = path.join(ROOT, 'client/public/models/peds24');
 const TMP = (process.env.ASSET_TOOLS || `${process.env.USERPROFILE || process.env.HOME}/.tools`) + '/pedtex';
 const args = process.argv.slice(2);
 const NOTEX = args.includes('--notex');

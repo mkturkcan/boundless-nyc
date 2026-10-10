@@ -13,7 +13,7 @@ import { MeshoptSimplifier } from 'meshoptimizer';
 
 const [src, outArg] = process.argv.slice(2).filter((a) => !a.startsWith('--'));
 const MEASURE = process.argv.includes('--measure');
-const out = outArg || 'boundlessjs/public/models/landmarks/alma_mater.glb';
+const out = outArg || 'client/public/models/landmarks/alma_mater.glb';
 // the scan's frame -> hers: the stepped base is square to axes turned -15 deg about y; its centre and underside
 const A = (-15 * Math.PI) / 180, cA = Math.cos(A), sA = Math.sin(A), UC = -0.745, VC = 0.695, YB = -1.52;
 // BLOCK (2026-09-29, the owner: "still leaned the wrong way. You might need to prop up the base"). Levelled (--level,

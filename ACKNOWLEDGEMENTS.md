@@ -3,7 +3,7 @@
 Valdrada is compiled almost entirely from public records and openly licensed assets. This file lists every
 external source contained in the repository, the compiled city or the release builds, with the attribution each
 licence requires. [LICENSING.md](LICENSING.md) gives the licence of each part of the project, and
-[boundlessjs/DATA_SOURCES.md](boundlessjs/DATA_SOURCES.md) records, field by field, what each dataset contributes.
+[client/DATA_SOURCES.md](client/DATA_SOURCES.md) records, field by field, what each dataset contributes.
 
 ## City data
 
@@ -34,7 +34,7 @@ licence requires. [LICENSING.md](LICENSING.md) gives the licence of each part of
 **OpenStreetMap contributors.** The project uses `building:colour` tags, gap-fill building footprints, the Columbia
 University campus micro-map and elevated-rail alignments. © OpenStreetMap contributors, available under the Open
 Database Licence (ODbL 1.0), <https://www.openstreetmap.org/copyright>. Data derived from OpenStreetMap is contained
-in the compiled tiles and in `boundlessjs/public/data/`, and is available under the ODbL 1.0. The attribution must
+in the compiled tiles and in `client/public/data/`, and is available under the ODbL 1.0. The attribution must
 accompany any distribution of the compiled city or imagery rendered from it.
 
 **U.S. Geological Survey.** 3DEP elevation (via AWS Terrain Tiles) for park relief. Public domain.
@@ -52,10 +52,10 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
 ## 3D models and animation
 
 - **CARLA Simulator** (<https://carla.org>), assets under **CC BY 4.0**.
-  - `boundlessjs/public/models/carla/`: vehicles and about 180 street, construction and trash props, converted
+  - `client/public/models/carla/`: vehicles and about 180 street, construction and trash props, converted
     from CARLA 0.9.15.
-  - `boundlessjs/public/models/fleet24/`: 16 vehicle models, converted from CARLA 0.10.0.
-  - `boundlessjs/public/models/peds24/`: 25 pedestrian bodies in 37 outfit variants, converted from CARLA 0.10.0.
+  - `client/public/models/fleet24/`: 16 vehicle models, converted from CARLA 0.10.0.
+  - `client/public/models/peds24/`: 25 pedestrian bodies in 37 outfit variants, converted from CARLA 0.10.0.
 
   NYC-specific edits: taxi and police liveries, New York licence plates, a plain white box-truck body, removed CARLA
   lettering and recalibrated skin tones. *Vehicle and pedestrian models: CARLA Simulator (carla.org), CC BY 4.0.*
@@ -67,10 +67,10 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
 - **Microsoft Rocketbox Avatar Library** (<https://github.com/microsoft/Microsoft-Rocketbox>), **MIT licence**, Copyright
   (c) 2020 Microsoft. M. Gonzalez-Franco et al., *The Rocketbox Library and the Utility of Freely Available Rigged
   Avatars*, Frontiers in Virtual Reality 1, 2020, doi:10.3389/frvir.2020.561558.
-  - `boundlessjs/public/models/peds24/rb27/`: 49 pedestrian bodies (45 adults, 4 children), re-bound to the pedestrian
+  - `client/public/models/peds24/rb27/`: 49 pedestrian bodies (45 adults, 4 children), re-bound to the pedestrian
     skeleton; the licence text travels with them in `rb27/NOTICE.md`.
 - **Alma Mater photogrammetry scan** by M. K. Turkcan (<https://doi.org/10.5281/zenodo.10312053>), **CC BY 4.0**:
-  `boundlessjs/public/models/landmarks/alma_mater.glb`, the statue on the Low Library steps (Daniel Chester French,
+  `client/public/models/landmarks/alma_mater.glb`, the statue on the Low Library steps (Daniel Chester French,
   1903), cut to the bronze, its throne and the stone die and simplified by `tools/assets/alma_mater.mjs`.
 - **100STYLE** locomotion dataset: I. Mason, S. Starke and T. Komura, *Real-Time Style Modelling of Human Locomotion
   via Feature-Wise Transformations and Local Motion Phases*, 2022, Zenodo record 8127870. **CC BY 4.0.** Sixteen
@@ -93,11 +93,11 @@ for Traffic Control Devices (Series C) glyph outlines, extracted from the offici
   - eight 4K sky HDRIs
 - **ambientCG** (<https://ambientcg.com>), **CC0 1.0**: Asphalt025C, Asphalt031, Concrete031, Concrete037, Concrete048,
   Grass004, PavingStones128, Bricks090.
-- **Inter** by Rasmus Andersson, **SIL Open Font License 1.1** (`boundlessjs/public/fonts/OFL.txt`).
+- **Inter** by Rasmus Andersson, **SIL Open Font License 1.1** (`client/public/fonts/OFL.txt`).
 - **Google Fonts** display families on the Times Square boards and shop signs, twenty families, each under the **SIL Open
-  Font License 1.1**; `boundlessjs/public/fonts/ta31/FONTS.txt` lists them with their copyright holders, and each
+  Font License 1.1**; `client/public/fonts/ta31/FONTS.txt` lists them with their copyright holders, and each
   family's licence text is beside its files.
-- The colour-grade LUTs in `boundlessjs/public/luts/` and the storefront signage are generated in this repository.
+- The colour-grade LUTs in `client/public/luts/` and the storefront signage are generated in this repository.
 
 ## Software
 

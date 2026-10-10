@@ -1,8 +1,8 @@
 // PERCEPTION VALIDATOR — reads an exported frame back and checks that the
 // pixels and labels.json agree. Run it on anything export.mjs produced:
 //
-//   node tools/perception/check.mjs boundlessjs/shots/perception/xwalk125_day/frame_00000
-//   node tools/perception/check.mjs boundlessjs/shots/perception/harlem125Street   (all frames)
+//   node tools/perception/check.mjs client/shots/perception/xwalk125_day/frame_00000
+//   node tools/perception/check.mjs client/shots/perception/harlem125Street   (all frames)
 //
 // It checks, per frame:
 //   * semantic.png — a class census, and that EVERY pixel is a colour in the
@@ -16,14 +16,14 @@
 //   * amodal/<id>.png + visible/<id>.png — that the mask areas match
 //     `amodal_area` / `area` and that amodal >= visible for every instance.
 //
-// pngjs lives in boundlessjs/node_modules (it is a Valdrada dependency).
+// pngjs lives in client/node_modules (it is a Valdrada dependency).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const require = createRequire(path.join(root, 'boundlessjs', 'package.json'));
+const require = createRequire(path.join(root, 'client', 'package.json'));
 const { PNG } = require('pngjs');
 
 const read = (f) => PNG.sync.read(fs.readFileSync(f));
@@ -142,7 +142,7 @@ function checkFrame(dir, verbose) {
   return out;
 }
 
-const target = path.resolve(root, process.argv[2] || 'boundlessjs/shots/perception');
+const target = path.resolve(root, process.argv[2] || 'client/shots/perception');
 const verbose = process.argv.includes('--verbose');
 const dirs = fs.existsSync(path.join(target, 'labels.json'))
   ? [target]

@@ -72,7 +72,7 @@ for (let i = 0; i < warm; i++) await page.evaluate(() => window.__advance(1 / 30
 await page.evaluate((p) => window.__SET_PATH(p), P);
 await page.evaluate(() => window.__advance(0));
 console.log(JSON.stringify(await report(`after warm ${warm}`)));
-const out = path.resolve(root, opt('out', 'boundlessjs/shots/ad/probe/recprobe_' + name + '.png'));
+const out = path.resolve(root, opt('out', 'client/shots/ad/probe/recprobe_' + name + '.png'));
 const dataUrl = await page.evaluate(() => window.__capture('image/png', 1));
 await fs.writeFile(out, Buffer.from(dataUrl.slice(dataUrl.indexOf(',') + 1), 'base64'));
 console.log('wrote', out);

@@ -1,5 +1,5 @@
 // tiny static file server with CORS for serving a dev tile set to the app:
-//   node tools/servedir.mjs boundlessjs/data/tiles_dev 5310   -> http://127.0.0.1:5310/
+//   node tools/servedir.mjs client/data/tiles_dev 5310   -> http://127.0.0.1:5310/
 // then open the app with ?tiles=http://127.0.0.1:5310
 import http from 'node:http';
 import fs from 'node:fs';

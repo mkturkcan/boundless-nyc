@@ -28,7 +28,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const bdir = path.join(root, 'boundlessjs');
+const bdir = path.join(root, 'client');
 const args = process.argv.slice(2);
 const opt = (name, def = null) => {
   const i = args.indexOf('--' + name);
@@ -36,7 +36,7 @@ const opt = (name, def = null) => {
 };
 const num = (name, def) => Number(opt(name, String(def)));
 
-// mirror of boundlessjs/src/shared/geo.js project()
+// mirror of client/src/shared/geo.js project()
 const LAT0 = 40.7831, LON0 = -73.9712;
 const M_LAT = 111132.0, M_LON = 111320.0 * Math.cos((LAT0 * Math.PI) / 180);
 const project = (lon, lat) => [(lon - LON0) * M_LON, -(lat - LAT0) * M_LAT];
@@ -108,7 +108,7 @@ const startAt = num('start', 0);
 const every = Math.max(1, num('every', 1));   // fixed steps of 1/fps between captures
 const timeArg = opt('time');
 const [W, H] = (opt('size', '1920x1080')).split('x').map(Number);
-const outRoot = path.resolve(root, opt('out', 'boundlessjs/shots/perception'));
+const outRoot = path.resolve(root, opt('out', 'client/shots/perception'));
 const clipDir = opt('clip') ? path.resolve(root, opt('clip')) : null;
 const wantPanel = opt('panel', pathName ? '1' : '1') === '1';
 const headed = opt('headed') === '1';
